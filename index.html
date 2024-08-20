@@ -8888,6 +8888,15 @@
                 transform: scale(1)
             }
         }
+                /* Efecto de transición simple */
+        .fade {
+            transition: opacity 0.5s ease-in-out;
+            opacity: 0.5;
+        }
+
+        .fade-in {
+            opacity: 1;
+        }
     </style>
     <meta charset="UTF-8">
     <title>La Leyenda RP - Servidor de GTA 5 RolePlay</title>
@@ -9186,17 +9195,31 @@
 
         </div>
     </div>
-<script>
+    <script>
         async function fetchClients() {
             try {
                 const response = await fetch('https://servers-frontend.fivem.net/api/servers/single/mk6o6a');
                 if (response.ok) {
                     const data = await response.json();
                     const clientsCount = data.Data.clients;
-                    
-                    // Actualizar todos los elementos con la clase 'clientsCount'
+
+                    // Selecciona todos los elementos con la clase 'clientsCount'
                     document.querySelectorAll('.clientsCount').forEach(element => {
-                        element.textContent = clientsCount;
+                        // Aplica la clase de transición
+                        element.classList.add('fade');
+
+                        // Actualiza el contenido después de un pequeño retraso para que se vea el efecto
+                        setTimeout(() => {
+                            element.textContent = clientsCount;
+
+                            // Remueve la clase de transición para hacer que el texto aparezca suavemente
+                            element.classList.add('fade-in');
+
+                            // Elimina la clase de animación después de la transición
+                            setTimeout(() => {
+                                element.classList.remove('fade', 'fade-in');
+                            }, 500); // Este tiempo debe coincidir con la duración de la transición en CSS
+                        }, 250); // Retraso antes de actualizar el contenido
                     });
                 } else {
                     console.error('Error al obtener los datos:', response.status);
@@ -9208,6 +9231,9 @@
 
         // Llama a la función al cargar la página
         fetchClients();
+
+        // Refresca cada 10 segundos
+        setInterval(fetchClients, 10000);
     </script>
     <div class="how-start-game">
         <div class="container small staps" id="staps">
