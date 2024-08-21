@@ -9098,20 +9098,20 @@
     <li class="active">
         <a href="index.html">
             <font style="vertical-align: inherit;">
-                <font style="vertical-align: inherit;">principal</font>
+                <font style="vertical-align: inherit;">inicio</font>
             </font>
         </a>
     </li>
     <li>
         <a href="#staps">
             <font style="vertical-align: inherit;">
-                <font style="vertical-align: inherit;">cómo empezar a jugar</font>
+                <font style="vertical-align: inherit;">¿Cómo jugar?</font>
             </font>
         </a>
     </li>
     <li>
         <a href="https://discord.gg/EEYpS9DfqM" target="_blank">
-            <font style="vertical-align: inherit;">
+            <i class="discord"></i><font style="vertical-align: inherit;">
                 <font style="vertical-align: inherit;">Discord</font>
             </font>
         </a>
@@ -9180,13 +9180,13 @@
             <div class="server one">
                 <p>
                     <font style="vertical-align: inherit;">
-                        <font style="vertical-align: inherit;">Primer </font>
+                        <font style="vertical-align: inherit;">Role </font>
                     </font><br>
                     <font style="vertical-align: inherit;">
-                        <font style="vertical-align: inherit;">servidor</font>
+                        <font style="vertical-align: inherit;">Play</font>
                     </font>
                 </p>
-                <a class="main-button copy" data-clipboard-text="entrada.laleyendarp.com" onclick="if (!window.__cfRLUnblockHandlers) return false; yaCounter46328574.reachGoal('copygta5')">Copiar</a>
+                <a class="main-button copy" data-clipboard-text="entrada.laleyendarp.com" onclick="if (!window.__cfRLUnblockHandlers) return false; yaCounter46328574.reachGoal('copygta5')">Copiar IP</a>
                 <div class="online">
                     <font style="vertical-align: inherit;">
                         <font style="vertical-align: inherit;">En línea </font>
@@ -9401,25 +9401,6 @@
                 </p>
             </div>
         </div>
-        <a href="https://metrika.yandex.ru/stat/?id=46328574&amp;from=informer" target="_blank" rel="nofollow" style="display: none"><img src="https://metrika-informer.com/informer/46328574/3_1_FFFFFFFF_EFEFEFFF_0_pageviews" style="width:88px; height:31px; border:0;" alt="Яндекс.Метрика" title="Яндекс.Метрика: данные за сегодня (просмотры, визиты и уникальные посетители)" class="ym-advanced-informer"
-                data-cid="46328574" data-lang="ru"></a>
-        <script type="text/javascript">
-            (function(m, e, t, r, i, k, a) {
-                m[i] = m[i] || function() {
-                    (m[i].a = m[i].a || []).push(arguments)
-                };
-                m[i].l = 1 * new Date();
-                k = e.createElement(t), a = e.getElementsByTagName(t)[0], k.async = 1, k.src = r, a.parentNode.insertBefore(k, a)
-            })(window, document, "script", "https://cdn.jsdelivr.net/npm/yandex-metrica-watch/tag.js", "ym");
-            ym(46328574, "init", {
-                clickmap: true,
-                trackLinks: true,
-                accurateTrackBounce: true,
-                webvisor: true,
-                trackHash: true,
-                ecommerce: "dataLayer"
-            });
-        </script>
     </footer>
     <script src="js/jquery.min.js" type="text/javascript"></script>
     <script src="js/jquery.form.js" type="text/javascript"></script>
@@ -9428,40 +9409,6 @@
     <script src="https://unpkg.com/sweetalert/dist/sweetalert.min.js" type="text/javascript"></script>
     <script type="text/javascript" src="https://www.google.com/recaptcha/api.js"></script>
     <script src="js/push.js" type="text/javascript"></script>
-    <script type="text/javascript">
-        $('#registrationForm').ajaxForm({
-            url: '/registrationPost',
-            dataType: 'text',
-            success: function(data) {
-                data = $.parseJSON(data);
-                switch (data.status) {
-                    case 'error':
-                        swal("Ошибка", data.message, "error");
-                        grecaptcha.reset();
-                        break;
-                    case 'success':
-                        location.href = '/#successRegistration';
-                        break;
-                }
-            },
-        });
-        $('#donateForm').ajaxForm({
-            url: '/donatePost',
-            dataType: 'text',
-            success: function(data) {
-                data = $.parseJSON(data);
-                switch (data.status) {
-                    case 'error':
-                        swal("Ошибка", data.message, "error");
-                        break;
-                    case 'success':
-                        location.href = data.redirect;
-                        break;
-                }
-            },
-        });
-    </script>
-
 
 </body>
 
