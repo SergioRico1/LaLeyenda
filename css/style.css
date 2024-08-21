@@ -842,7 +842,7 @@ main .how-start-game .guide-staps .stap-4:before {
 footer {
     background: #2a5d4f url(../images/footer.jpg) no-repeat center bottom;
     background-size: 100% 100%;
-    /* height: 51vh; */
+    height: 40vh;
     width: 100%;
     position: relative;
     margin-top: 16vw;
