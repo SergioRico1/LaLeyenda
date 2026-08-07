@@ -1,0 +1,69 @@
+{
+  "title": "La Leyenda Pirata — Gauntlet Loop",
+  "goal": "Mobile Three.js pirate game (island builder + open-sea sailing + raids) built from the CC0 Pirate Nation voxel assets.",
+  "bar": "Official Pirate Nation media — the shipped game made from these exact assets. Our screenshots must win a blind side-by-side against it.",
+  "pieces": [
+    {
+      "id": "pipeline",
+      "name": "Asset pipeline",
+      "bar": "Every model loads at a sane size with its animation clips intact, under 300KB.",
+      "status": "in_progress",
+      "rounds": [
+        {
+          "n": 1,
+          "summary": "36 models fetched from the CC0 library and optimized to .glb (9.5MB total, animations preserved). Models rendered at wildly wrong scales.",
+          "gap": "Model normalization is broken: three.js, the glTF node transforms, and the GPU disagree about how big a skinned model is — the foundry rendered ~200 units instead of 5.",
+          "shot": null
+        },
+        {
+          "n": 2,
+          "summary": "Root cause found and split in two: gltf-transform's flatten/join double-applied armature transforms on skinned models, and no analytical method measures these models correctly. Pipeline now skips flatten/join for skinned documents, and sizes are calibrated from rendered pixels.",
+          "gap": "Calibration running.",
+          "shot": null
+        }
+      ]
+    },
+    {
+      "id": "island",
+      "name": "Island scene (builder)",
+      "bar": "reference/island_hero.png",
+      "status": "in_progress",
+      "rounds": [
+        {
+          "n": 1,
+          "summary": "Terrain, stepped beach/grass plateaus, sand paths and the voxel water shader render correctly. Buildings blocked on the scale bug.",
+          "gap": "Water reads too dark and too uniformly blue; foam is evenly scattered where the reference clusters it near the shore. No buildings visible yet.",
+          "shot": "shots/v1_bare.png"
+        }
+      ]
+    },
+    {
+      "id": "water",
+      "name": "Ocean",
+      "bar": "reference/island_hero.png",
+      "status": "in_progress",
+      "rounds": []
+    },
+    {
+      "id": "sea",
+      "name": "Open sea + combat",
+      "bar": "reference/sea_combat.png",
+      "status": "pending",
+      "rounds": []
+    },
+    {
+      "id": "ui",
+      "name": "HUD and panels",
+      "bar": "reference/ui_bounties.png",
+      "status": "pending",
+      "rounds": []
+    },
+    {
+      "id": "economy",
+      "name": "Economy and save",
+      "bar": "A session can be played, closed and resumed with offline production applied.",
+      "status": "pending",
+      "rounds": []
+    }
+  ]
+}

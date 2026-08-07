@@ -1,0 +1,29 @@
+{
+  "name": "la-leyenda-pirata",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "assets:fetch": "node tools/fetch-assets.mjs",
+    "assets:optimize": "node tools/optimize.mjs",
+    "assets": "npm run assets:fetch && npm run assets:optimize",
+    "shoot": "node tools/shoot.mjs"
+  },
+  "dependencies": {
+    "three": "^0.171.0"
+  },
+  "devDependencies": {
+    "@gltf-transform/core": "^4.1.0",
+    "@gltf-transform/extensions": "^4.1.0",
+    "@gltf-transform/functions": "^4.1.0",
+    "@types/three": "^0.171.0",
+    "meshoptimizer": "^0.22.0",
+    "playwright": "^1.49.0",
+    "sharp": "^0.33.5",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0"
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "_comment": "source = path inside 'Voxel Game Assets/' in proofofplay/piratenation-art (CC0-1.0). id = output name (public/assets/models/<id>.glb). Folders with trailing spaces are intentional - they exist in the repo.",
+  "base": "https://media.githubusercontent.com/media/proofofplay/piratenation-art/main/Voxel%20Game%20Assets/",
+  "assets": [
+    { "id": "ship_skiff",        "source": "ships/Pirate Ships/Pirate_s Skiff (XS)/VE/ship_pirate_XS01C/ship_pirate_XS01C.gltf" },
+    { "id": "ship_sloop",        "source": "ships/Pirate Ships/Pirate_s Sloop (S)/ship_pirate_small.gltf" },
+    { "id": "ship_galleon",      "source": "ships/Pirate Ships/Pirate_s Galleon (M)/ship_pirate01_v5.gltf" },
+    { "id": "ship_frigate",      "source": "ships/Pirate Ships/Pirate_s Frigate (L)/VE/ship_pirate_large02/ship_pirate_frigate_L.gltf" },
+    { "id": "ship_undead",       "source": "ships/Undead Ships/Undead Sloop/VE/model.gltf", "optional": true },
+
+    { "id": "bldg_townhall",     "source": "world items/buildings/Town Hall (Pirate Crew-Level Up) /bldg_TownHall05.gltf" },
+    { "id": "bldg_distillery",   "source": "world items/buildings/Distillery/VE/building_5x5_Distillery.gltf" },
+    { "id": "bldg_foundry",      "source": "world items/buildings/Foundry/20240419/building_6x6_foundry01/building_6x6_foundry01.gltf" },
+    { "id": "bldg_shipwright",   "source": "world items/buildings/Shipwright/Original design/VE/building_4x7_shipwright.gltf" },
+    { "id": "bldg_docks",        "source": "world items/buildings/Docks/GLTF/bldg_Docks.gltf" },
+    { "id": "bldg_marketplace",  "source": "world items/buildings/Marketplace/VE/Building_5x5_Marketplace.gltf" },
+    { "id": "bldg_bank",         "source": "world items/buildings/Bank/VE/Building_5x5_Bank.gltf" },
+    { "id": "bldg_blacksmith",   "source": "world items/buildings/Blacksmith/Final/Building_4x8_Blacksmith.gltf" },
+    { "id": "bldg_tailor",       "source": "world items/buildings/Tailor Shop/20240127/building_6x6_tailorshop01/VE/building_6x6_tailorshop01.gltf" },
+    { "id": "bldg_tikibar",      "source": "world items/buildings/Tiki Bar/VE/Building_5x5_Tiki_Bar.gltf" },
+    { "id": "bldg_windmill",     "source": "world items/buildings/Triple Wind Mill/VE/Building_6x6x6_CoolWindmill.gltf" },
+    { "id": "bldg_workshop",     "source": "world items/buildings/workshop/building_6x6_workshop_lv1/model.gltf" },
+    { "id": "bldg_wishingwell",  "source": "world items/buildings/Wishing Well/VE/item_2x2_wishingwell.gltf" },
+
+    { "id": "tree_palm",         "source": "world items/Trees/Palm Tree Animated/20221030/GLTF/PN-PalmTreeAnimated.gltf" },
+    { "id": "tree_palm_tall",    "source": "world items/Trees/Palm Tree Tall Animated/20221030/GLTF/PN-PalmTreeTallAnimated.gltf" },
+    { "id": "harv_oak",          "source": "world items/harvestables/Oak Tree/20240924/oaktree_lv1/oaktree_empty_lv1/VE/oaktree_empty_lv1.gltf" },
+    { "id": "harv_pine",         "source": "world items/harvestables/Pine Tree/20240924/pinetree_lv1/pinetree_empty_lv1/VE/pinetree_empty_lv1.gltf" },
+    { "id": "harv_ironore",      "source": "world items/harvestables/Iron Ore/ironore_empty/ironore_empty.gltf" },
+    { "id": "harv_copperore",    "source": "world items/harvestables/Copper Ore/copperore_lv1/copperore_empty_lv1/VE/copperore_empty_lv1.gltf" },
+    { "id": "harv_cotton",       "source": "world items/harvestables/Cotton/20240924/cotton_lv1/cotton_empty_lv1/VE/cotton_empty_lv1.gltf" },
+
+    { "id": "deco_bush",         "source": "world items/Decorations/Alt bushes/20240719/item_2x1x1_altbushes01/VE/item_2x1x1_altbushes01.gltf" },
+    { "id": "deco_fern",         "source": "world items/Decorations/Birds of Paradise Fern/VE/PN-BirdsOfParadisePlant.gltf" },
+    { "id": "deco_starfish",     "source": "world items/Decorations/Blue Starfish/Blue Starfish Uncommon/model.gltf" },
+    { "id": "chest_bandit",      "source": "chests/Bandit Chest/chest_bandit.gltf" },
+
+    { "id": "mob_blowfish",      "source": "Mob Enemies /Blowfish/Blowfish Neutral/model.gltf" },
+    { "id": "mob_kelpling",      "source": "Mob Enemies /Kelpling/Water Affinity /model.gltf" },
+    { "id": "mob_shark",         "source": "Mob Enemies /Hammerdead Shark/hammerdeadshark_water/HammerdeadWaterCommon /model.gltf" },
+    { "id": "mob_squid",         "source": "Mob Enemies /Giant Squid /Giant Squid Neutral/model.gltf" },
+    { "id": "mob_trilobite",     "source": "Mob Enemies /Trilobite/Trilobite Neutral/model.gltf" },
+    { "id": "mob_jellyfish",     "source": "Mob Enemies /Mutant Jellyfish/Mutant Jellyfish Neutral /model.gltf" },
+    { "id": "mob_anglerfish",    "source": "Mob Enemies /Anglerfish/Anglerfish Neutral /model.gltf" },
+    { "id": "mob_sealion",       "source": "Mob Enemies /Sea Lion/Sea Lion Neutral /model.gltf" }
+  ]
+}
