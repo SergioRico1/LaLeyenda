@@ -42,7 +42,7 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
   const rng = new Rng(`${seed}:decor`);
   const mixers: THREE.AnimationMixer[] = [];
 
-  const terrain = buildIslandMesh(shape);
+  const terrain = buildIslandMesh(shape, `${seed}:grain`);
   stage.scene.add(terrain);
 
   const islandWorldSize = shape.size * CELL;

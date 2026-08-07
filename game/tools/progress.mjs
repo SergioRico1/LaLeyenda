@@ -134,3 +134,13 @@ const html = `<!doctype html>
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(OUT, html);
 console.log(`${path.relative(ROOT, OUT)} (${(html.length / 1024).toFixed(0)}KB)`);
+
+// A body-only copy for publishing as an Artifact, which supplies its own
+// document skeleton and rejects a second <html>/<head>.
+const fragment = html
+  .replace(/^[\s\S]*?<title>/, '<title>')
+  .replace(/<\/head>\s*<body>/, '')
+  .replace(/<\/body>\s*<\/html>\s*$/, '');
+const FRAGMENT_OUT = path.join(ROOT, 'progress', 'artifact.html');
+fs.writeFileSync(FRAGMENT_OUT, fragment);
+console.log(`${path.relative(ROOT, FRAGMENT_OUT)} (${(fragment.length / 1024).toFixed(0)}KB)`);

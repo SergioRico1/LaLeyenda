@@ -146,10 +146,25 @@ function stampGrassPlots(cells: TerrainCell[], size: number, rng: Rng): void {
 
 /** Builds the terrain meshes. One merged geometry per material keeps this at a
  *  handful of draw calls no matter how many cells the island has. */
-export function buildIslandMesh(shape: IslandShape): THREE.Group {
+export function buildIslandMesh(shape: IslandShape, seed = 'terrain'): THREE.Group {
   const group = new THREE.Group();
   group.name = 'island';
   const { size, cells } = shape;
+  const grain = new Rng(seed);
+
+  // Per-cell albedo jitter. A patch of reference terrain carries ~25 distinct
+  // colours where a flat fill gives exactly one, and that difference is most of
+  // why an untextured surface reads as a greybox. Two scales: a fine per-cell
+  // grain, and a slower drift so the variation clumps instead of fizzing.
+  const jitter = (colour: number, x: number, z: number, strength: number): number => {
+    const fine = grain.range(-1, 1) * strength;
+    const drift = Math.sin(x * 0.37 + z * 0.21) * 0.5 + Math.sin(x * 0.11 - z * 0.29) * 0.5;
+    const k = 1 + fine + drift * strength * 0.8;
+    const r = Math.min(255, Math.max(0, Math.round(((colour >> 16) & 0xff) * k)));
+    const g = Math.min(255, Math.max(0, Math.round(((colour >> 8) & 0xff) * k)));
+    const b = Math.min(255, Math.max(0, Math.round((colour & 0xff) * k)));
+    return (r << 16) | (g << 8) | b;
+  };
   const at = (x: number, z: number) => (x < 0 || z < 0 || x >= size || z >= size ? null : cells[z * size + x]);
 
   const byMaterial = new Map<Material, { positions: number[]; normals: number[]; colours: number[] }>();
@@ -187,13 +202,14 @@ export function buildIslandMesh(shape: IslandShape): THREE.Group {
       const z1 = z0 + CELL;
       const y = cell.height * STEP;
 
-      // Top face
+      // Top face. Grass carries more variation than sand in the reference.
+      const topStrength = cell.material === 'grass' ? 0.055 : 0.03;
       quad(cell.material, [
         [x0, y, z0],
         [x0, y, z1],
         [x1, y, z1],
         [x1, y, z0],
-      ], [0, 1, 0]);
+      ], [0, 1, 0], jitter(PALETTE[cell.material], x, z, topStrength));
 
       // Side walls, only where the neighbour is lower — the exposed dirt/sand
       // cliffs that give the island its stepped silhouette.
@@ -235,7 +251,7 @@ export function buildIslandMesh(shape: IslandShape): THREE.Group {
         const colour = coastal
           ? (lit ? WALL_CLIFF_SUN : WALL_CLIFF_SHADE)
           : (lit ? WALL_TERRACE_SUN : WALL_TERRACE_SHADE);
-        quad('dirt', side.verts(y, yBottom - (coastal ? 0.6 : 0)), side.normal, colour);
+        quad('dirt', side.verts(y, yBottom - (coastal ? 0.6 : 0)), side.normal, jitter(colour, x, z, 0.045));
       }
     }
   }
