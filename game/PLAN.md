@@ -3,6 +3,16 @@
 Juego de móvil en **Three.js** con los assets voxel liberados de Pirate Nation
 ([proofofplay/piratenation-art](https://github.com/proofofplay/piratenation-art), licencia **CC0-1.0**, dominio público).
 
+## Referencias (el listón)
+
+Dos referencias distintas, y no se mezclan:
+
+- **Arte y mundo 3D → Pirate Nation** (`reference/*.png`): el juego comercial hecho con
+  estos mismos assets CC0. Marca el agua, el terreno, la iluminación y la escala.
+- **UI y enganche → Clash of Clans / Clash Royale** (`reference/clash/*.png`): es un juego
+  de móvil, y Clash es el estándar de HUD táctil y de los bucles que hacen volver cada día.
+  El diseño de retención está en [`RETENTION.md`](RETENTION.md).
+
 ## Visión
 
 Un juego pirata donde el jugador:
@@ -125,7 +135,11 @@ agua, a 60 fps, y la partida (un contador tonto) sobrevive a cerrar y reabrir el
   - Progreso offline al volver (producción acumulada, con tope de almacén).
 - Edificios v1: Town Hall, Distillery, Foundry, aserradero (elegir modelo), Bank/almacenes,
   Shipwright, Docks, Marketplace (convierte recursos con comisión), palmeras decorativas.
-- HUD: recursos arriba, botón construir, panel de info/mejora por edificio, cola de timers.
+- HUD estilo Clash (ver `RETENTION.md` para la especificación completa): barras de recurso
+  arriba a la derecha, constructores `1/2` arriba al centro, botón de acción primaria abajo
+  a la izquierda, tienda/misiones abajo a la derecha, badges rojos en lo reclamable.
+- Ganchos de sesión desde el primer día: burbujas de recolección, etiqueta `¡Lleno!`,
+  límite de constructores, recompensa diaria encadenada y misiones diarias.
 
 **Hecho cuando:** se puede jugar una sesión de 10 min colocando y mejorando edificios, cerrar
 el juego, volver al día siguiente y encontrar producción acumulada. Sin bugs de guardado.

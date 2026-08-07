@@ -32,7 +32,7 @@ const STATE_LABEL = { done: 'wins the blind test', in_progress: 'in progress', p
 
 const sections = [];
 for (const piece of status.pieces) {
-  const barShot = piece.bar?.endsWith('.png') ? await dataUri(piece.bar) : null;
+  const barShot = /\.(png|jpg)$/.test(piece.bar ?? '') ? await dataUri(piece.bar) : null;
   const rounds = [];
   for (const round of piece.rounds) {
     const shot = await dataUri(round.shot);
@@ -58,7 +58,7 @@ for (const piece of status.pieces) {
         <h2>${esc(piece.name)}</h2>
         <span class="state state-${esc(piece.status)}">${esc(STATE_LABEL[piece.status] ?? piece.status)}</span>
       </header>
-      <p class="piece-bar"><strong>Bar:</strong> ${esc(piece.bar?.endsWith('.png') ? 'blind A/B against ' + piece.bar : piece.bar)}</p>
+      <p class="piece-bar"><strong>Bar:</strong> ${esc(/\.(png|jpg)$/.test(piece.bar ?? '') ? 'blind A/B against ' + piece.bar : piece.bar)}</p>
       ${rounds.length ? `<ol class="rounds">${rounds.join('')}</ol>` : '<p class="empty">No rounds yet.</p>'}
     </section>`);
 }

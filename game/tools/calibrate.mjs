@@ -92,14 +92,15 @@ async function measure(id, axis) {
   let shot = await shoot(id, extent, axis);
   if (!shot) throw new Error('nothing rendered');
 
-  // Zoom until the silhouette covers a decent share of the frame, so a few
-  // stray pixels cannot swing the result.
-  for (let pass = 0; pass < 6; pass++) {
+  // Zoom in until the silhouette covers a decent share of the frame, so a few
+  // stray pixels cannot swing the result. A small silhouette means the camera
+  // box is too big, so the extent shrinks toward filling ~60% of the frame.
+  for (let pass = 0; pass < 4; pass++) {
     const frac = Math.max((shot.maxX - shot.minX) / shot.w, (shot.maxY - shot.minY) / shot.h);
     if (frac > 0.35) break;
-    extent *= Math.max(2, Math.min(20, 0.6 / Math.max(frac, 0.002)));
-    const next = await shoot(id, extent, axis);
+    const next = await shoot(id, extent * Math.max(frac / 0.6, 0.01), axis);
     if (!next) break;
+    extent *= Math.max(frac / 0.6, 0.01);
     shot = next;
   }
 
