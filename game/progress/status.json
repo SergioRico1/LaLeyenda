@@ -20,6 +20,12 @@
           "summary": "Root cause found and split in two: gltf-transform's flatten/join double-applied armature transforms on skinned models, and no analytical method measures these models correctly. Pipeline now skips flatten/join for skinned documents, and sizes are calibrated from rendered pixels.",
           "gap": "Calibration running.",
           "shot": null
+        },
+        {
+          "n": 3,
+          "summary": "Sizes calibrated by rendering each model's silhouette under an orthographic camera of known extent. Found the last cause of the scale bug: every clip re-asserts the armature's normalizing scale on frame one, so a model's size was only valid until the mixer ticked. The pipeline now drops root scale tracks; parts still animate as authored.",
+          "gap": "Fourteen models remain over the 300KB budget. Voxel models carry tiny palette textures, so converting them to vertex colours should collapse those to one material each.",
+          "shot": null
         }
       ]
     },
@@ -34,6 +40,12 @@
           "summary": "Terrain, stepped beach/grass plateaus, sand paths and the voxel water shader render correctly. Buildings blocked on the scale bug.",
           "gap": "Water reads too dark and too uniformly blue; foam is evenly scattered where the reference clusters it near the shore. No buildings visible yet.",
           "shot": "shots/v1_bare.png"
+        },
+        {
+          "n": 2,
+          "summary": "Terrain rebuilt to the measured recipe: island scaled to 26 cells with taller steps, beach ring stepping up to a plateau, grass plots stamped as rounded rectangles with sand between them reading as paths, sun/shade wall colours baked into vertex colours, and lighting retuned to the reference's bright low-contrast exposure.",
+          "gap": "The terrain still has no surface noise at all - the reference has 25 unique colours in a patch where we have 1 - and the plots are laid out arbitrarily rather than composed.",
+          "shot": "shots/v3_water.png"
         }
       ]
     },
@@ -42,7 +54,14 @@
       "name": "Ocean",
       "bar": "reference/island_hero.png",
       "status": "in_progress",
-      "rounds": []
+      "rounds": [
+        {
+          "n": 1,
+          "summary": "Ocean rewritten from measurements taken off the reference: flat surface, 12-step dithered depth ramp keyed to a true shoreline distance field, view ramp fogging toward the horizon, near-camera darkening, clustered two-tier elongated foam decaying exponentially from the shore, and a solid waterline collar.",
+          "gap": "Open-water foam is still denser than the reference's 0.7-1.5%, and the shallow shelf reads flatter than the measured 90-110px gradient.",
+          "shot": "shots/v3_water.png"
+        }
+      ]
     },
     {
       "id": "sea",
@@ -55,8 +74,15 @@
       "id": "ui",
       "name": "HUD and panels (Clash-style)",
       "bar": "reference/clash/coc_hud_collect.jpg",
-      "status": "pending",
-      "rounds": []
+      "status": "in_progress",
+      "rounds": [
+        {
+          "n": 1,
+          "summary": "Clash UI language reverse-engineered into a 1600-line implementation spec (src/ui/UI_SPEC.md): full token palette, the four-layer rule that makes a surface read as Clash (constant-weight ink contour, hard gloss step at ~50%, warm top rim, dark lip with zero-offset extrusion), portrait and landscape layouts, and component specs.",
+          "gap": "Nothing implemented yet - the spec exists, the HUD does not.",
+          "shot": null
+        }
+      ]
     },
     {
       "id": "economy",
@@ -69,8 +95,15 @@
       "id": "hooks",
       "name": "Retention loops",
       "bar": "reference/clash/cr_chest_reward.jpg",
-      "status": "pending",
-      "rounds": []
+      "status": "in_progress",
+      "rounds": [
+        {
+          "n": 1,
+          "summary": "Retention design made concrete: beat-by-beat first three minutes (first tap before 10s, two buildings and two collections inside 32s, first real timer at 45s, first chest pre-aged so opening costs exactly 1 gem), plus full balance tables for producers, storages, town hall and chests.",
+          "gap": "Corrections to RETENTION.md not yet folded in: start with 2 builders not 1, producer cap and storage cap are two different mechanics, and total storage must exceed the most expensive unlock by 25% or the player hits a hard wall.",
+          "shot": null
+        }
+      ]
     }
   ]
 }

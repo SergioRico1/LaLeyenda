@@ -63,6 +63,28 @@ for (const file of files) {
       prune({ keepAttributes: false, keepLeaves: false })
     );
 
+    // Drop scale tracks that drive an armature root.
+    //
+    // VoxEdit bakes its normalization onto the armature node (23x on the
+    // foundry) and then has every clip re-assert that scale on frame one. Any
+    // size the game computes for the model is therefore only valid until the
+    // mixer ticks, after which the building springs back to native size — which
+    // is how a 5-unit foundry ended up filling the screen. The root's scale is
+    // normalization, not animation, so removing those channels leaves the parts
+    // animating exactly as authored while the model's size stays put.
+    const sceneRoots = new Set(doc.getRoot().listScenes().flatMap((s) => s.listChildren()));
+    let droppedScaleTracks = 0;
+    for (const anim of doc.getRoot().listAnimations()) {
+      for (const channel of anim.listChannels()) {
+        if (channel.getTargetPath() !== 'scale') continue;
+        const node = channel.getTargetNode();
+        if (!node || !sceneRoots.has(node)) continue;
+        channel.dispose();
+        droppedScaleTracks++;
+      }
+    }
+    if (droppedScaleTracks) console.log(`    dropped ${droppedScaleTracks} root scale track(s)`);
+
     // VoxEdit gives every part its own buffer (some models ship 4000+ of them).
     // GLB allows at most one, so fold every accessor onto the first buffer.
     const buffers = doc.getRoot().listBuffers();

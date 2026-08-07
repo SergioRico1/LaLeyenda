@@ -27,31 +27,36 @@ export class Stage {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color('#8fd8ec');
 
     this.camera = new THREE.PerspectiveCamera(38, 1, 0.5, 800);
 
-    // Sun from the upper right, matching the reference's shadow direction.
-    this.sun = new THREE.DirectionalLight(0xfff4e0, 2.1);
-    this.sun.position.set(48, 72, 28);
+    // Sun high and slightly clockwise of the camera, so shadows fall away from
+    // the viewer and a touch to the left — the direction traced in the reference.
+    this.sun = new THREE.DirectionalLight(0xfff4e0, 1.55);
+    this.sun.position.set(49, 80, 35);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.camera.near = 1;
     this.sun.shadow.camera.far = 260;
-    const extent = 46;
+    // Tight enough that one shadow texel is a small fraction of a terrain cell.
+    const extent = 16;
     Object.assign(this.sun.shadow.camera, {
       left: -extent, right: extent, top: extent, bottom: -extent,
     });
-    this.sun.shadow.bias = -0.0012;
-    this.sun.shadow.normalBias = 0.03;
+    this.sun.shadow.bias = -0.0008;
+    this.sun.shadow.normalBias = 0.02;
+    this.sun.shadow.radius = 1;
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
 
     // Warm-to-cool ambient: sky light above, bounced sand light from below.
-    this.scene.add(new THREE.HemisphereLight(0xbfe9ff, 0xe8d5a8, 1.15));
+    // Tuned so a lit top face renders at essentially its own albedo — the
+    // reference is bright and low-contrast, not moody.
+    this.scene.add(new THREE.HemisphereLight(0xcfe9ff, 0xe8d9b4, 2.15));
 
     this.resize();
     window.addEventListener('resize', () => this.resize());

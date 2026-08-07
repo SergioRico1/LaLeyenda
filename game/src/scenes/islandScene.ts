@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Stage } from '../render/stage';
 import { Water } from '../render/water';
-import { generateIsland, buildIslandMesh, buildDepthMask, cellToWorld, STEP, CELL } from '../render/island';
+import { generateIsland, buildIslandMesh, buildShoreSDF, cellToWorld, STEP, CELL } from '../render/island';
 import { instantiate, preload } from '../render/assets';
 import { Rng } from '../core/rng';
 
@@ -16,16 +16,16 @@ interface Placement {
 }
 
 const BUILDINGS: Placement[] = [
-  { model: 'bldg_townhall', x: 20, z: 17, footprint: 6, clip: 'idle' },
-  { model: 'bldg_marketplace', x: 28, z: 14, footprint: 5, clip: 'idle' },
-  { model: 'bldg_foundry', x: 29, z: 22, footprint: 5, clip: 'idle' },
-  { model: 'bldg_distillery', x: 13, z: 21, footprint: 5 },
-  { model: 'bldg_shipwright', x: 14, z: 28, footprint: 5 },
-  { model: 'bldg_docks', x: 34, z: 27, footprint: 7, clip: 'idle' },
-  { model: 'bldg_bank', x: 21, z: 26, footprint: 4 },
-  { model: 'bldg_tikibar', x: 25, z: 31, footprint: 4 },
-  { model: 'bldg_windmill', x: 12, z: 14, footprint: 5, clip: 'idle' },
-  { model: 'bldg_workshop', x: 20, z: 11, footprint: 5, clip: 'idle' },
+  { model: 'bldg_townhall', x: 13, z: 11, footprint: 6, clip: 'idle' },
+  { model: 'bldg_marketplace', x: 18, z: 9, footprint: 5, clip: 'idle' },
+  { model: 'bldg_foundry', x: 19, z: 14, footprint: 5, clip: 'idle' },
+  { model: 'bldg_distillery', x: 8, z: 14, footprint: 5 },
+  { model: 'bldg_shipwright', x: 9, z: 18, footprint: 5 },
+  { model: 'bldg_docks', x: 22, z: 18, footprint: 7, clip: 'idle' },
+  { model: 'bldg_bank', x: 14, z: 17, footprint: 4 },
+  { model: 'bldg_tikibar', x: 16, z: 20, footprint: 4 },
+  { model: 'bldg_windmill', x: 8, z: 9, footprint: 5, clip: 'idle' },
+  { model: 'bldg_workshop', x: 13, z: 7, footprint: 5, clip: 'idle' },
 ];
 
 export const ISLAND_MODELS = [
@@ -38,7 +38,7 @@ export interface IslandScene {
 }
 
 export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Promise<IslandScene> {
-  const shape = generateIsland(seed, 40);
+  const shape = generateIsland(seed, 26);
   const rng = new Rng(`${seed}:decor`);
   const mixers: THREE.AnimationMixer[] = [];
 
@@ -46,16 +46,18 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
   stage.scene.add(terrain);
 
   const islandWorldSize = shape.size * CELL;
+  const SDF_RANGE = 10;
   const water = new Water({
     size: 420,
-    cell: 1.0,
-    waveHeight: 0.05,
-    foamAmount: 0.045,
-    depthMap: buildDepthMask(shape),
-    depthOrigin: new THREE.Vector2(-islandWorldSize / 2, -islandWorldSize / 2),
-    depthSize: islandWorldSize,
+    // One water cell is about a fifth of a terrain block in the reference.
+    cell: CELL * 0.2,
+    palette: 'lagoon',
+    shoreSDF: buildShoreSDF(shape, SDF_RANGE),
+    sdfOrigin: new THREE.Vector2(-islandWorldSize / 2, -islandWorldSize / 2),
+    sdfSize: islandWorldSize,
+    sdfRange: SDF_RANGE,
   });
-  water.mesh.position.y = STEP * 0.85; // waterline just below the beach top
+  water.mesh.position.y = STEP * 0.82; // waterline just below the beach top
   stage.scene.add(water.mesh);
 
   // ?parts=terrain,buildings,decor,ship narrows what gets built, so a problem
@@ -116,7 +118,7 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
   // The player's ship, moored off the dock.
   if (parts.has('ship')) {
     const ship = await instantiate('ship_skiff', { fit: 5, clip: 'Idle' });
-    ship.object.position.set(-26, STEP * 0.9, 14);
+    ship.object.position.set(-17, STEP * 0.85, 9);
     ship.object.rotation.y = -0.5;
     stage.scene.add(ship.object);
     if (ship.mixer) mixers.push(ship.mixer);
@@ -128,7 +130,7 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
   const camParam = new URLSearchParams(location.search).get('cam');
   const camPos = camParam
     ? (camParam.split(',').map(Number) as [number, number, number])
-    : ([38, 42, 46] as [number, number, number]);
+    : ([26, 29, 32] as [number, number, number]);
   stage.camera.position.set(camPos[0], camPos[1], camPos[2]);
   stage.camera.lookAt(target);
   stage.sun.target.position.copy(target);
@@ -151,7 +153,7 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
 
   return {
     update(dt, elapsed) {
-      water.update(elapsed);
+      water.update(elapsed, stage.camera);
       for (const m of mixers) m.update(dt);
     },
   };

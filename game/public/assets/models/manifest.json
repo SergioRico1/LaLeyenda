@@ -77,7 +77,7 @@
     ]
   },
   "bldg_marketplace": {
-    "kb": 465,
+    "kb": 464,
     "clips": [
       "idle",
       "action"
@@ -363,7 +363,7 @@
     ]
   },
   "mob_jellyfish": {
-    "kb": 927,
+    "kb": 926,
     "clips": [
       "idle",
       "hit",
