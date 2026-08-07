@@ -1,0 +1,62 @@
+/* ============================================================================
+ * bubble.css — §3.9 collection bubble.
+ *
+ * The 1-second payoff for opening the app. Offline production is applied
+ * BEFORE the first frame, so the bubble is already there in frame 1 — the
+ * island is never visually dead.
+ *
+ * The contour wraps the square AND the tail as ONE silhouette, so the shape is
+ * a single SVG path rather than a div with a rotated pseudo-element.
+ * ========================================================================== */
+
+.bubble{
+  position:relative;
+  width:46px; height:62px;
+  pointer-events:auto;
+  cursor:pointer;
+  transform-origin:50% 74%;
+}
+.bubble svg{ position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
+.bubble__icon{
+  position:absolute; left:50%; top:23px;
+  width:32px; height:32px;                 /* ~70% of the bubble width */
+  transform:translate(-50%,-50%);
+  pointer-events:none;
+}
+.bubble__icon img{ width:100%; height:100%; object-fit:contain; }
+
+/* Idle bob, phase-offset per bubble so a row of them never syncs. */
+.bubble__bob{ animation:ui-bob 1.6s ease-in-out infinite; }
+
+/* Min 48px tap target (§3.9) — the drawn shape is 46px wide. */
+.bubble::after{
+  content:''; position:absolute; left:50%; top:46%;
+  width:56px; height:64px; transform:translate(-50%,-50%);
+}
+
+@keyframes ui-bubble-burst{
+  0%   { transform:scale(1); opacity:1; }
+  40%  { transform:scale(1.25); opacity:1; }
+  100% { transform:scale(0); opacity:0; }
+}
+.bubble.is-bursting{ animation:ui-bubble-burst 160ms ease-in forwards; }
+
+/* Collection is a FLIGHT (§5.4): the value travels along a visible arc from
+ * source to destination and the destination reacts on arrival. The element is
+ * parked on the HUD layer and driven from JS, one transform per frame. */
+.flyer{
+  position:absolute; left:0; top:0;
+  z-index:var(--z-toast);
+  pointer-events:none;
+  white-space:nowrap;
+  will-change:transform;
+}
+
+.spark{
+  position:absolute; left:0; top:0;
+  width:7px; height:7px; border-radius:2px;
+  background:var(--fill,#F5D546);
+  border:2px solid var(--ui-ink);
+  pointer-events:none;
+  will-change:transform, opacity;
+}

@@ -4,6 +4,8 @@ import { Water } from '../render/water';
 import { generateIsland, buildIslandMesh, buildShoreSDF, cellToWorld, STEP, CELL } from '../render/island';
 import { instantiate, preload } from '../render/assets';
 import { Rng } from '../core/rng';
+import { createHud } from '../ui/hud';
+import { MOCK_HUD, MOCK_WORLD } from '../ui/mockState';
 
 /** The home island: the builder scene, seen from the Clash-of-Clans style camera. */
 
@@ -151,10 +153,58 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
     console.log(`[scene] largest object: ${worst.name} span ${worst.span.toFixed(1)}`);
   }
 
+  // --- HUD -----------------------------------------------------------------
+  // `?hud=0` drops the overlay entirely, so the world can be judged on its own
+  // pixels without chrome in the frame.
+  const hudEnabled = new URLSearchParams(location.search).get('hud') !== '0';
+  const uiRoot = document.getElementById('ui');
+  // Icons are baked through stage.renderer inside createHud, and this whole
+  // function is awaited before the first frame — so the HUD is fully populated
+  // in frame 1, which is what §7 asks of a cold start.
+  const hud = hudEnabled && uiRoot ? await createHud(uiRoot, stage.renderer, MOCK_HUD) : null;
+
+  // World-anchored UI hangs off the island GRID rather than off a model's
+  // bounding box: the cell is where the building is placed, and it stays
+  // correct regardless of how the model itself ends up normalized.
+  const anchors: Array<{ id: string; position: THREE.Vector3 }> = [];
+  if (hud) {
+    for (const mock of MOCK_WORLD) {
+      const building = BUILDINGS.find((b) => b.model === mock.building);
+      if (!building) continue;
+      const pos = cellToWorld(shape, building.x, building.z);
+      anchors.push({
+        id: mock.item.id,
+        position: new THREE.Vector3(pos.x, pos.y + mock.lift, pos.z),
+      });
+      hud.addWorldItem(mock.item);
+    }
+  }
+
+  const ndc = new THREE.Vector3();
+
   return {
     update(dt, elapsed) {
       water.update(elapsed, stage.camera);
       for (const m of mixers) m.update(dt);
+
+      if (!hud) return;
+      // Re-project every world-anchored element on the next frame (§2.3).
+      // matrixWorldInverse is otherwise only refreshed inside renderer.render,
+      // and in shot mode every update runs before the first render.
+      stage.camera.updateMatrixWorld();
+      stage.camera.matrixWorldInverse.copy(stage.camera.matrixWorld).invert();
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      for (const anchor of anchors) {
+        ndc.copy(anchor.position).project(stage.camera);
+        hud.place(
+          anchor.id,
+          (ndc.x * 0.5 + 0.5) * width,
+          (-ndc.y * 0.5 + 0.5) * height,
+          ndc.z < 1
+        );
+      }
+      hud.tick(elapsed);
     },
   };
 }

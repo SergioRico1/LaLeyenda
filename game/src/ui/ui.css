@@ -1,42 +1,17 @@
-:root {
-  --ink: #2a1a10;
-}
+/* ============================================================================
+ * ui.css — the overlay entry point, linked from index.html.
+ *
+ * Order matters: tokens first (everything below reads them), then the reset
+ * and the two text mixins, then the §2 layout, then the §3 components.
+ * ========================================================================== */
+@import './tokens.css';
+@import './base.css';
+@import './hud.css';
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-html,
-body,
-#app {
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  background: #0b3a5e;
-  -webkit-tap-highlight-color: transparent;
-}
-
-body {
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-  color: #fff;
-  overscroll-behavior: none;
-  touch-action: none;
-}
-
-#scene {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
-#ui {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-#ui > * {
-  pointer-events: auto;
-}
+@import './components/button.css';
+@import './components/pill.css';
+@import './components/chip.css';
+@import './components/badge.css';
+@import './components/bubble.css';
+@import './components/timer.css';
+@import './components/tray.css';

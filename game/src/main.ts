@@ -41,7 +41,9 @@ async function boot() {
         stage,
         params.get('id') ?? 'ship_skiff',
         Number(params.get('extent') ?? 4000),
-        (params.get('axis') as 'front' | 'top') ?? 'front'
+        (params.get('axis') as 'front' | 'top') ?? 'front',
+        params.get('fit') ? Number(params.get('fit')) : undefined,
+        params.get('clip') ?? undefined
       );
       break;
     }

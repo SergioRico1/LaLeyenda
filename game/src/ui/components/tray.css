@@ -1,0 +1,75 @@
+/* ============================================================================
+ * tray.css — §3.13 chest slot & tray.
+ *
+ * Four slots from the start, but ONLY ONE UNLOCKS AT A TIME — that Clash
+ * Royale restriction is what creates the pressure.
+ *
+ * Portrait collapses the whole tray into the Cofres tile (§10.8): four 62px
+ * slots plus gutters do not fit the 174px centre channel at 390pt, and
+ * shrinking them below 48px breaks the tap-target floor.
+ * ========================================================================== */
+
+.tray{
+  position:absolute;
+  left:50%; bottom:calc(16px + var(--ui-safe-b));
+  transform:translateX(-50%);
+  display:none;
+  gap:10px;
+  pointer-events:none;
+}
+@media (orientation:landscape){ .tray{ display:flex; } }
+
+.slot{
+  position:relative;
+  width:62px; height:78px;
+  border-radius:12px;
+  display:grid; place-items:center;
+  flex:0 0 auto;
+}
+.slot__art{
+  width:74%; height:auto;
+  filter:drop-shadow(0 3px 3px rgba(0,0,0,.4));
+  pointer-events:none;
+}
+
+/* Empty: dashed, translucent black, faint anchor glyph. */
+.slot--empty{
+  border:2px dashed rgba(255,255,255,.35);
+  background:rgba(0,0,0,.38);
+}
+.slot--empty .slot__art{ opacity:.3; filter:none; }
+
+/* Waiting / unlocking / ready all carry the full four layers. */
+.slot--live{
+  border:var(--ui-ink-w) solid var(--ui-ink);
+  background:linear-gradient(180deg,
+    #55504B 0%, #55504B 47%,
+    #3A3635 47.01%, #2E2B2A 92%,
+    #1C1A19 92.01%, #1C1A19 100%);
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.28), 0 4px 0 rgba(0,0,0,.3);
+  pointer-events:auto;
+}
+.slot--unlocking{ box-shadow:inset 0 2px 0 rgba(255,255,255,.28), 0 0 0 1px rgba(255,226,150,.75), 0 4px 0 rgba(0,0,0,.3); }
+/* A white radial behind the art, so a dark chest does not sit on a dark slot. */
+.slot--live::after{
+  content:''; position:absolute; left:50%; top:44%;
+  width:76%; height:76%; transform:translate(-50%,-50%);
+  border-radius:50%;
+  background:radial-gradient(circle, rgba(255,255,255,.30), transparent 66%);
+  pointer-events:none;
+}
+.slot--live .slot__art{ position:relative; z-index:1; }
+.slot--ready::before{
+  content:''; position:absolute; inset:-6px;
+  border-radius:16px;
+  background:radial-gradient(circle at 50% 45%, rgba(240,183,34,.55), transparent 62%);
+  pointer-events:none;
+}
+.slot--ready .slot__art{ animation:ui-bob .9s ease-in-out infinite; }
+
+.slot .timerbar{
+  position:absolute; left:50%; bottom:-6px;
+  width:56px; height:14px;
+  transform:translateX(-50%);
+}
+.slot .timerbar__label{ font-size:13px; transform:translate(-50%,-96%); }

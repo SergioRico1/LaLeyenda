@@ -1,0 +1,204 @@
+/* ============================================================================
+ * base.css — reset, font-face, the two text mixins (§1.9), the layer stack
+ * (§1.10) and the global motion rules (§5).
+ * ========================================================================== */
+
+/* --- §1.8 Fonts — self-hosted, offline-safe -------------------------------
+ *
+ * Lilita One and Fredoka are SIL OFL and are BUNDLED, not fetched: this is a
+ * PWA under a strict CSP and RETENTION.md assumes it opens offline. The files
+ * live in public/fonts/ and are split into the two unicode ranges Spanish
+ * needs, so the accented characters are covered without shipping the full face.
+ *
+ * `font-display:block` is deliberate — a system font flashing in outlined heavy
+ * text looks broken.
+ * ------------------------------------------------------------------------ */
+@import url('/fonts/fonts.css');
+
+/* --- reset --------------------------------------------------------------- */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0b3a5e;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: var(--ui-font-display);
+  color: #fff;
+  overscroll-behavior: none;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#scene {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+img {
+  display: block;
+  -webkit-user-drag: none;
+}
+
+/* --- §1.9 The two text mixins -------------------------------------------- */
+
+/* Every label in the game is a size variant of this. */
+.t{
+  font-family:var(--ui-font-display); font-weight:400;
+  color:#fff; letter-spacing:-.01em; line-height:1.05;
+  paint-order:stroke fill;                          /* REQUIRED */
+  -webkit-text-stroke:var(--ui-txt-stroke-h) var(--ui-ink);
+  text-shadow:var(--ui-txt-drop);
+}
+/* Every number and timer. */
+.num{
+  font-family:var(--ui-font-num); font-weight:600;
+  font-variant-numeric:tabular-nums;                /* counters must not jitter */
+  font-size:22px; letter-spacing:-.02em; color:#fff;
+  paint-order:stroke fill;
+  -webkit-text-stroke:var(--ui-txt-stroke-n) var(--ui-ink);
+  text-shadow:0 3px 0 rgba(0,0,0,.85);
+}
+.num u{ font-variant-caps:small-caps; font-size:.88em; text-decoration:none; } /* unit suffix */
+
+/* Engines without paint-order would have the stroke eat half the letterform,
+ * so they get an 8-direction ring at the VISUAL width plus the same drop. */
+@supports not (paint-order: stroke) {
+  .t, .num {
+    -webkit-text-stroke: 0;
+    text-shadow:
+      0.055em 0 0 var(--ui-ink), -0.055em 0 0 var(--ui-ink),
+      0 0.055em 0 var(--ui-ink), 0 -0.055em 0 var(--ui-ink),
+      0.04em 0.04em 0 var(--ui-ink), -0.04em 0.04em 0 var(--ui-ink),
+      0.04em -0.04em 0 var(--ui-ink), -0.04em -0.04em 0 var(--ui-ink),
+      0 0.11em 0 rgba(0,0,0,.82);
+  }
+}
+
+/* --- §1.6 Size ladder (portrait; ×1.12 in landscape) --------------------- */
+.t-title   { font-size:30px; -webkit-text-stroke-width:var(--ui-txt-stroke-h); text-shadow:0 3px 0 rgba(0,0,0,.82); }
+.t-section { font-size:20px; -webkit-text-stroke-width:0.13em; text-shadow:0 2px 0 rgba(0,0,0,.82); }
+.t-btn     { font-size:20px; -webkit-text-stroke-width:0.13em; text-shadow:0 2px 0 rgba(0,0,0,.82); }
+.t-caption { font-size:19px; -webkit-text-stroke-width:0.13em; text-shadow:0 2px 0 rgba(0,0,0,.82); }
+.t-body    { font-size:15px; -webkit-text-stroke-width:0.10em; text-shadow:0 1px 0 rgba(0,0,0,.82); }
+.t-micro   { font-size:13px; -webkit-text-stroke-width:0.10em; text-shadow:0 1px 0 rgba(0,0,0,.82); }
+.t-glyph   { -webkit-text-stroke-width:var(--ui-txt-stroke-x); text-shadow:0 2px 0 rgba(0,0,0,.82); }
+
+.num-hud   { font-size:22px; text-shadow:0 3px 0 rgba(0,0,0,.85); }
+.num-world { font-size:18px; text-shadow:0 2px 0 rgba(0,0,0,.85); }
+.num-badge { font-size:15px; -webkit-text-stroke-width:var(--ui-txt-stroke-x); text-shadow:0 2px 0 rgba(0,0,0,.85); }
+
+@media (orientation:landscape) {
+  .t-title{ font-size:34px; } .t-section,.t-btn{ font-size:22px; }
+  .t-caption{ font-size:20px; } .t-body{ font-size:17px; } .t-micro{ font-size:14px; }
+  .num-hud{ font-size:24px; }
+}
+
+/* --- §1.10 Layer stack --------------------------------------------------- */
+#ui {
+  position: absolute;
+  inset: 0;
+  /* The island must stay pannable through every gap in the HUD: only leaf
+   * interactive elements opt back in. */
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.layer-world     { position:absolute; inset:0; z-index:var(--z-world-ui); }
+.layer-hud       { position:absolute; inset:0; z-index:var(--z-hud); }
+.layer-buildbar  { z-index:var(--z-buildbar); }
+.layer-panel     { z-index:var(--z-panel); }
+.layer-page      { z-index:var(--z-page); }
+.layer-celebrate { z-index:var(--z-celebrate); }
+.layer-guide     { z-index:var(--z-guide); }
+.layer-toast     { z-index:var(--z-toast); }
+
+/* Anything the player can touch. --ui-tap-min is absolute (§1.7): anything
+ * drawn smaller carries an invisible padded hit area up to 48px. */
+.tap { pointer-events: auto; }
+.tap::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, var(--ui-tap-min));
+  height: max(100%, var(--ui-tap-min));
+  transform: translate(-50%, -50%);
+}
+
+/* --- §5 Motion ----------------------------------------------------------- */
+/* Nothing fades in — things arrive by scaling with an overshoot. Every
+ * animation below is ADDITIVE: the resting state is the base rule, so
+ * killing animation never leaves an element invisible or mis-sized. */
+@keyframes ui-pop {
+  0%   { transform: scale(0); }
+  70%  { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+@keyframes ui-pop-badge {
+  0%   { transform: translate(40%,-40%) scale(0); }
+  70%  { transform: translate(40%,-40%) scale(1.25); }
+  85%  { transform: translate(40%,-40%) scale(1.06); }
+  100% { transform: translate(40%,-40%) scale(1); }
+}
+@keyframes ui-bob   { 0%,100% { transform: translateY(-4px); } 50% { transform: translateY(4px); } }
+@keyframes ui-punch { 0% { transform: scale(1); } 40% { transform: scale(1.15); } 100% { transform: scale(1); } }
+@keyframes ui-slide-in-right {
+  0%   { transform: translateX(40px); }
+  70%  { transform: translateX(-6px); }
+  100% { transform: translateX(0); }
+}
+
+/* prefers-reduced-motion: keep every state change and every sound, replace
+ * travel and overshoot with a 100ms cross-fade, hold bubbles and badges. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 100ms !important;
+  }
+}
+
+/* Screenshot mode: the harness captures two frames after boot, so entrance
+ * animations would be caught at t≈0 (a badge at scale 0 is an invisible
+ * badge). Freeze everything at its resting state instead. */
+html.shot *, html.shot *::before, html.shot *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* --- fallback while the display woff2 files are not bundled (§1.8) -------
+ * Set by hud.ts when document.fonts reports Lilita One is missing. The
+ * system face is much lighter than Lilita One, and heavy outlined text needs
+ * the mass, so borrow it from the weight axis. Vanishes on its own the
+ * moment the real fonts ship. */
+/* Last-resort thickening if a bundled face ever fails to load. The display
+ * faces carry their weight in the glyph shapes, so a regular-weight system
+ * fallback under a heavy outline reads as broken rather than as a substitute. */
+html.font-fallback .t,
+html.font-fallback .num,
+html.font-fallback body { font-weight: 800; }
+html.font-fallback .t { letter-spacing: -.03em; }
+html.font-fallback .num { letter-spacing: -.04em; }

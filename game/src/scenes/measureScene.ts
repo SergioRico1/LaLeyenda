@@ -20,13 +20,18 @@ export async function createMeasureScene(
   stage: Stage,
   id: string,
   extent: number,
-  axis: 'front' | 'top'
+  axis: 'front' | 'top',
+  /** When set, the model is normalized to this footprint before measuring, so
+   *  the shot verifies what the game will actually draw rather than the raw
+   *  asset. Leave unset for pipeline calibration. */
+  fit?: number,
+  clip?: string
 ) {
   stage.scene.background = new THREE.Color(0x000000);
   // Silhouette only: unlit white so any covered pixel is unambiguous.
   stage.scene.remove(stage.sun);
 
-  const inst = await instantiate(id);
+  const inst = await instantiate(id, fit !== undefined ? { fit, clip } : {});
   inst.object.traverse((child) => {
     const mesh = child as THREE.Mesh;
     if (mesh.isMesh) {

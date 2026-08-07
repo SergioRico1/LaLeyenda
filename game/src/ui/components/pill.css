@@ -1,0 +1,129 @@
+/* ============================================================================
+ * pill.css — §3.1 storage pill, §3.2 wallet pill, §3.3 gem pill.
+ *
+ * The anatomy most implementations get wrong:
+ *   · the fill is ANCHORED RIGHT and drains LEFTWARD, with a hard vertical
+ *     left edge and no rounded cap (§6.2)
+ *   · the empty track is translucent WHITE over the live 3D scene — never an
+ *     opaque grey, which is what severs a HUD from its world (§6.3)
+ *   · the icon OVERHANGS the capsule (§6.6)
+ *   · no box-shadow: HUD pills sit ON the world, they do not float above it
+ * ========================================================================== */
+
+.pill{
+  --pct:0;
+  --fill:var(--ui-res-gold);
+  position:relative;
+  width:var(--ui-pill-w);
+  height:var(--ui-pill-h);
+  border:var(--ui-ink-w) solid var(--ui-ink);
+  border-radius:var(--ui-r-pill);
+  flex:0 0 auto;
+  /* Never tappable — which is exactly why it may live out of thumb reach. */
+  pointer-events:none;
+}
+
+.pill__track{
+  position:absolute; inset:0;
+  border-radius:var(--ui-r-pill);
+  overflow:hidden;
+  background:var(--ui-track-empty);
+}
+.pill__fill{
+  position:absolute; right:0; top:0; bottom:0;
+  width:calc(var(--pct) * 100%);
+  background-color:var(--fill);
+  background-image:var(--ui-fill-gloss);   /* top-lit split at 56% */
+  /* Hard vertical left edge, no feather, no rounded cap — the 1px darkening
+   * keeps that edge legible where fill and track are close in value (the
+   * metal pill over open water). */
+  box-shadow:inset 1px 0 0 rgba(0,0,0,.28);
+  transition:width .45s cubic-bezier(.2,.9,.3,1);
+}
+/* 1px warm-white rim along the top inside, across empty AND filled. */
+.pill__rim{
+  position:absolute; left:7px; right:7px; top:0; height:1px;
+  background:rgba(255,255,255,.5);
+  border-radius:999px;
+  pointer-events:none;
+}
+.pill__num{
+  position:absolute; right:46px; top:50%;
+  transform:translateY(-50%);
+  transform-origin:100% 50%;
+  font-size:20px;
+  white-space:nowrap;
+  pointer-events:none;
+}
+.pill__icon{
+  position:absolute; right:-18px; top:50%;
+  width:var(--ui-pill-icon); height:var(--ui-pill-icon);
+  transform:translateY(-50%);
+  pointer-events:none;
+}
+.pill__icon img{ width:100%; height:100%; object-fit:contain; }
+
+@media (orientation:landscape){
+  .pill__num{ font-size:22px; right:50px; }
+  .pill__icon{ right:-20px; }
+}
+
+/* Counters punch when they change (§5.3). A silently mutated counter is a bug. */
+.pill__num.is-punching{ animation:ui-punch 120ms ease-out; }
+/* The pill flashes white when a collected value lands on it (§3.9). */
+.pill.is-hit .pill__track{ box-shadow:inset 0 0 0 999px rgba(255,255,255,.30); }
+
+/* §3.1 states: at cap the fill lifts 6% and, while TWO OR MORE producers of
+ * that resource are capped, the pill pulses amber every 3s. One full producer
+ * does not pulse — the cue has to stay worth reading. */
+.pill.is-full .pill__fill{ filter:brightness(1.06); }
+@keyframes ui-pill-pulse{
+  0%, 84%, 100% { filter:brightness(1); }
+  92%           { filter:brightness(1.12); }
+}
+.pill.is-pressing{ animation:ui-pill-pulse 3s ease-in-out infinite; }
+
+/* --- §3.2 wallet variant / §3.3 gem pill ---------------------------------
+ * No fill bar: this variant shows what you HAVE, not how full you are.
+ * Interior is translucent BLACK, with a light rim on top and bottom. */
+.pill--well .pill__track{ background:var(--ui-track-well); }
+.pill--well .pill__rim--low{
+  top:auto; bottom:0;
+  background:rgba(255,255,255,.28);
+}
+
+/* The `+` sits on the end OPPOSITE the icon (§3.3.2). */
+.plus{
+  --brk:60%;
+  position:absolute; left:-10px; top:50%;
+  width:34px; height:34px;
+  transform:translateY(-50%);
+  border:var(--ui-ink-w) solid var(--ui-ink);
+  border-radius:10px;
+  display:grid; place-items:center;
+  background:linear-gradient(180deg,
+    #8FD13C 0%, #79BE2A var(--brk),
+    #5C910F calc(var(--brk) + .01%), #4E7D0E 92%,
+    #33570A 92.01%, #33570A 100%);
+  box-shadow:inset 0 2px 0 var(--ui-rim), 0 3px 0 rgba(0,0,0,.32);
+  pointer-events:auto;
+  transition:transform .06s ease-out, box-shadow .06s ease-out;
+}
+.plus:active{
+  transform:translateY(calc(-50% + 3px));
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.35), 0 1px 0 rgba(0,0,0,.3);
+}
+.plus span{
+  font-size:20px; line-height:1;
+  -webkit-text-stroke-width:var(--ui-txt-stroke-x);
+  text-shadow:0 2px 0 rgba(0,0,0,.82);
+  margin-top:-2px;
+}
+.plus.tap::after{ width:48px; height:48px; }
+
+@media (orientation:landscape){
+  .plus{ width:38px; height:38px; border-radius:10px; }
+}
+
+/* New pills slide in from the right and settle (§4.1 staged reveal). */
+.pill.is-revealing{ animation:ui-slide-in-right 280ms cubic-bezier(.2,1.3,.4,1); }

@@ -1,0 +1,150 @@
+/* ============================================================================
+ * chip.css — §3.4 builder chip, §2.4 status chip, the level badge + XP
+ * capsule, and §3.10 the dashed `¡Lleno!` label.
+ * ========================================================================== */
+
+/* --- shared capsule ------------------------------------------------------ */
+.cap{
+  position:relative;
+  height:32px;
+  border:var(--ui-ink-w) solid var(--ui-ink);
+  border-radius:var(--ui-r-pill);
+  background:var(--ui-track-well);   /* translucent black — the world reads through */
+  display:flex; align-items:center;
+  flex:0 0 auto;
+}
+.cap__rim{
+  position:absolute; left:7px; right:7px; top:0; height:1px;
+  background:rgba(255,255,255,.45); border-radius:999px; pointer-events:none;
+}
+.cap__icon{
+  position:absolute; top:50%;
+  transform:translateY(-50%);
+  pointer-events:none;
+}
+.cap__icon img{ width:100%; height:100%; object-fit:contain; }
+
+/* --- §3.4 builder chip ---------------------------------------------------
+ * Portrait: icon LEFT, overhanging the cap by ~40%, numeral centred-right,
+ * the chip itself is the tap target. Landscape adds the `+` on the right
+ * (opposite end from the icon) and the blue info `i` above. */
+.builder-chip{
+  width:140px;
+  padding-left:32px;
+  pointer-events:auto;
+}
+.builder-chip .cap__icon{ left:-18px; width:44px; height:44px; }
+.builder-chip__num{
+  margin-left:auto; margin-right:14px;
+  font-size:20px;
+}
+.builder-chip .plus{ left:auto; right:-12px; display:none; }
+.builder-chip__info{
+  position:absolute; left:-10px; top:-22px;
+  width:30px; height:30px;
+  border:var(--ui-ink-w) solid var(--ui-ink);
+  border-radius:8px;
+  display:none; place-items:center;
+  background:linear-gradient(180deg,
+    var(--ui-info-a) 0%, var(--ui-info-a) 52%,
+    var(--ui-info-b) 52.01%, var(--ui-info-b) 100%);
+  box-shadow:inset 0 2px 0 var(--ui-rim), 0 3px 0 rgba(0,0,0,.32);
+  font-size:17px; line-height:1;
+  pointer-events:auto;
+}
+@media (orientation:landscape){
+  .builder-chip{ width:150px; height:34px; }
+  .builder-chip .plus{ display:grid; }
+  .builder-chip__info{ display:grid; }
+  /* clear the `+` that now overhangs the right cap */
+  .builder-chip__num{ margin-right:34px; }
+}
+
+/* A FREE BUILDER MUST ANNOY (§3.4): the portrait tilts ±8° every 2.5s with a
+ * pulsing gold halo, and the whole chip picks up a gold outer glow. The
+ * ACTIONABLE half of the signal is mirrored onto Construir in the thumb zone. */
+@keyframes ui-builder-nag{
+  0%, 72%, 100% { transform:translateY(-50%) rotate(0deg); }
+  80%           { transform:translateY(-50%) rotate(-8deg); }
+  90%           { transform:translateY(-50%) rotate(8deg); }
+}
+@keyframes ui-builder-halo{
+  0%, 70%, 100% { box-shadow:0 0 0 0 rgba(240,183,34,0); }
+  85%           { box-shadow:0 0 0 4px rgba(240,183,34,.5); }
+}
+.builder-chip.is-free{ box-shadow:0 0 0 1px rgba(240,183,34,.85); }
+.builder-chip.is-free .cap__icon{ animation:ui-builder-nag 2.5s ease-in-out infinite; }
+.builder-chip.is-free::before{
+  content:''; position:absolute; left:-20px; top:50%;
+  width:48px; height:48px; border-radius:50%;
+  transform:translateY(-50%);
+  animation:ui-builder-halo 2.5s ease-in-out infinite;
+  pointer-events:none;
+}
+
+/* --- §2.4 status chip ----------------------------------------------------
+ * One slot, one occupant, resolved by priority: repairs → event countdown →
+ * rank. This replaces Clash's shield pill, which is anti-retention here (§9). */
+.status-chip{
+  height:30px;
+  padding-left:30px; padding-right:14px;
+  pointer-events:auto;
+}
+.status-chip .cap__icon{ left:-14px; width:36px; height:36px; }
+.status-chip__num{ font-size:18px; }
+
+/* --- level badge + XP capsule (Zone A, row 1) ---------------------------- */
+.level-row{ display:flex; align-items:center; gap:0; }
+.level-badge{
+  position:relative;
+  width:44px; height:44px;
+  display:grid; place-items:center;
+  border:var(--ui-ink-w) solid var(--ui-ink);
+  border-radius:13px;
+  background:linear-gradient(180deg,
+    #7FE0F6 0%, var(--ui-blue-a) 52%,
+    var(--ui-blue-b) 52.01%, #2B7EA0 92%,
+    var(--ui-blue-stroke) 92.01%, var(--ui-blue-stroke) 100%);
+  box-shadow:inset 0 2px 0 var(--ui-rim), 0 4px 0 rgba(0,0,0,.3);
+  z-index:1;
+  flex:0 0 auto;
+}
+.level-badge span{ font-size:20px; }
+.xp{
+  position:relative;
+  width:92px; height:20px;
+  margin-left:-10px;
+  border:var(--ui-ink-w) solid var(--ui-ink);
+  border-radius:var(--ui-r-pill);
+  background:var(--ui-track-empty);
+  overflow:hidden;
+  flex:0 0 auto;
+}
+.xp__fill{
+  position:absolute; left:0; top:0; bottom:0;
+  width:calc(var(--pct) * 100%);
+  border-radius:999px 0 0 999px;
+  background:linear-gradient(180deg,
+    var(--ui-timer-a) 0 55%, var(--ui-timer-b) 55.01% 100%);
+}
+.xp__rim{
+  position:absolute; left:4px; right:4px; top:0; height:1px;
+  background:rgba(255,255,255,.45);
+}
+@media (orientation:landscape){ .xp{ width:118px; height:22px; } }
+
+/* --- §3.10 `¡Lleno!` — the informational register -------------------------
+ * In a world where every actionable thing has a SOLID contour, a DASHED edge
+ * reads instantly as "information". Our one departure: it is a button, opening
+ * the storage upgrade sheet in one tap (§10.11). The dashed border stays. */
+.chip{
+  height:30px; padding:0 12px; border-radius:var(--ui-r-chip);
+  border:2px dashed rgba(20,16,12,.85);      /* ≈3px on / 3px off */
+  background:rgba(255,255,255,.22);
+  /* no shadow, no gloss, no animation */
+  display:inline-flex; align-items:center;
+  white-space:nowrap;
+}
+.chip span{ font-size:17px; }
+.chip--action{ pointer-events:auto; }
+.chip--action:active{ background:rgba(255,255,255,.34); }

@@ -14,7 +14,7 @@
     ]
   },
   "bldg_blacksmith": {
-    "kb": 390,
+    "kb": 387,
     "clips": [
       "idle"
     ],
@@ -44,7 +44,7 @@
     ]
   },
   "bldg_docks": {
-    "kb": 366,
+    "kb": 361,
     "clips": [
       "Idle"
     ],
@@ -60,7 +60,7 @@
     ]
   },
   "bldg_foundry": {
-    "kb": 390,
+    "kb": 386,
     "clips": [
       "action",
       "idle"
@@ -77,7 +77,7 @@
     ]
   },
   "bldg_marketplace": {
-    "kb": 464,
+    "kb": 443,
     "clips": [
       "idle",
       "action"
@@ -108,7 +108,7 @@
     ]
   },
   "bldg_tailor": {
-    "kb": 316,
+    "kb": 306,
     "clips": [
       "idle",
       "action"
@@ -139,7 +139,7 @@
     ]
   },
   "bldg_townhall": {
-    "kb": 212,
+    "kb": 208,
     "clips": [
       "idle"
     ],
@@ -155,7 +155,7 @@
     ]
   },
   "bldg_windmill": {
-    "kb": 472,
+    "kb": 450,
     "clips": [
       "idle"
     ],
@@ -185,7 +185,7 @@
     ]
   },
   "bldg_workshop": {
-    "kb": 199,
+    "kb": 191,
     "clips": [
       "idle"
     ],
@@ -327,7 +327,7 @@
     ]
   },
   "mob_anglerfish": {
-    "kb": 345,
+    "kb": 330,
     "clips": [
       "idle",
       "hit",
@@ -345,7 +345,7 @@
     ]
   },
   "mob_blowfish": {
-    "kb": 686,
+    "kb": 649,
     "clips": [
       "idle",
       "hit",
@@ -363,7 +363,7 @@
     ]
   },
   "mob_jellyfish": {
-    "kb": 926,
+    "kb": 859,
     "clips": [
       "idle",
       "hit",
@@ -381,7 +381,7 @@
     ]
   },
   "mob_kelpling": {
-    "kb": 494,
+    "kb": 469,
     "clips": [
       "Idle",
       "Hit",
@@ -399,7 +399,7 @@
     ]
   },
   "mob_sealion": {
-    "kb": 480,
+    "kb": 451,
     "clips": [
       "idle",
       "hit",
@@ -417,7 +417,7 @@
     ]
   },
   "mob_shark": {
-    "kb": 105,
+    "kb": 102,
     "clips": [
       "idle",
       "hit",
@@ -435,7 +435,7 @@
     ]
   },
   "mob_squid": {
-    "kb": 604,
+    "kb": 570,
     "clips": [
       "idle",
       "hit",
@@ -453,7 +453,7 @@
     ]
   },
   "mob_trilobite": {
-    "kb": 526,
+    "kb": 494,
     "clips": [
       "idle",
       "hit",
@@ -471,7 +471,7 @@
     ]
   },
   "ship_frigate": {
-    "kb": 303,
+    "kb": 297,
     "clips": [
       "Idle"
     ],
@@ -487,7 +487,7 @@
     ]
   },
   "ship_galleon": {
-    "kb": 234,
+    "kb": 230,
     "clips": [
       "Idle"
     ],
@@ -503,7 +503,7 @@
     ]
   },
   "ship_skiff": {
-    "kb": 87,
+    "kb": 86,
     "clips": [
       "Idle"
     ],
@@ -519,7 +519,7 @@
     ]
   },
   "ship_sloop": {
-    "kb": 170,
+    "kb": 167,
     "clips": [
       "Idle"
     ],
@@ -535,7 +535,7 @@
     ]
   },
   "tree_palm": {
-    "kb": 67,
+    "kb": 63,
     "clips": [
       "More Movement",
       "Single Fronds Moving"
@@ -552,7 +552,7 @@
     ]
   },
   "tree_palm_tall": {
-    "kb": 74,
+    "kb": 70,
     "clips": [
       "More Movement",
       "Single Fronds Moving"

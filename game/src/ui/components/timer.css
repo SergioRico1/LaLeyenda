@@ -1,0 +1,43 @@
+/* ============================================================================
+ * timer.css — §3.11 build/craft timer bar (world-anchored).
+ *
+ * Direction encodes meaning: STOCK DRAINS LEFTWARD (the resource pills),
+ * PROGRESS GROWS RIGHTWARD (this). Rounded left cap, flat right edge at the
+ * growing end. Getting these two backwards is anti-goal §6.2.
+ * ========================================================================== */
+
+.timerbar{
+  --pct:0;
+  position:relative;
+  width:130px; height:20px;
+  border:var(--ui-ink-w) solid var(--ui-ink);
+  border-radius:var(--ui-r-pill);
+  background:var(--ui-track-well);
+  pointer-events:auto;
+}
+.timerbar__track{
+  position:absolute; inset:0;
+  border-radius:var(--ui-r-pill);
+  overflow:hidden;
+}
+.timerbar__fill{
+  position:absolute; left:0; top:0; bottom:0;
+  width:calc(var(--pct) * 100%);
+  border-radius:999px 0 0 999px;      /* rounded left cap, flat growing edge */
+  background:linear-gradient(180deg,
+    var(--ui-timer-a) 0 55%, var(--ui-timer-b) 55.01% 100%);
+}
+.timerbar__rim{
+  position:absolute; left:6px; right:6px; top:0; height:1px;
+  background:rgba(255,255,255,.4); border-radius:999px; pointer-events:none;
+}
+/* The numeral is CENTRED and overlaps the bar's top edge by ~40% — it is not
+ * a label sitting politely above the bar. */
+.timerbar__label{
+  position:absolute; left:50%; top:0;
+  transform:translate(-50%,-62%);
+  white-space:nowrap;
+  pointer-events:none;
+}
+
+@media (orientation:landscape){ .timerbar{ width:150px; height:22px; } }
