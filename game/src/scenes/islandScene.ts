@@ -6,6 +6,8 @@ import {
   type IslandShape,
 } from '../render/island';
 import { createGhost, type Ghost } from '../render/ghost';
+import { buildScatter } from '../render/scatter';
+import { DECOR_MODELS, planDecor, planIslets } from './decor';
 import { instantiate, preload } from '../render/assets';
 import { Rng } from '../core/rng';
 import { createGame, type Game } from '../core/game';
@@ -33,12 +35,10 @@ import { COPY, refusalText, type RefusalKey } from '../ui/copy';
  *  everything below is built from `game.state().buildings`, so attacking someone
  *  else's island would one day be loading their JSON instead of yours. */
 
-const DECOR = ['tree_palm', 'tree_palm_tall', 'deco_bush', 'deco_fern'] as const;
-
 /** Every model the island can need, so preload() gets one pass. */
 export const ISLAND_MODELS = [
   ...new Set(Object.values(BALANCE.buildings).map((b) => b.model)),
-  ...DECOR, 'ship_skiff', 'chest_bandit',
+  ...DECOR_MODELS, 'ship_skiff', 'chest_bandit',
 ];
 
 export interface IslandScene {
@@ -697,6 +697,17 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
     import: (file: Blob) => game.importSave(file),
     save: () => game.saveNow(),
     reset: () => game.reset(),
+    /** The draw-call budget is 100 on a mid-range phone. `tools/perf.mjs` reads
+     *  this after a real frame, so the figure is what the GPU was asked for
+     *  rather than what a count of scene nodes suggests. */
+    stats: () => ({
+      calls: stage.renderer.info.render.calls,
+      triangles: stage.renderer.info.render.triangles,
+      programs: stage.renderer.info.programs?.length ?? 0,
+      geometries: stage.renderer.info.memory.geometries,
+      textures: stage.renderer.info.memory.textures,
+      objects: stage.scene.children.length,
+    }),
   };
 
   /* --- frame ------------------------------------------------------------- */
