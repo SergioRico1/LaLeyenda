@@ -11,7 +11,11 @@ Status legend: `[x]` done and verified · `[~]` partly there, gap named · `[ ]`
 These run on every change. A red gate is a blocker, not a finding.
 
 - [x] `npx tsc --noEmit` clean (strict, `noUnusedLocals`)
-- [x] `npm test` — the pure-sim suite, 92 cases
+- [x] `npm test` — the pure-sim suite, 124 cases
+- [x] `npm run test:roundtrip` — island → sea → island driven as a player,
+      with no shot mode and no test hooks. The screenshot harness cannot cover
+      this: every act runs under `?shot=1`, which boots one scene and never
+      switches, so the router was shipping unwatched.
 - [x] `npm run build` produces a bundle
 - [x] `npm run shoot -- island --mobile` captures without console errors
 - [x] `npm run shoot -- island --mobile --act <every act>` — each scripted
@@ -69,6 +73,10 @@ never closes. This is the single largest gap between here and a finished game.
 - [ ] PvE islands: harvestables and chests are placed, but a site is taken by
       sailing over it — there is no boarding or harvesting beat yet
 - [ ] The Giant Squid is spawned and tethered, but has no fight of its own
+
+**Done when:** island → sail → fight/loot → return → build works end to end and
+is worth repeating. — *the transition is proven by `npm run test:roundtrip`;
+the "worth repeating" half still needs the fight and the harvest beats.*
 
 **Done when:** island → sail → fight/loot → return → build works end to end and
 is worth repeating.
