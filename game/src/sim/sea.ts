@@ -37,8 +37,17 @@ import { Rng } from '../core/rng';
 /** Fixed simulation step. The renderer interpolates between these. */
 export const SEA_STEP = 1 / 30;
 
-/** Side of one world cell of open sea, in world units. */
-export const SEA_CELL = 90;
+/**
+ * Side of one world cell of open sea, in world units.
+ *
+ * Sized against what the camera can actually see, which is roughly 80 units
+ * across. At 90 a cell was wider than the screen, so with about half of them
+ * holding anything the player spent most of a voyage looking at empty water
+ * with no reason to steer. At 55 there is usually something in view and always
+ * something just out of it, which is the difference between exploring and
+ * commuting.
+ */
+export const SEA_CELL = 55;
 
 /** How far from the ship the sim keeps sites and mobs alive. Beyond this a mob
  *  is forgotten and its cell will re-spawn it if the player comes back — which

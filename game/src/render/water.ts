@@ -383,8 +383,16 @@ ${SWELL_GLSL}
     // being steep, which is the opposite condition: the top of a crest is the
     // one place the surface is level. A wave gives up its top just below the
     // peak, on the side that is climbing.
+    // Clustered, like the shore foam and for the same reason. Near an island
+    // the shoal term thins the caps out on its own, so this was invisible
+    // there — but in open water shoal is 1 everywhere and every crest in the
+    // ocean broke at once, which is not weather, it is a texture. Real
+    // whitecaps come in patches with calm between them.
+    float capField = valueNoise(vWorld.xz * 0.045 + uTime * vec2(0.012, 0.004)) * 0.65
+                   + valueNoise(vWorld.xz * 0.13 + 7.0) * 0.35;
     float capMask = smoothstep(0.24, 0.78, wave)
                   * smoothstep(0.10, 0.70, face)
+                  * smoothstep(0.54, 0.82, capField)
                   * shoal * uCaps;
     float capHit = step(1.0 - min(capMask, 0.92), hash21(capCell + 7.9));
     // A brighter core on a quarter of the area, the same two-tier chip the

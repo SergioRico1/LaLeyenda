@@ -41,9 +41,15 @@ never closes. This is the single largest gap between here and a finished game.
 - [x] Tests: same seed ⇒ same voyage; a mob that patrols, chases and attacks;
       loot that survives being sunk only in part; rings that get harder outward
       (27 cases in `tools/tests/sea.test.ts`)
-- [ ] Sea scene: chunked world around the ship, distance fog, reefs, islands
-- [ ] Control: hold-and-drag steering that works one-thumbed on a phone
-- [ ] Automatic broadsides — the player plays positioning, not a fire button
+- [x] Sea scene: streams sites and mobs around the ship from the same `sitesNear`
+      the sim uses, distance fog, blob shadows, wake. Measured against
+      reference/sea_combat.png: mean 88.3 vs 96.9, sd 46.6 vs 52.7,
+      detail 17.5% vs 18.1%.
+- [x] Control: `ui/stick.ts` — the stick appears under the thumb wherever it
+      presses, and reports a WORLD DIRECTION rather than a turn rate
+- [x] Automatic broadsides — the player plays positioning, not a fire button
+- [ ] Mob scale: a kelpling still reads larger than the ship. `fit` normalises
+      the largest axis, which flatters a wide creature over a masted hull.
 - [ ] PvE islands: harvestables, chests, and the Giant Squid holding a rich one
 - [ ] Return home: cargo lands in the island economy, closing the loop
 - [ ] ¡Zarpar! actually sails, gated on the Muelle, with the refusal it has now
@@ -76,8 +82,10 @@ is worth repeating.
       Today `window.laLeyenda.export()` is the only route, which is not shipping.
 - [ ] First-run director: the game currently explains itself through one idle
       tooltip. A player who has never seen it should be building inside a minute.
-- [ ] Audio: not a single sound exists. A builder with no collection chime is
-      the most obviously unfinished thing about it after the sea.
+- [~] Audio. I wrote "not a single sound exists" here and that was wrong —
+      `src/ui/sfx.ts` is a 206-line synthesised bus with a compressor, pitch
+      randomisation and an iOS-safe lazy context. What is missing is the SEA:
+      no cannon, no hit, no hull groan, no wave. The island is covered.
 - [ ] PWA installable, offline boot verified on a device
 - [ ] An error a player can hit does something other than a blank canvas
 

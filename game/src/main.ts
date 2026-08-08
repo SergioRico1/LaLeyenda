@@ -59,6 +59,11 @@ async function boot() {
       );
       break;
     }
+    case 'sea': {
+      const { createSeaScene } = await import('./scenes/seaScene');
+      scene = await createSeaScene(stage, { seed });
+      break;
+    }
     case 'island':
     default:
       scene = await createIslandScene(stage, seed);
@@ -71,6 +76,16 @@ async function boot() {
     const step = 1 / 30;
     for (let t = 0; t < shotTime; t += step) scene.update(step, t);
     scene.update(0, shotTime);
+
+    // A scene that streams its contents in — the sea builds each reef and each
+    // enemy as the ship reaches it — has nothing loaded at this point, because
+    // the loop above ran synchronously and never yielded to a loader. Without
+    // this the open sea photographs as empty water, which is exactly what it
+    // did the first three times.
+    if ('settle' in scene && typeof scene.settle === 'function') {
+      await scene.settle();
+      scene.update(0, shotTime);
+    }
 
     // Animation clips can drive the transform of the node a model was normalized
     // against, so a model that measured correctly at load can be a different size
