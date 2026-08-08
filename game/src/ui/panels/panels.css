@@ -8,6 +8,14 @@
  * is what puts it there.
  * ========================================================================== */
 
+/* An author `display` beats the UA sheet's `[hidden]{display:none}`, so every
+ * element here that sets one has to opt back out explicitly. Without this the
+ * build bar ships visible on the first frame of a cold boot. */
+.sheet[hidden],
+.buildbar[hidden],
+.sheet__why[hidden],
+.buildbar__why[hidden]{ display:none !important; }
+
 /* --- the sheet shell ----------------------------------------------------- */
 .sheet{
   position:fixed; inset:0;
@@ -240,4 +248,37 @@ html.shot .sheet__panel{ transition:none; }
     max-height:86vh;
     border-radius:var(--ui-r-panel) var(--ui-r-panel) 0 0;
   }
+}
+
+/* §4.8 — the picker is never the end of the road. When every row is greyed the
+ * footer names the one job the idle carpenter CAN take, one tap away. */
+.picker__hint{ font-size:16px; text-align:center; color:#3A3635; -webkit-text-stroke:0; text-shadow:none; }
+.picker__suggest{ width:100%; min-height:56px; --brk:50%; }
+.picker__suggest .t-btn{ font-size:21px; }
+.picker__hint[hidden], .picker__suggest[hidden]{ display:none !important; }
+
+/* --- while a ghost is on the island --------------------------------------
+ * §3.15: the portrait build bar "replaces the Zone C clusters while placing".
+ * The world-anchored layer has to go quiet too — a collect bubble sits above
+ * the canvas and would otherwise swallow the tap meant to move the ghost, so
+ * the building lands somewhere the player never pointed. */
+#ui.is-placing .zone-c-primary,
+#ui.is-placing .zone-c-utility,
+#ui.is-placing .tray,
+#ui.is-placing .collect-all{
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .16s ease-out;
+}
+#ui.is-placing .zone-b,
+#ui.is-placing .zone-b *{ pointer-events:none !important; }
+/* §3.15 — the rest of the island darkens by ~12% under an elliptical
+ * spotlight, so the eye goes to the footprint and nothing else. */
+#ui.is-placing::after{
+  content:'';
+  position:absolute; inset:0;
+  z-index:calc(var(--z-world-ui) - 1);
+  pointer-events:none;
+  background:radial-gradient(ellipse 70% 42% at 50% 46%,
+    rgba(255,255,255,.10) 0%, rgba(255,255,255,0) 55%, rgba(0,0,0,.16) 100%);
 }

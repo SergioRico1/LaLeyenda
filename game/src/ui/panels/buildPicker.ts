@@ -32,10 +32,16 @@ export interface BuildOption {
   unlocked: boolean;
 }
 
+/** The one builder job to offer when every row is greyed (§4.8's ≤2 taps). */
+export interface Suggestion {
+  buildingId: number;
+  label: string;
+}
+
 export interface BuildPicker {
   readonly el: HTMLElement;
   /** Rebuilds the list. Cheap enough to call on every open. */
-  show(options: BuildOption[], townHall: number): void;
+  show(options: BuildOption[], townHall: number, suggestion?: Suggestion | null): void;
   close(): void;
   readonly isOpen: boolean;
 }
@@ -43,11 +49,23 @@ export interface BuildPicker {
 export function createBuildPicker(opts: {
   icons: IconSet;
   onPick(type: string): void;
+  onSuggestion(buildingId: number): void;
   onClose?(): void;
 }): BuildPicker {
   const sheet: Sheet = createSheet({ title: COPY['panel.build'], onClose: opts.onClose });
   const list = el('div', 'well picker__list');
   sheet.body.append(list);
+
+  const hint = el('p', 't picker__hint');
+  const suggest = el('button', 'btn btn--green picker__suggest', el('span', 't t-btn', ''));
+  suggest.type = 'button';
+  sheet.footer.append(hint, suggest);
+  let suggested: Suggestion | null = null;
+  pressable(suggest, () => {
+    if (!suggested) return;
+    sheet.close();
+    opts.onSuggestion(suggested.buildingId);
+  });
 
   function row(option: BuildOption, townHall: number): HTMLElement {
     const blocked = option.refusal !== null;
@@ -99,13 +117,25 @@ export function createBuildPicker(opts: {
     el: sheet.el,
     get isOpen() { return sheet.isOpen; },
     close: () => sheet.close(),
-    show(options, townHall) {
+    show(options, townHall, suggestion) {
       list.replaceChildren();
       const rows = options.map((o) => row(o, townHall));
       rows.sort((a, b) => Number(a.dataset.rank) - Number(b.dataset.rank));
       list.append(...rows);
       if (rows.length === 0) {
         list.append(el('p', 't picker__empty', 'Nada que construir todavía.'));
+      }
+
+      // A carpenter is idle or the player would not be here. If none of these
+      // rows can take them, the footer says where they CAN go — the picker is
+      // never the end of the road.
+      const anyOpen = options.some((o) => o.refusal === null);
+      suggested = anyOpen ? null : suggestion ?? null;
+      hint.hidden = anyOpen || !suggested;
+      suggest.hidden = anyOpen || !suggested;
+      if (suggested) {
+        hint.textContent = 'Ningún edificio nuevo cabe todavía. Tu carpintero puede:';
+        (suggest.firstElementChild as HTMLElement).textContent = `${COPY['cta.upgrade']} ${suggested.label}`;
       }
       sheet.open();
     },

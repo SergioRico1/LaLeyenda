@@ -72,7 +72,7 @@ export function createGhost(shape: IslandShape): Ghost {
     new THREE.MeshBasicMaterial({
       color: colour,
       transparent: true,
-      opacity: 0.55,
+      opacity: 0.42,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       depthTest: true,
@@ -106,10 +106,36 @@ export function createGhost(shape: IslandShape): Ghost {
 
   /* --- the model --------------------------------------------------------- */
   let model: THREE.Object3D | null = null;
+  /**
+   * The centring offset `fitToFootprint` wrote onto the model's own position.
+   *
+   * It has to be kept and re-added rather than overwritten: the source models
+   * range from 8 to 2685 units across and are not modelled about their own
+   * origin, so that offset IS what puts the building on the cell. Assigning
+   * `position.set(cell)` instead threw it away and parked the ghost somewhere
+   * off in the sea, which looks exactly like the ghost failing to load.
+   */
+  const fitOffset = new THREE.Vector3();
   let half = 1.5;
   let cell = { x: 0, z: 0 };
   let valid = false;
   let modelToken = 0;
+
+  /**
+   * Washes the ghost red when it cannot land there.
+   *
+   * Only red. The reference leaves the building being placed in its own
+   * colours and lets the GROUND carry the answer — a green-washed building
+   * looks ill rather than legal, and §3.15 puts the green on the cells, not on
+   * the model. But the cells are laid on the terrain, so a footprint dropped
+   * over an existing building is hidden behind it exactly when the player most
+   * needs to be told no. The model, drawn on top, is what still reads.
+   *
+   * The wash multiplies the stored base colour rather than the live one: these
+   * materials carry a texture, so `color` is a multiplier, and repainting from
+   * the current value would drift a little further red on every pointer move.
+   */
+  const BAD_WASH = new THREE.Color(1.0, 0.3, 0.24);
 
   function tint(object: THREE.Object3D, ok: boolean): void {
     object.traverse((node) => {
@@ -118,9 +144,14 @@ export function createGhost(shape: IslandShape): Ghost {
       const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
       for (const m of mats) {
         const std = m as THREE.MeshStandardMaterial;
-        if (!('emissive' in std)) continue;
-        std.emissive.set(ok ? 0x1c5c10 : 0x6b1008);
-        std.emissiveIntensity = 1;
+        const base = std.userData?.baseColor as THREE.Color | undefined;
+        if (!std.color || !base) continue;
+        std.color.copy(base);
+        if (!ok) std.color.multiply(BAD_WASH);
+        if (std.emissive) {
+          std.emissive.setRGB(ok ? 0 : 0.22, 0, 0);
+          std.emissiveIntensity = 1;
+        }
       }
     });
   }
@@ -146,7 +177,17 @@ export function createGhost(shape: IslandShape): Ghost {
     async setModel(modelId, footprint) {
       const mine = ++modelToken;
       half = footprint / 2;
-      if (model) { root.remove(model); model = null; }
+      if (model) {
+        // The clones below are per-ghost, so they are ours to free; the
+        // geometry and textures belong to the shared cached model and are not.
+        model.traverse((node) => {
+          const mesh = node as THREE.Mesh;
+          if (!mesh.isMesh) return;
+          for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) m.dispose();
+        });
+        root.remove(model);
+        model = null;
+      }
 
       const instance = await instantiate(modelId, { fit: footprint * CELL, clip: 'idle' });
       if (mine !== modelToken) return;   // a faster tap already replaced it
@@ -156,18 +197,25 @@ export function createGhost(shape: IslandShape): Ghost {
         if (!mesh.isMesh) return;
         mesh.castShadow = false;
         mesh.receiveShadow = false;
+        // The footprint quads are additively blended, and three.js sorts the
+        // transparent pass by renderOrder first — so a mesh left at 0 is drawn
+        // BEFORE the green and washed out by it almost to nothing. The ghost
+        // has to sit on top of its own footprint, not under it.
+        mesh.renderOrder = 30;
         const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
         mesh.material = mats.map((m) => {
-          const copy = m.clone();
+          const copy = m.clone() as THREE.MeshStandardMaterial;
           copy.transparent = true;
-          copy.opacity = 0.62;
+          copy.opacity = 0.78;
           copy.depthWrite = false;
+          if (copy.color) copy.userData.baseColor = copy.color.clone();
           return copy;
         });
         if (!Array.isArray(mesh.material)) mesh.material = (mesh.material as THREE.Material[])[0];
         else if (mesh.material.length === 1) mesh.material = mesh.material[0];
       });
       instance.object.renderOrder = 23;
+      fitOffset.copy(instance.object.position);
       model = instance.object;
       root.add(model);
       api.setCell(cell.x, cell.z, false);
@@ -202,11 +250,16 @@ export function createGhost(shape: IslandShape): Ghost {
 
       const centre = cellToWorld(shape, clamp(x, shape.size), clamp(z, shape.size));
       if (model) {
-        model.position.set(centre.x, centre.y, centre.z);
+        model.position.set(
+          fitOffset.x + centre.x,
+          fitOffset.y + centre.y,
+          fitOffset.z + centre.z
+        );
         tint(model, valid);
       }
       chevrons.position.set(centre.x, centre.y + 0.12, centre.z);
       chevrons.visible = valid;
+
     },
 
     show(visible) {

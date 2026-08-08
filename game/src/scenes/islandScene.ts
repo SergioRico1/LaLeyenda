@@ -16,7 +16,9 @@ import {
 } from '../sim';
 import { createHud, type Hud, type ResourceId } from '../ui/hud';
 import { bakeIcons, bakeModelIcons, type IconSet } from '../ui/icons';
-import { buildingIdOf, toBuildOptions, toHudState, toUpgradeView, toWorldItems } from '../ui/present';
+import {
+  buildingIdOf, suggestedUpgrade, toBuildOptions, toHudState, toUpgradeView, toWorldItems,
+} from '../ui/present';
 import { createBuildPicker } from '../ui/panels/buildPicker';
 import { createUpgradeSheet } from '../ui/panels/upgradeSheet';
 import { createBuildBar } from '../ui/panels/buildBar';
@@ -236,7 +238,11 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
     hud.setWorldItems(anchors.map((a) => a.item));
   }
 
-  game.onChange(() => { if (hud) hud.setState(toHudState(game.state(), game.now())); });
+  // An action must repaint the world-anchored layer immediately, not on the
+  // next 250ms sim step: a timer bar that outlives the job it belongs to, or a
+  // bubble that survives its own collect, is a quarter second of the HUD
+  // telling the player something untrue.
+  game.onChange(() => syncHud());
 
   /* --- §3.15 build mode + §3.16 the upgrade sheet ------------------------- */
 
@@ -257,6 +263,7 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
   const picker = uiRoot ? createBuildPicker({
     icons: iconSet,
     onPick: (type) => void beginPlacement(type),
+    onSuggestion: (id) => openSheetFor(id),
   }) : null;
 
   const sheet = uiRoot ? createUpgradeSheet({
@@ -292,6 +299,7 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
     // frame of the ghost is somewhere plausible even before a finger moves.
     moveGhost(Math.floor(shape.size / 2), Math.floor(shape.size / 2));
     ghost.show(true);
+    uiRoot?.classList.add('is-placing');
     bar?.show({ label: spec.label, cost: levelSpec(type, 1).cost, timeMs: levelSpec(type, 1).timeMs });
     await ghost.setModel(spec.model, spec.footprint);
     refreshPlacement();
@@ -300,6 +308,7 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
   function endPlacement(): void {
     placing = null;
     ghost.show(false);
+    uiRoot?.classList.remove('is-placing');
     bar?.hide();
   }
 
@@ -367,7 +376,8 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
 
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
-  let down: { x: number; y: number; moved: boolean } | null = null;
+  /** Where the current gesture started, so a swipe is not read as a tap. */
+  let down: { x: number; y: number } | null = null;
 
   function toNdc(event: PointerEvent): void {
     const rect = stage.renderer.domElement.getBoundingClientRect();
@@ -400,7 +410,7 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
 
   const canvas = stage.renderer.domElement;
   canvas.addEventListener('pointerdown', (event) => {
-    down = { x: event.clientX, y: event.clientY, moved: false };
+    down = { x: event.clientX, y: event.clientY };
     if (!placing) return;
     const cell = cellUnder(event);
     if (cell) { moveGhost(cell.x, cell.z); refreshPlacement(); }
@@ -411,11 +421,7 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
     // §3.15 — "a translucent ghost of the real model follows the finger". On a
     // phone that means while the finger is DOWN; with a mouse there is no such
     // state, so hovering moves it too.
-    if (down) {
-      if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > 8) down.moved = true;
-    } else if (event.pointerType === 'touch') {
-      return;
-    }
+    if (!down && event.pointerType === 'touch') return;
     const cell = cellUnder(event);
     if (cell) { moveGhost(cell.x, cell.z); refreshPlacement(); }
   });
@@ -462,35 +468,37 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
         return;
       }
       case 'Construir': {
-        console.log('[route] construibles:', placeable(state, now));
+        // §3.15 — the picker, carrying the whole catalogue with its refusals.
+        picker?.show(
+          toBuildOptions(state, now, modelIcons),
+          townHallLevel(state),
+          suggestedUpgrade(state, now)
+        );
         return;
       }
       case 'Terminar Ya': {
-        // §4.4 — and the last five minutes of any timer cost exactly one gem.
+        // §3.11's timer bar is a route into §3.16's sheet, not an instant
+        // purchase: spending gems must always be a decision with the price on
+        // screen first. The sheet's gold CTA is where §4.4 actually happens.
         const running = state.buildings.find((b) => b.work);
-        if (!running) return;
-        const result = game.dispatch((s) => finishNow(s, running.id, now));
-        console.log(`[route] terminar ya: ${running.type} por ${result.gems} 💎 (${result.ok ? 'ok' : result.refusal})`);
+        if (running) openSheetFor(running.id);
         return;
       }
       case 'Mejorar almacén': {
-        // §3.10 / §10.11 — `¡Lleno!` is a button, and it goes to the store for
-        // THAT resource. The chip now carries the resource with it; without it
-        // a metal producer's chip would upgrade whichever store happened to be
-        // affordable first, which is a different building entirely.
+        // §3.10 / §10.11 — `¡Lleno!` keeps its dashed informational border but
+        // opens the storage upgrade sheet in one tap. The resource travels with
+        // the chip: without it, a metal producer's chip would open whichever
+        // store happened to be listed first, which is a different building.
+        //
+        // It used to dispatch the upgrade blind, from the first store it could
+        // afford — the only upgrade route in the game, and one that spent the
+        // player's wood without ever showing them a price.
         const resource = detail as ResourceId | undefined;
-        const stores = state.buildings.filter((b) => {
+        const store = state.buildings.find((b) => {
           const spec = buildingSpec(b.type);
           return spec.kind === 'store' && (!resource || spec.resource === resource);
         });
-        for (const b of stores) {
-          const plan = upgradePlan(b);
-          if (!plan) continue;
-          const result = game.dispatch((s) => startUpgrade(s, b.id, now));
-          if (result.ok) { console.log(`[route] mejorando ${b.type} → Nv${plan.toLevel}`); return; }
-          console.log(`[route] ${b.type} Nv${plan.toLevel}: ${result.refusal}`);
-        }
-        console.log(`[route] sin almacén mejorable para ${resource ?? 'ningún recurso'}`);
+        if (store) openSheetFor(store.id);
         return;
       }
       default:
@@ -526,7 +534,14 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
         nextSimAt = elapsed + SIM_STEP;
         if (game.tick()) void syncBuildings();
         syncHud();
+        // A sheet left open while a timer finishes must not keep offering an
+        // upgrade that already started, or a gem price that has moved.
+        refreshSheet();
+        if (placing) refreshPlacement();
       }
+
+      ghost.update(elapsed);
+      sheet?.tick(elapsed);
 
       if (!hud) return;
       // Re-project every world-anchored element on the next frame (§2.3).
@@ -547,6 +562,15 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
           ndc.z < 1
         );
       }
+
+      // §10.2 — in landscape the ✗/✓ pair follows the ghost in world space.
+      // In portrait the CSS pins it to the bottom bar and this is ignored.
+      if (placing && bar?.isOpen) {
+        const at = cellToWorld(shape, ghost.cell.x, ghost.cell.z);
+        ndc.set(at.x, at.y + placing.footprint * 0.9, at.z).project(stage.camera);
+        bar.place((ndc.x * 0.5 + 0.5) * width, (-ndc.y * 0.5 + 0.5) * height);
+      }
+
       hud.tick(elapsed);
     },
   };

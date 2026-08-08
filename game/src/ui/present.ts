@@ -1,6 +1,6 @@
 import {
   BALANCE, buildCatalog, buildersFree, buildersTotal, buildingSpec, claimableQuests, dailyAvailable,
-  finishNowCost, isFull, isProducer, maxLevelAt, nextAction, producerResource, storeCap,
+  finishNowCost, isFull, isProducer, levelSpec, maxLevelAt, nextAction, producerResource, storeCap,
   townHallLevel, townHallUnlocks, upgradeGains, upgradePlan, upgradeRefusal,
   type Building, type GameState, type ResourceId,
 } from '../sim';
@@ -81,8 +81,15 @@ export function toHudState(state: GameState, now: number): HudState {
         default: return { state: 'empty' };
       }
     }),
-    // ¡Zarpar! before the Muelle exists — never a dead tap, it names the key.
-    sailLocked: !state.buildings.some((b) => b.type === 'muelle' && b.level > 0),
+    // ¡Zarpar! stays shut until there is a SHIP — never a dead tap, it names
+    // the key. balance.json hangs `unlocksAction: zarpar` on the Muelle, but
+    // §4.10's exit state wants the Muelle standing at 3:00 *and* Zarpar still
+    // closed ("one closed door with the key said out loud"), and the Astillero
+    // is the building whose level rows actually carry a `ship`. A dock with no
+    // boat is a dock; the door it opens is the shipyard's.
+    sailLocked: !state.buildings.some(
+      (b) => buildingSpec(b.type).kind === 'support' && b.level > 0 && levelSpec(b.type, b.level).ship
+    ),
     leftHanded: Boolean(state.flags.leftHanded),
     // §4.8 — resolved once, in the sim, and handed over. The HUD does not get
     // its own copy of the priority list to drift from.
@@ -191,6 +198,36 @@ export function toBuildOptions(state: GameState, now: number, icons: ModelIcons)
       unlocked: entry.unlocked,
     };
   });
+}
+
+/**
+ * The one builder job worth suggesting when the picker has nothing to offer.
+ *
+ * §4.8 rule 1 blinks Construir whenever a carpenter is idle, and at
+ * Ayuntamiento 1 the §4.10 island already owns one of every building the hall
+ * allows — so following that blink lands on a picker where every row is
+ * correctly greyed. The rule is right (there IS a builder to spend) and the
+ * picker is right (there IS nothing to place); what would be wrong is stopping
+ * there, because §4.8 also promises the solution is reachable in ≤2 taps.
+ *
+ * So the picker carries the answer with it: the Ayuntamiento when it can be
+ * raised, since it is the building that unblocks the picker itself, and
+ * otherwise the cheapest job going.
+ */
+export function suggestedUpgrade(
+  state: GameState, now: number
+): { buildingId: number; label: string } | null {
+  if (buildersFree(state, now) <= 0) return null;
+  const startable = state.buildings.filter((b) => upgradeRefusal(state, b, now) === null);
+  if (startable.length === 0) return null;
+
+  const price = (b: Building): number => {
+    const plan = upgradePlan(b);
+    return plan ? Object.values(plan.cost).reduce<number>((sum, v) => sum + (v ?? 0), 0) : Infinity;
+  };
+  const hall = startable.find((b) => buildingSpec(b.type).kind === 'townhall');
+  const pick = hall ?? startable.sort((a, b) => price(a) - price(b))[0];
+  return { buildingId: pick.id, label: buildingSpec(pick.type).label };
 }
 
 /**

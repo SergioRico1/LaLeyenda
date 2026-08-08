@@ -105,6 +105,8 @@ interface WorldItem {
   ax: number;
   ay: number;
   size: { w: number; h: number } | null;
+  /** Last projected screen position, or null while off-screen. */
+  at: { x: number; y: number } | null;
   /** Scene time (s) when this item's remaining-ms was last set by the sim, so
    *  tick() can run the clock down smoothly between sim ticks without drifting
    *  every time the sim hands it a fresh figure. */
@@ -256,7 +258,7 @@ export async function createHud(
     const anchor = el('div', 'world-item__anchor');
     wrap.append(anchor);
 
-    const item: WorldItem = { spec, wrap, inner: anchor, ax: 0.5, ay: 1, size: null, setAt: elapsedNow };
+    const item: WorldItem = { spec, wrap, inner: anchor, ax: 0.5, ay: 1, size: null, at: null, setAt: elapsedNow };
 
     if (spec.kind === 'bubble') {
       const bubble = createBubble({
@@ -326,7 +328,7 @@ export async function createHud(
     const item = world.get(id);
     if (!item) return;
     item.wrap.classList.toggle('is-off', !visible);
-    if (!visible) return;
+    if (!visible) { item.at = null; return; }
     if (!item.size) {
       item.size = { w: item.inner.offsetWidth, h: item.inner.offsetHeight };
     }
@@ -340,7 +342,72 @@ export async function createHud(
       Math.max(y, 16 + h * item.ay),
       Math.max(16 + h * item.ay, viewport.h - 16 - h * (1 - item.ay))
     );
+    item.at = { x: cx, y: cy };
     item.wrap.style.transform = `translate3d(${cx.toFixed(1)}px, ${cy.toFixed(1)}px, 0)`;
+  }
+
+  /**
+   * Keeps world-anchored labels out of Zone A and off each other.
+   *
+   * Two buildings five cells apart project to points far closer together than a
+   * 150px timer bar is wide, so their labels land on top of one another. That is
+   * not merely untidy: the covered one is UNTAPPABLE, and since §3.11's timer bar
+   * is a route into §3.16's upgrade sheet, a covered bar is a feature the player
+   * cannot reach. The same is true of a label that drifts up under the pill
+   * stack — §2.1 gives Zone A to read-only chrome, and chrome wins the tap.
+   *
+   * So: everything is first pushed clear of the top cluster, then resolved
+   * DOWNWARD, away from it. Resolving downward is also what keeps the pass from
+   * cycling, since the list is walked top-first.
+   *
+   * Runs once per frame over a handful of elements, after every anchor has been
+   * projected — which is why it lives in tick() rather than in place().
+   */
+  function spread(): void {
+    const boxes: Array<{ item: WorldItem; l: number; t: number; w: number; h: number }> = [];
+    for (const item of world.values()) {
+      if (!item.at || !item.size) continue;
+      boxes.push({
+        item,
+        l: item.at.x - item.size.w * item.ax,
+        t: item.at.y - item.size.h * item.ay,
+        w: item.size.w,
+        h: item.size.h,
+      });
+    }
+    if (boxes.length === 0) return;
+
+    // Measured rather than assumed: the staged reveal (§4.1) changes how tall
+    // the pill stack is, and landscape moves the chips to the centre. Every
+    // read happens before the first write, so this costs one layout, not one
+    // per element.
+    const ceiling = Math.max(
+      zoneARight.getBoundingClientRect().bottom,
+      chips.getBoundingClientRect().bottom
+    ) + 8;
+
+    for (const box of boxes) box.t = Math.max(box.t, ceiling);
+    boxes.sort((a, b) => a.t - b.t);
+
+    const GAP = 4;
+    for (let i = 1; i < boxes.length; i++) {
+      const a = boxes[i];
+      for (let j = 0; j < i; j++) {
+        const b = boxes[j];
+        const overlapX = Math.min(a.l + a.w, b.l + b.w) - Math.max(a.l, b.l);
+        const overlapY = Math.min(a.t + a.h, b.t + b.h) - Math.max(a.t, b.t);
+        if (overlapX <= 0 || overlapY <= 0) continue;
+        a.t = b.t + b.h + GAP;
+      }
+    }
+
+    for (const box of boxes) {
+      const y = box.t + box.h * box.item.ay;
+      if (Math.abs(y - box.item.at!.y) < 0.5) continue;
+      box.item.at!.y = y;
+      box.item.wrap.style.transform =
+        `translate3d(${box.item.at!.x.toFixed(1)}px, ${y.toFixed(1)}px, 0)`;
+    }
   }
 
   /* --- collection: the value FLIES to its pill (§5.4) ---------------------
@@ -362,6 +429,12 @@ export async function createHud(
 
     if (flying) inFlight.set(spec.resource, (inFlight.get(spec.resource) ?? 0) + spec.amount);
 
+    // Out of the reconciled set BEFORE the sim is told. Dispatching notifies
+    // synchronously, and the owner answers by re-deriving the world layer — so
+    // a bubble still listed here is one `setWorldItems` will find gone from the
+    // state and tear out of the DOM, mid-burst, on the frame it was tapped.
+    world.delete(spec.id);
+
     // The sim is the authority on how much actually moved: a full Almacén
     // takes what fits and refuses the rest (§4.2), and that is a different
     // message from `¡Lleno!`.
@@ -370,12 +443,12 @@ export async function createHud(
     if (moved <= 0) {
       if (flying) inFlight.delete(spec.resource);
       // Nothing left the building, so the bubble stays and says so.
+      world.set(spec.id, item);
       navigator.vibrate?.([12, 40, 12]);
       render();
       return;
     }
 
-    world.delete(spec.id);
     void item.bubble.burst().then(() => item.wrap.remove());
     sparks(from, RESOURCE_FILL[spec.resource]);
     navigator.vibrate?.(8);
@@ -522,6 +595,7 @@ export async function createHud(
      */
     tick(elapsed) {
       elapsedNow = elapsed;
+      spread();
       for (const item of world.values()) {
         if (item.spec.kind !== 'timer' || !item.bar) continue;
         const since = (elapsed - item.setAt) * 1000;

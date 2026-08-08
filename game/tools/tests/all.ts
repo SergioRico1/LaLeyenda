@@ -1,6 +1,7 @@
 import './balance.test';
 import './economy.test';
 import './offline.test';
+import './build.test';
 import './session.test';
 import './retention.test';
 import './save.test';

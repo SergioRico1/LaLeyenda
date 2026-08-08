@@ -6,6 +6,12 @@
 //   npm run shoot -- island --w 1280 --h 720    explicit size
 //   npm run shoot -- island --out my.png        explicit destination
 //   npm run shoot -- island --mobile            portrait phone framing
+//   npm run shoot -- island --act place         drive a real interaction first
+//
+// `--act` runs a scripted set of taps from tools/acts.mjs before capturing, so a
+// panel, a bottom sheet or a placement ghost can be reviewed as pixels rather
+// than described. A feature that only exists after a tap is otherwise a feature
+// no critic can see.
 //
 // Boots a Vite dev server on a free port, waits for window.__ready (set once the
 // scene has advanced to a fixed simulated time), then captures. Deterministic:
@@ -16,6 +22,7 @@ import path from 'node:path';
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { ACTS } from './acts.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
@@ -35,6 +42,9 @@ const height = Number(flag('h', mobile ? 932 : 720));
 const time = flag('t', '2.0');
 const seed = flag('seed', 'la-leyenda');
 const outArg = flag('out', null);
+// --act runs a scripted interaction (tools/acts.mjs) before the capture, so a
+// panel or a placement ghost can be reviewed as pixels rather than described.
+const act = flag('act', null);
 
 const freePort = () =>
   new Promise((resolve) => {
@@ -93,7 +103,7 @@ try {
 
   // Any --key value pair the harness does not consume itself is forwarded to the
   // scene as a query param, so scenes can add their own knobs without touching this.
-  const OWN_FLAGS = new Set(['w', 'h', 't', 'seed', 'out', 'mobile', 'verbose']);
+  const OWN_FLAGS = new Set(['w', 'h', 't', 'seed', 'out', 'mobile', 'verbose', 'act']);
   const extra = new URLSearchParams();
   for (let i = 0; i < argv.length; i++) {
     if (!argv[i].startsWith('--')) continue;
@@ -111,6 +121,11 @@ try {
   await page.waitForFunction(() => window.__ready === true || window.__error, { timeout: 120000 });
   const err = await page.evaluate(() => window.__error);
   if (err) throw new Error(`scene failed:\n${err}`);
+
+  if (act) {
+    if (!ACTS[act]) throw new Error(`unknown --act ${act} (have: ${Object.keys(ACTS).join(', ')})`);
+    await ACTS[act](page);
+  }
 
   fs.mkdirSync(SHOTS, { recursive: true });
   const out = outArg

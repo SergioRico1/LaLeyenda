@@ -8,6 +8,8 @@ declare global {
   interface Window {
     __ready?: boolean;
     __error?: string;
+    /** Shot mode only — see the note where it is assigned. */
+    __step?: (frames?: number) => void;
   }
 }
 
@@ -76,6 +78,24 @@ async function boot() {
     }
 
     stage.render();
+
+    /**
+     * Shot mode renders twice and stops, which is what makes a capture
+     * byte-identical between runs. That also means anything a harness DOES to
+     * the page after boot — opening §3.15's picker, dropping a ghost on a cell
+     * — is never drawn, because no frame follows the tap.
+     *
+     * `__step` is the way back in: it advances the scene at the SAME frozen
+     * `shotTime`, so the world clock does not move and the capture stays
+     * deterministic, while giving the interaction a frame to appear in.
+     */
+    window.__step = (frames = 1) => {
+      for (let i = 0; i < frames; i++) {
+        scene.update(1 / 30, shotTime);
+        stage.render();
+      }
+    };
+
     // Two frames: the first can land before textures finish uploading.
     requestAnimationFrame(() => {
       stage.render();
