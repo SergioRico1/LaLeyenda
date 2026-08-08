@@ -75,7 +75,8 @@
     { "id": "av_hair_blonde",    "source": "Avatar/hair/16/model.gltf" },
     { "id": "av_hair_blue",      "source": "Avatar/hair/18/model.gltf" },
     { "id": "av_hair_grey",      "source": "Avatar/hair/20/model.gltf" },
-    { "id": "av_hair_ginger",    "source": "Avatar/hair/23/model.gltf" },
+    { "_comment": "hair 21-29 are authored already positioned at head height (minY ~0.3); 1-20 sit at their own origin like every other part. Keep the set on one convention.",
+      "id": "av_hair_ginger",    "source": "Avatar/hair/12/model.gltf" },
 
     { "id": "av_hat_bandana",    "source": "Avatar/headwear/2/model.gltf" },
     { "id": "av_hat_tophat",     "source": "Avatar/headwear/7/model.gltf" },

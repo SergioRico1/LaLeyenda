@@ -15,3 +15,6 @@ public/assets/ui/
 # every round. The JSON it is generated from IS committed.
 progress.html
 shots/
+
+# Agent scratch scripts
+tools/.tmp_*
