@@ -25,9 +25,10 @@ async function need(page, selector, what) {
   return page.locator(selector).first();
 }
 
-/** Opens §3.15's build picker from the Construir tile in the thumb zone. */
+/** Opens §3.15's build picker from the nav bar's Isla slot (LAYOUT_SPEC §1:
+ *  slot 1 is the island, and on this island the thing you do is build). */
 async function openPicker(page) {
-  await (await need(page, 'button[aria-label="Construir"]', 'the Construir tile')).click();
+  await (await need(page, 'button[aria-label="Isla"]', 'the Isla nav slot')).click();
   await need(page, '.sheet.is-open .pick-row', 'the picker list');
   await step(page);
 }
@@ -226,8 +227,11 @@ export const ACTS = {
    * §3.16 — the IDLE face: level, what the next level gives, cost, green CTA.
    *
    * Taps the island itself, sweeping until it lands on a building with no
-   * builder on it. `.sheet__price` only exists on the idle face, so it is the
-   * signal that the right building was hit rather than the timer face again.
+   * builder on it. `.sheet__stats` — LAYOUT_SPEC item 5's 2×2 grid — only
+   * exists on the idle face of a building that still has a level to go, so it
+   * is the signal that the right building was hit rather than the timer face
+   * or a maxed one. (It replaced `.sheet__price`, which was the same signal
+   * before the cost moved onto the CTA.)
    */
   async upgrade(page) {
     const canvas = await page.locator('#scene').boundingBox();
@@ -239,7 +243,7 @@ export const ACTS = {
       const dy = (Math.floor(i / 8) - 1.5) * (canvas.height / 9);
       await page.mouse.click(cx + dx, cy + dy);
       await page.waitForTimeout(90);
-      if (await page.locator('.sheet.is-open .sheet__price').count()) {
+      if (await page.locator('.sheet.is-open .sheet__stats').count()) {
         await step(page);
         return;
       }

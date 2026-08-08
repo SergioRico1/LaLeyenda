@@ -14,6 +14,37 @@ export const n = (v: number): string =>
   String(Math.floor(v)).replace(/\B(?=(\d{3})+(?!\d))/g, THIN);
 
 /**
+ * The compact form, for the grouped top capsule (LAYOUT_SPEC §2).
+ *
+ * Grouping five readouts into one capsule buys back the top of the screen, and
+ * the price is that each value gets about a sixth of the width instead of a
+ * whole pill. Our stores run to 1 400 000 (`balance.json`, Almacén 8), which is
+ * nine glyphs — three times what a cell can hold, so the capsule would either
+ * clip a numeral or stop being one object.
+ *
+ * Below 10 000 nothing changes: `n()` still renders it in full, which covers
+ * the entire early game where a hundred units either way is a build decision.
+ * Above that the reader is scanning magnitude, not counting, so one decimal is
+ * all the precision the figure is carrying. Kingshot reaches for exactly this
+ * ("24.5K") and it is the same reason.
+ *
+ * Spanish decimal separator, to match the thin-space thousands separator: the
+ * pair has to be locale-consistent or the numerals read as a machine's.
+ */
+export function nc(v: number): string {
+  const x = Math.max(0, Math.floor(v));
+  if (x < 10_000) return n(x);
+  const [div, unit] = x < 1_000_000 ? ([1000, 'K'] as const) : ([1_000_000, 'M'] as const);
+  const q = x / div;
+  // One decimal below 100 ("24,5K"), none above ("250K") — a fourth glyph of
+  // precision on a figure that large is noise, and the cell has no room for it.
+  const text = q < 100
+    ? (Math.floor(q * 10) / 10).toFixed(1).replace(/\.0$/, '').replace('.', ',')
+    : String(Math.floor(q));
+  return `${text}${unit}`;
+}
+
+/**
  * "7m 17s" · "2d 16h" · "45s", with the unit suffix in `<u>` so `.num u`
  * can set it in genuine small-caps — the one place §1.9 allows the Clash
  * small-cap look, because there it is a faithful match rather than a fake.

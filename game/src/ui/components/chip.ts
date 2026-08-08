@@ -23,6 +23,13 @@ export function createChip(text: string, onTap?: () => void): HTMLElement {
  * §2.4 — one slot, one occupant, resolved by priority:
  *   1 repairs running · 2 weekly event < 24h · 3 rank / notoriety.
  * This replaces Clash's shield pill, which is an anti-retention object here.
+ *
+ * NOT MOUNTED ON THE PERSISTENT HUD any more: LAYOUT_SPEC §2 groups the
+ * standing figure into the top capsule (`readout.ts`) beside the builders and
+ * the currencies, which is where Kingshot puts its own might/power readout.
+ * Kept because the priority-1 and -2 occupants (a repair countdown, an event
+ * countdown) are objects a raid report or an events page will want, and both
+ * of those are somewhere to press from.
  */
 export interface StatusChip {
   readonly el: HTMLElement;

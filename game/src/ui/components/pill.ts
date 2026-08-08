@@ -1,7 +1,7 @@
-import { el, iconImg, punch } from './dom';
+import { el, iconImg } from './dom';
 import { alignInk } from '../icons';
-import { n, ratio } from '../format';
-import { FROZEN } from '../env';
+import { ratio } from '../format';
+import { createCounter } from './counter';
 
 /** §3.1 / §3.2 / §3.3 — the resource, wallet and gem pills. */
 
@@ -51,11 +51,9 @@ export function createPill(opts: PillOptions = {}): Pill {
     root.append(plus);
   }
 
-  let shown = 0;
-  let first = true;
-  let raf = 0;
-
-  const paint = (v: number) => { num.textContent = n(v); };
+  // §3.9's count-up, shared with the grouped capsule's cells (counter.ts) so
+  // there is one easing curve in the HUD rather than one per numeral.
+  const counter = createCounter(num);
 
   const set = (value: number, cap?: number) => {
     if (cap !== undefined && opts.fill) {
@@ -63,29 +61,7 @@ export function createPill(opts: PillOptions = {}): Pill {
       root.style.setProperty('--pct', String(pct));
       root.classList.toggle('is-full', pct >= 1);
     }
-    if (first || FROZEN || Math.abs(value - shown) < 1) {
-      first = false;
-      shown = value;
-      paint(value);
-      return;
-    }
-    // Count-ups ease out — never linear (§5), and the counter punches on land.
-    const from = shown;
-    const start = performance.now();
-    cancelAnimationFrame(raf);
-    const step = (now: number) => {
-      const k = Math.min(1, (now - start) / 450);
-      const eased = 1 - Math.pow(1 - k, 3);
-      shown = from + (value - from) * eased;
-      paint(shown);
-      if (k < 1) raf = requestAnimationFrame(step);
-      else {
-        shown = value;
-        paint(value);
-        punch(num);
-      }
-    };
-    raf = requestAnimationFrame(step);
+    counter.set(value);
   };
 
   return {

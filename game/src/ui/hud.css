@@ -1,13 +1,29 @@
 /* ============================================================================
- * hud.css — §2 Layout.
+ * hud.css — §2 Layout, restructured to LAYOUT_SPEC.
  *
  * Portrait first, one-handed (§2.1):
- *   ZONE A  0 → 26 %   read-only, deliberately out of reach
- *   ZONE B 26 → 68 %   the island. No screen-anchored chrome at all.
- *   ZONE C 68 → 100%   the thumb zone. EVERYTHING actionable lives here.
+ *   ZONE A  top      read-only, deliberately out of reach
+ *   ZONE B  middle   the island. No screen-anchored chrome at all.
+ *   ZONE C  bottom   the thumb zone. EVERYTHING actionable lives here.
  *
- * Landscape (§2.2) reverts to the reference layout exactly, because two-handed
- * play makes bottom-left the natural primary again.
+ * What changed, and why the zones survived it:
+ *
+ * Zone A used to be two columns — a level row, a builder chip and a status
+ * chip on the left, a stack of up to five framed resource pills on the right —
+ * which at Ayuntamiento 4 was seven separately-contoured objects fighting along
+ * the top edge for information nobody presses. LAYOUT_SPEC §2 groups them into
+ * ONE translucent capsule with thin dividers, and spends the remaining frame on
+ * the two things Kingshot also frames: the level/XP row and the premium
+ * currency. Two rows in portrait, one in landscape, and the island gains back
+ * about 90px of sky.
+ *
+ * Zone C used to be four corner clusters. LAYOUT_SPEC §1 makes it one bar with
+ * five slots and one raised primary, plus §4's objective line above it. The
+ * corners were the worst part of a phone for a thumb and nothing there said how
+ * many destinations the game has; a bar answers both by existing.
+ *
+ * Both bottom objects live in components/navbar.css and components/objective.css
+ * — this file only places Zone A and the two strays that belong to neither.
  * ========================================================================== */
 
 .hud{
@@ -16,42 +32,53 @@
   pointer-events:none;
 }
 
-/* --- ZONE A · top-left column ------------------------------------------- */
-.zone-a-left{
+/* --- ZONE A --------------------------------------------------------------
+ * One stack, full width, so the world-anchored layer has a single ceiling to
+ * measure against (hud.ts's `spread`) rather than the taller of two columns. */
+.zone-a{
   position:absolute;
   left:calc(var(--ui-edge) + var(--ui-safe-l));
-  top:calc(10px + var(--ui-safe-t));
-  display:flex; flex-direction:column; align-items:flex-start;
-  gap:8px;
-  max-width:180px;
-}
-
-/* Clash's top-centre chips move here in portrait (§10.4): centring them at
- * 390pt puts the builder chip under the pill stack. The 18px pad is the
- * carpenter portrait's overhang — the EDGE RULE applies to drawn extent, so
- * the icon, not the capsule, is what sits 12px from the edge.
- *
- * Anchored to the HUD rather than nested in the left column, because in
- * landscape the same pair has to centre on the VIEWPORT. */
-.zone-a-chips{
-  position:absolute;
-  left:calc(var(--ui-edge) + var(--ui-safe-l) + 18px);
-  top:calc(10px + var(--ui-safe-t) + 52px);   /* below the 44px level row + 8 */
-  display:flex; flex-direction:column; align-items:flex-start;
-  gap:8px;
-}
-
-/* --- ZONE A · top-right pill stack --------------------------------------- */
-.zone-a-right{
-  position:absolute;
   right:calc(var(--ui-edge) + var(--ui-safe-r));
   top:calc(10px + var(--ui-safe-t));
-  display:flex; flex-direction:column; align-items:flex-end;
-  gap:var(--ui-pill-gap);          /* pitch = pill-h + gap = 40px */
+  display:flex; flex-direction:column;
+  gap:8px;
+  pointer-events:none;
 }
-/* Same rule as the left column: the overhanging icon is the drawn edge. */
-.zone-a-right .pill{ margin-right:18px; }
-@media (orientation:landscape){ .zone-a-right .pill{ margin-right:20px; } }
+
+/* Row 1 — the two things that keep their own frame.
+ *
+ * LAYOUT_SPEC §2: "Heavy framing is spent only on the avatar portrait and the
+ * premium currency." Ours are the level badge with its XP capsule (the figure
+ * that says who you are) and the gem pill. Everything else in Zone A groups. */
+.zone-a__row{
+  display:flex; align-items:center; justify-content:space-between;
+  gap:12px;
+}
+/* The gem pill is the only pill left on the HUD, so it is no longer sized to
+ * match a stack it used to belong to — it is sized to its own contents. The
+ * width holds four digits clear of the `+` that overhangs its left cap. */
+.zone-a__row .pill{ width:124px; margin-right:18px; }
+@media (orientation:landscape){ .zone-a__row .pill{ width:150px; margin-right:20px; } }
+
+@media (orientation:landscape){
+  /* Landscape has the width for Kingshot's real arrangement — ONE row, with the
+   * capsule centred between the framed level badge and the framed gem pill,
+   * exactly as ks_02 lays out avatar · capsule · gold.
+   *
+   * `display:contents` promotes row 1's two children into this grid rather than
+   * building a second DOM shape for one orientation; `order` then puts the
+   * capsule between them. */
+  .zone-a{
+    display:grid;
+    grid-template-columns:auto 1fr auto;
+    align-items:center;
+    gap:16px;
+  }
+  .zone-a__row{ display:contents; }
+  .zone-a .level-row{ order:0; }
+  .zone-a .readout{ order:1; justify-self:center; }
+  .zone-a__row .pill{ order:2; }
+}
 
 /* --- ZONE B · the island ------------------------------------------------
  * No screen-anchored chrome. Only world-anchored objects, re-projected every
@@ -71,60 +98,18 @@
 }
 .world-item.is-off{ display:none; }
 
-/* --- ZONE C · thumb zone -------------------------------------------------
- * Right cluster (primary): ¡Zarpar! 88 · gap 14 · Construir 56  = 158px
- * Left cluster:  Cofres 88 · gap 14 · Diario 56 · gap 14 · Ajustes 56 = 228px
- * Clear centre channel at 390pt: 390 − 2×(20+88) = 174px.
- *
- * §10.1: the primary CTA is bottom-RIGHT in portrait — in one-handed portrait
- * the comfortable arc is a ~150px radius near (300,800) for a right thumb.
- * Copy Clash's intent, not its coordinate. Landscape flips back. */
-.zone-c-primary,
-.zone-c-utility{
-  position:absolute;
-  bottom:calc(var(--ui-cluster-y) + var(--ui-safe-b));
-  display:flex; flex-direction:column-reverse;
-  gap:14px;
-}
-.zone-c-primary{
-  right:calc(var(--ui-cluster-x) + var(--ui-safe-r));
-  align-items:flex-end;
-}
-.zone-c-utility{
-  left:calc(var(--ui-cluster-x) + var(--ui-safe-l));
-  align-items:flex-start;
-}
-.cluster-row{ display:flex; flex-direction:column-reverse; gap:14px; }
-
-@media (orientation:landscape){
-  /* Two-handed: bottom-left is the natural primary again (§2.2). */
-  .zone-c-primary{ left:calc(var(--ui-cluster-x) + var(--ui-safe-l)); right:auto; align-items:flex-start; }
-  .zone-c-utility{ right:calc(var(--ui-cluster-x) + var(--ui-safe-r)); left:auto; align-items:flex-end; }
-  .cluster-row{ flex-direction:row; gap:12px; }
-
-  /* Builder chip + status chip become a centred pair with a 14px gap.
-   * 26px, not 10px: the info `i` floats ABOVE the chip's left corner in
-   * landscape and needs the headroom (§3.4). */
-  .zone-a-chips{
-    left:50%; top:calc(26px + var(--ui-safe-t));
-    transform:translateX(-50%);
-    flex-direction:row; align-items:flex-start;
-    /* 40, not 14: side by side, the builder chip's `+` overhangs its right cap
-     * by 15px and the status chip's anchor overhangs its left by ~22px, so a
-     * 14px gap left the two props 3px apart and reading as one object. The gap
-     * has to clear the DRAWN extent, not the boxes (§1.7). */
-    gap:40px;
-    padding-left:18px;   /* balances the carpenter portrait's overhang */
-  }
-}
-
 /* --- §3.9 Recoger Todo ---------------------------------------------------
- * A green wide pill in the CENTRE CHANNEL just above the clusters, and only
- * at 4+ pending bubbles. Below that it never appears: a shortcut that shows
- * up for two bubbles teaches the player to stop tapping the island. */
+ * A green wide pill in the CENTRE CHANNEL, and only at 4+ pending bubbles.
+ * Below that it never appears: a shortcut that shows up for two bubbles
+ * teaches the player to stop tapping the island.
+ *
+ * It clears the objective line, which clears the raised CTA, which clears the
+ * bar — the whole bottom stack is measured off the two nav tokens so moving
+ * one of them moves everything above it. */
 .collect-all{
   position:absolute;
-  left:50%; bottom:calc(var(--ui-cluster-y) + var(--ui-safe-b) + 168px);
+  left:50%;
+  bottom:calc(var(--ui-nav-lift) + var(--ui-nav-sit) + var(--ui-nav-cta) + 62px + var(--ui-safe-b));
   transform:translateX(-50%);
   min-height:52px; padding:10px 30px;
   --brk:60%;
@@ -142,11 +127,3 @@
  * the travel goes on `translate` where it composes instead of competing. */
 .collect-all.btn:active,
 .collect-all.btn.is-pressed{ transform:translateX(-50%); translate:0 4px; }
-
-/* --- Zurdo / Diestro (§10.1) — mirrors the two clusters, and only them ---- */
-.hud.is-left-handed .zone-c-primary{
-  left:calc(var(--ui-cluster-x) + var(--ui-safe-l)); right:auto; align-items:flex-start;
-}
-.hud.is-left-handed .zone-c-utility{
-  right:calc(var(--ui-cluster-x) + var(--ui-safe-r)); left:auto; align-items:flex-end;
-}

@@ -3,7 +3,7 @@ import { createSheet, type Sheet } from './sheet';
 import { createCostRow, type CostLike } from './cost';
 import { COPY, refusalText, type RefusalKey } from '../copy';
 import { createTimerBar } from '../components/timerBar';
-import { dur, n } from '../format';
+import { n } from '../format';
 import type { IconSet } from '../icons';
 
 /**
@@ -22,10 +22,21 @@ import type { IconSet } from '../icons';
  * a player who is told which one they have can act on it.
  */
 
-export interface GainLine {
-  metric: 'rate' | 'capacity' | 'storage';
-  from: number;
-  to: number;
+/**
+ * One cell of LAYOUT_SPEC item 5's 2×2 grid.
+ *
+ * `value` and `delta` arrive PRE-FORMATTED from present.ts, because the two
+ * formatters that produce them (`n` and `dur`) are the only things allowed to
+ * decide what a number looks like (§6.15) and `dur` emits `<u>` unit markup.
+ * Every figure in one is read off the same level row the sim charges against,
+ * so the grid cannot advertise a number the economy will not then deliver.
+ */
+export interface StatLine {
+  label: string;
+  /** Formatted, may carry `<u>` unit markup. */
+  value: string;
+  /** What this upgrade adds, formatted with its sign. Omitted when unchanged. */
+  delta?: string;
 }
 
 export interface UpgradeView {
@@ -35,7 +46,8 @@ export interface UpgradeView {
   level: number;
   /** Absent at max level, or while a build job is running. */
   plan?: { toLevel: number; cost: CostLike; timeMs: number };
-  gains: GainLine[];
+  /** Up to four cells, in the order LAYOUT_SPEC names them. Empty with no plan. */
+  stats: StatLine[];
   /** The Ayuntamiento's real payload: what its next level opens. */
   unlocks?: readonly string[];
   refusal: RefusalKey | null;
@@ -58,12 +70,6 @@ export interface UpgradeSheet {
   /** Runs the visible countdown between sim ticks. */
   tick(elapsed: number): void;
 }
-
-const GAIN_LABEL: Record<GainLine['metric'], string> = {
-  rate: COPY['sheet.rate'],
-  capacity: COPY['sheet.capacity'],
-  storage: COPY['sheet.storage'],
-};
 
 export function createUpgradeSheet(opts: {
   icons: IconSet;
@@ -147,18 +153,26 @@ export function createUpgradeSheet(opts: {
 
     detail.append(el('div', 't sheet__row-label', `${COPY['sheet.next']} · Nv${view.plan.toLevel}`));
 
-    // The before → after table. Every figure comes from the same level row the
-    // sim charges against, so the sheet cannot advertise a number the economy
-    // will not then deliver.
-    for (const gain of view.gains) {
-      const suffix = gain.metric === 'rate' ? COPY['sheet.perHour'] : '';
-      detail.append(el('div', 'gain',
-        el('span', 't gain__label', GAIN_LABEL[gain.metric]),
-        el('span', 'num gain__from', `${n(gain.from)}${suffix}`),
-        el('span', 'gain__arrow', '→'),
-        el('span', 'num gain__to', `${n(gain.to)}${suffix}`)
+    // LAYOUT_SPEC item 5 — the 2×2 grid, in place of the single before→after
+    // row this panel used to show. The before is not lost: it is the green
+    // delta beside each value, which says the same thing in a quarter of the
+    // height and reads as a gain rather than as a subtraction the player has to
+    // perform themselves.
+    //
+    // A support building has fewer than four figures worth printing, and the
+    // grid renders exactly what it is given rather than padding out to four
+    // with dashes. Two real cells beat four cells half of which say nothing.
+    const grid = el('div', 'sheet__stats');
+    for (const stat of view.stats) {
+      const value = el('span', 'num stat__value');
+      value.innerHTML = stat.value;
+      grid.append(el('div', 'stat',
+        el('span', 't stat__label', stat.label),
+        el('span', 'stat__line', value,
+          stat.delta ? el('span', 'num stat__delta', stat.delta) : null)
       ));
     }
+    detail.append(grid);
 
     if (view.unlocks?.length) {
       detail.append(el('div', 'gain gain--unlocks',
@@ -167,22 +181,16 @@ export function createUpgradeSheet(opts: {
       ));
     }
 
-    detail.append(el('div', 'sheet__price',
-      createCostRow({
-        icons: opts.icons,
-        cost: view.plan.cost,
-        store: view.store,
-        timeMs: view.plan.timeMs,
-      })
-    ));
-
+    // LAYOUT_SPEC item 5 — the cost rides ON the CTA with its resource icon,
+    // rather than sitting in a separate strip above it. The button then states
+    // the whole transaction: what it does and what it takes. `store` is passed
+    // so the resource that is actually short goes red, which is the one thing
+    // the strip did that a bare price would lose.
     const blocked = view.refusal !== null;
     cta.className = `btn ${blocked ? 'btn--grey2' : 'btn--green'} sheet__cta`;
-    cta.replaceChildren(
-      el('span', 't t-btn', COPY['cta.upgrade']),
-      el('span', 'num sheet__cta-time')
-    );
-    (cta.lastElementChild as HTMLElement).innerHTML = dur(view.plan.timeMs);
+    const price = createCostRow({ icons: opts.icons, cost: view.plan.cost, store: view.store });
+    price.classList.add('sheet__cta-cost');
+    cta.replaceChildren(el('span', 't t-btn', COPY['cta.upgrade']), price);
     cta.disabled = false;   // never inert: it answers with the reason
     why.textContent = blocked
       ? refusalText(view.refusal!, view.refusal === 'town-hall-too-low' ? view.townHallNeeded : undefined)

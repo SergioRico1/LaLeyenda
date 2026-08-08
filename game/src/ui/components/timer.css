@@ -1,83 +1,100 @@
 /* ============================================================================
- * timer.css — §3.11 build/craft timer bar (world-anchored).
+ * timer.css — the world-anchored build/craft timer (UI_SPEC §3.11, revised by
+ * LAYOUT_SPEC item 3).
  *
- * Direction encodes meaning: STOCK DRAINS LEFTWARD (the resource pills),
- * PROGRESS GROWS RIGHTWARD (this). Rounded left cap, flat right edge at the
- * growing end. Getting these two backwards is anti-goal §6.2.
+ * It WAS a green fill bar with the numeral floating above it. It is now a dark
+ * translucent capsule with the numeral inside it and a thin progress line along
+ * the bottom edge, because of the reason LAYOUT_SPEC gives:
+ *
+ *   > Over a busy, saturated world a green bar competes with the world; a dark
+ *   > capsule recedes and its white numerals stay legible at any zoom.
+ *
+ * Our island is turquoise sea, warm sand and orange roofs. A 130px slab of
+ * #A6E04B over that read as the brightest object on screen — brighter than the
+ * ¡Zarpar! tile, which is the one thing allowed to be. The capsule inverts that
+ * relationship: it is a hole in the picture, and the numerals are what you see.
+ *
+ * The four-layer rule (§0.2) is not being dropped here. LAYOUT_SPEC settles the
+ * apparent conflict: the rule governs anything the player can PRESS. This is a
+ * readout that also happens to be a route into the finish-now decision, so it
+ * keeps the ink contour, the top rim and the hard extrusion — the layers that
+ * make it a physical thing — and loses only the gloss step, which belonged to
+ * the tube of liquid that no longer exists.
+ *
+ * Direction still encodes meaning: STOCK DRAINS LEFTWARD (the resource pills),
+ * PROGRESS GROWS RIGHTWARD (this line). Getting those backwards is anti-goal
+ * §6.2 and the change of shape does not license it.
  * ========================================================================== */
 
-/* The root is the wrapper; --bar-h is the bar. The top band is the label's, and
- * it is real layout height so the world layer can space these apart. */
 .timerbar{
   --pct:0;
-  --bar-h:20px;
   position:relative;
-  width:130px;
-  padding-top:20px;          /* the label's band — 18px of numeral plus air */
-  pointer-events:auto;
-}
-/* 2px of ink, not 3. §1.1 reserves --ui-ink-w-sm for elements under ~28px and
- * this bar is 20px tall: at 3px the contour was 30% of the bar's own height and
- * the fill had barely a third of it left to show progress in. */
-.timerbar__track{
-  position:relative;
-  height:var(--bar-h);
+  width:108px;
+  display:grid; place-items:center;
+  /* Asymmetric on purpose: the bottom 4px is the progress line's lane, so the
+   * numeral stays optically centred in the capsule rather than sitting on top
+   * of its own progress. */
+  padding:5px 15px 8px;
+  /* 2px of ink, not 3. §1.1 reserves --ui-ink-w-sm for elements under ~28px and
+   * this capsule is ~33px: at 3px the contour started to close around an 18px
+   * numeral that already carries its own outline. */
   border:var(--ui-ink-w-sm) solid var(--ui-ink);
   border-radius:var(--ui-r-pill);
-  /* Denser than the chips' --ui-track-well. Those sit over open sea, which is
+  /* Denser than the pills' --ui-track-well. Those sit over open sea, which is
    * flat; this one is world-anchored and routinely lands on top of a building,
-   * where 46% let every scaffolding beam read straight through the empty half. */
-  background:rgba(26,21,15,.70);
+   * where a 46% wash let every scaffolding beam read straight through the
+   * numerals. Still translucent — LAYOUT_SPEC's whole point is that the world
+   * stays visible through anything that is merely read. */
+  background:rgba(18,14,10,.66);
   box-shadow:var(--ui-drop-xs);
   overflow:hidden;
-}
-/* The bar is a route into §3.16's finish-now decision, so it is a button and
- * presses like one — it used to absorb the tap and show nothing. */
-.timerbar[role="button"]{ transition:transform .06s ease-out, filter .06s ease-out; }
-.timerbar[role="button"]:active,
-.timerbar[role="button"].is-pressed{ transform:translateY(3px); filter:brightness(.9); }
-/* The tube's own step and lip, over the empty track AND the fill — measured on
- * the reference's build bar: rim L=227, upper half L≈205, lower half L≈158. */
-.timerbar__track::after{
-  content:'';
-  position:absolute; inset:0;
-  background:var(--ui-track-gloss);
-  box-shadow:inset 0 -2px 0 var(--ui-lip);
-  pointer-events:none;
-}
-.timerbar__fill{
-  position:absolute; left:0; top:0; bottom:0;
-  width:calc(var(--pct) * 100%);
-  border-radius:999px 0 0 999px;      /* rounded left cap, flat growing edge */
-  background:linear-gradient(180deg,
-    var(--ui-timer-a) 0 55%, var(--ui-timer-b) 55.01% 100%);
-  /* Driven every frame from the scene clock, so this is deliberately a SHORT
-   * smoothing pass and not the pills' 450ms ramp: it only exists to stop the
-   * bar stepping when the sim re-syncs the figure every 250ms. */
-  transition:width .12s linear;
-}
-html.shot:not(.motion) .timerbar__fill{ transition:none; }
-/* Inside the track, and above its gloss overlay — the rim is layer 3, and the
- * gloss is layer 2. */
-.timerbar__rim{
-  position:absolute; left:6px; right:6px; top:0; height:1px;
-  background:var(--ui-rim); border-radius:999px; pointer-events:none;
-  z-index:1;
-}
-/* The numeral is CENTRED and sits just clear of the bar's top contour.
- *
- * §3.11 asks for a ~40% overlap, and at -62% that is what it did — but the
- * label carries its own near-black outline, so the two contours merged into one
- * thick smear and the bar lost its top edge everywhere the digits crossed it.
- * Scanned on the reference's own build bar, its "12M 2s" clears the top contour
- * entirely. The label still reads as attached because it is centred and close,
- * not because it sits on top of the ink. */
-.timerbar__label{
-  position:absolute; left:50%; top:0;
-  transform:translateX(-50%);
-  line-height:1;
-  white-space:nowrap;
-  pointer-events:none;
+  pointer-events:auto;
 }
 
-@media (orientation:landscape){ .timerbar{ width:150px; --bar-h:22px; } }
+/* The capsule is a route into §3.16's finish-now decision, so it is a button
+ * and presses like one — it used to absorb the tap and show nothing. */
+.timerbar[role="button"]{ transition:transform .06s ease-out, filter .06s ease-out; }
+.timerbar[role="button"]:active,
+.timerbar[role="button"].is-pressed{ transform:translateY(2px); filter:brightness(.88); }
+
+/* Layer 3 — the warm rim on the top inner edge. Inset from the caps so it
+ * follows the straight part of the stadium instead of crossing the curve. */
+.timerbar__rim{
+  position:absolute; left:14px; right:14px; top:0; height:1px;
+  background:var(--ui-rim); border-radius:999px; pointer-events:none;
+  opacity:.42;
+}
+
+/* The numeral, WHITE and INSIDE the capsule — the whole point of the change.
+ * It keeps its near-black outline: the capsule is translucent, so the ground
+ * behind the digits is the world at 38% and is not uniform. */
+.timerbar__label{
+  position:relative;
+  line-height:1;
+  white-space:nowrap;
+}
+
+/* The thin progress line along the bottom edge. Inset to the stadium's straight
+ * span rather than full-bleed: at a 999px radius the caps are semicircles, and
+ * a full-width line would be clipped to a lens that reads 0% and 100% almost
+ * identically — which is the one thing this line exists to distinguish. */
+.timerbar__rail{
+  position:absolute; left:14px; right:14px; bottom:3px; height:3px;
+  border-radius:999px;
+  background:rgba(255,255,255,.13);
+  overflow:hidden;
+  pointer-events:none;
+}
+.timerbar__line{
+  display:block; height:100%;
+  width:calc(var(--pct) * 100%);
+  border-radius:999px;
+  background:var(--ui-timer-a);
+  /* Driven every frame from the scene clock, so this is deliberately a SHORT
+   * smoothing pass and not the pills' 450ms ramp: it only exists to stop the
+   * line stepping when the sim re-syncs the figure every 250ms. */
+  transition:width .12s linear;
+}
+html.shot:not(.motion) .timerbar__line{ transition:none; }
+
+@media (orientation:landscape){ .timerbar{ width:120px; } }

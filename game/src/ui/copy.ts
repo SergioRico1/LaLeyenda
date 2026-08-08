@@ -13,6 +13,9 @@ export const COPY = {
   'cta.chests': 'Cofres',
   'cta.log': 'Diario',
   'cta.settings': 'Ajustes',
+  /* LAYOUT_SPEC §1 slot 1 — the island IS the builder: the destination is your
+   * island, and what you do there is build on it. */
+  'cta.island': 'Isla',
   'cta.upgrade': 'Mejorar',
   'cta.claim': 'Reclamar',
   'cta.collectAll': 'Recoger Todo',
@@ -29,6 +32,19 @@ export const COPY = {
   'banner.victory': '¡Botín!',
   'banner.returned': 'La Isla Resistió',
   'guide.idleBuilder': 'Carpintero sin trabajo',
+
+  /* LAYOUT_SPEC §4 — the objective line. One per §4.8 resolver verdict, in the
+   * resolver's own priority order. Sentence case, not Title Case: these are
+   * sentences the game says out loud, and §1.9's Title Case rule is about
+   * labels. Each one has to fit a 390pt line beside its progress figure, so
+   * they name the verb and the object and stop. */
+  'obj.builder': 'Un carpintero está libre',
+  'obj.chest': 'Tienes un cofre esperando',
+  'obj.log': 'Recompensas por reclamar',
+  'obj.store': 'Amplía el almacén de',
+  'obj.sail': 'Zarpa en busca de botín',
+  'obj.collect': 'Recoge lo producido',
+  'obj.collectTip': 'Toca las burbujas de la isla',
 
   /* §3.5 — every refusal and every unbuilt route answers out loud. A tap that
    * changes nothing and says nothing is the one thing the spec forbids twice. */
@@ -67,6 +83,18 @@ export const COPY = {
   'sheet.perHour': '/h',
   'sheet.maxLevel': 'Nivel máximo alcanzado',
   'sheet.close': 'Cerrar',
+
+  /* LAYOUT_SPEC item 5 — the 2×2 stat grid. Grid cells are ~150px wide on a
+   * 390pt screen, so these are the SHORT forms; 'sheet.capacity' above stays
+   * long because nothing else uses it now. */
+  'stat.rate': 'Producción',
+  'stat.capacity': 'Capacidad',
+  'stat.storage': 'Almacenamiento',
+  'stat.fillsIn': 'Se llena en',
+  'stat.maxLevel': 'Nivel máx',
+  'stat.buildings': 'Edificios',
+  'stat.resources': 'Recursos',
+  'stat.time': 'Tiempo',
 } as const;
 
 export type CopyKey = keyof typeof COPY;

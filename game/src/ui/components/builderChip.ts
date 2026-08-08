@@ -4,10 +4,17 @@ import { alignInk } from '../icons';
 /**
  * §3.4 — the builder chip.
  *
- * It stays in Zone A (matching Clash's silhouette) and IS tappable, but the
- * actionable free-builder signal is mirrored onto the Construir tile in Zone C
- * (§10.3): the top row keeps its read-only character and no required action
- * lives out of thumb reach.
+ * NOT MOUNTED ON THE PERSISTENT HUD any more. LAYOUT_SPEC §2 moves the builder
+ * COUNTER into the grouped top capsule (`readout.ts`) as a read-only cell,
+ * which it can only be because §2.1 already required the chip's route to be
+ * duplicated in the thumb zone — it is the nav bar's Isla slot now. The
+ * capsule's cell carries the tilt, the warm face and the escalation.
+ *
+ * What this object still has that the cell does not is the `+` and the blue
+ * info `i`, which belong to the Constructores panel — a screen about builders,
+ * where a control for buying one is in the right place. Kept for it rather than
+ * deleted, because §3.4 specifies this object and the panel is the slice that
+ * will want it.
  */
 
 export interface BuilderChip {

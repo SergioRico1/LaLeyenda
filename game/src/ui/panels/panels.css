@@ -416,29 +416,73 @@ html.shot:not(.motion) .sheet__panel{ transition:none; }
   border-top:1px solid rgba(255,255,255,.12);
 }
 .gain__label{ font-size:16px; opacity:.8; flex:1 1 auto; }
-.gain__from{ font-size:18px; opacity:.6; }
-.gain__arrow{ font-size:15px; opacity:.6; }
 .gain__to{ font-size:19px; color:#C6F06A; }
 .gain--unlocks .gain__to{ font-size:16px; text-align:right; max-width:60%; }
-/* §3.20's cost footer: an inset dark panel holding the price, not numbers loose
- * on the well. Same object as the one inside a picker row, so the two panels
- * agree about what a price looks like. */
-.sheet__price{ margin-top:8px; }
-.sheet__price .cost-row{
-  padding:4px 10px 5px;
+
+/* --- LAYOUT_SPEC item 5 — the 2×2 stat grid ------------------------------
+ *
+ * Kingshot's building sheet packs four label/value pairs above the CTA; ours
+ * showed one before→after row and left the rest of the panel empty. Withholding
+ * figures the sim already has does not simplify the decision, it just makes the
+ * player guess.
+ *
+ * The hairlines between cells ARE the 1px gap, with the grid's own background
+ * showing through — one object with four compartments rather than four floating
+ * boxes. It is the same inset-dark-panel-on-the-well treatment the price strip
+ * used, so the sheet still has exactly one idea of what a figure sits on.
+ *
+ * `auto-fit` rather than a hard `1fr 1fr`: a support building supplies two
+ * cells, not four, and a two-cell grid should be one row of two — not one
+ * column with a hole beside it. */
+.sheet__stats{
+  display:grid;
+  grid-template-columns:repeat(2, minmax(0, 1fr));
+  gap:1px;
+  margin-top:2px;
   border-radius:10px;
-  background:rgba(0,0,0,.30);
+  overflow:hidden;
+  background:rgba(255,255,255,.13);
   box-shadow:inset 0 1px 0 rgba(0,0,0,.35);
 }
+.stat{
+  display:flex; flex-direction:column; gap:2px;
+  min-width:0;
+  padding:6px 10px 7px;
+  background:rgba(0,0,0,.32);
+}
+/* Sits on the dark well, so the label is the quiet half of the pair and the
+ * numeral is the loud one — the opposite weighting to a cream panel. */
+.stat__label{
+  font-size:14px; opacity:.66;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+/* Wraps rather than overflows. A late Almacén reads "1 400 000" with a
+ * "+800 000" beside it, which is wider than half a 320pt screen; the delta
+ * drops to its own line there and the grid row grows to match. Both cells in a
+ * row are the same height because they are grid siblings, so nothing shears. */
+.stat__line{ display:flex; align-items:baseline; flex-wrap:wrap; gap:0 6px; min-width:0; }
+.stat__value{ font-size:20px; white-space:nowrap; }
+/* Same green as the old gain row's "after" figure: what this upgrade adds. */
+.stat__delta{ font-size:15px; color:#C6F06A; white-space:nowrap; }
 
 /* The CTA at thumb height — §4.10 beat 0:45's entire requirement. */
 .sheet__cta{
-  width:100%; min-height:60px; gap:10px;
+  width:100%; min-height:60px; gap:4px 10px;
+  /* The price now rides on this button (below), and the Astillero's second
+   * level costs three resources at once. Narrower side padding buys back the
+   * room for them; `wrap` is the floor under the worst case, so a 320pt screen
+   * gets a two-line button rather than digits sliding under the contour. */
+  padding-inline:16px;
+  flex-wrap:wrap;
   --brk:50%;
 }
 .sheet__cta .t-btn{ font-size:22px; }
-.sheet__cta-time,
 .sheet__cta-price{ display:inline-flex; align-items:center; gap:4px; font-size:19px; opacity:.95; }
+/* LAYOUT_SPEC item 5 — the price rides on the button. Tighter than the loose
+ * cost strip it replaces: this is a label on a control, not a table. */
+.sheet__cta-cost{ justify-content:center; gap:2px 12px; }
+.sheet__cta-cost .cost-item__icon{ width:28px; height:28px; margin:-8px 0; }
+.sheet__cta-cost .cost-item__n{ font-size:20px; }
 .sheet__gem{ width:26px; height:26px; object-fit:contain; margin:-6px 0; }
 /* Blocked, not dead: it keeps its place, its four layers and its full size, and
  * answers with the line below it. upgradeSheet.ts already swaps the family to

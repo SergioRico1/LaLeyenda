@@ -1,14 +1,16 @@
 import type * as THREE from 'three';
 import { bakeIcons, type IconSet } from './icons';
 import { el, punch, pressable } from './components/dom';
-import { createPill, type Pill } from './components/pill';
+import { createPill } from './components/pill';
 import { createTile } from './components/button';
-import { createBuilderChip } from './components/builderChip';
-import { createChip, createStatusChip } from './components/chip';
+import { createReadout, type ReadoutCell } from './components/readout';
+import { createNavSlot, createNavbar } from './components/navbar';
+import { createObjective } from './components/objective';
+import { createChip } from './components/chip';
 import { createTimerBar, type TimerBar } from './components/timerBar';
 import { createBubble, BUBBLE_TIP, type Bubble } from './components/bubble';
-import { createTray, type SlotState } from './components/tray';
-import { n } from './format';
+import { type SlotState } from './components/tray';
+import { n, nc } from './format';
 import { COPY } from './copy';
 import { FROZEN, CAPTURE } from './env';
 import { detectPack } from './pack';
@@ -21,6 +23,20 @@ import { sfx } from './sfx';
  *
  * `#ui` is pointer-events:none and only leaf interactive elements opt back in,
  * so the island stays pannable through every gap in the HUD.
+ *
+ * The STRUCTURE is LAYOUT_SPEC's, which is Kingshot's, and it replaced three
+ * things at once (items 1, 2 and 4):
+ *
+ *   · the four corner clusters became ONE bottom nav bar with five slots and
+ *     one raised primary — two objects along the bottom edge where there were
+ *     five, all of them now inside a thumb's arc;
+ *   · the stack of separately-framed resource pills, the builder chip and the
+ *     status chip became ONE translucent capsule that the world reads through,
+ *     with the gem pill keeping its own frame;
+ *   · §4.8's next-action resolver, which was spent on a glow, now also says
+ *     what it wants in words, on one tappable line above the nav.
+ *
+ * The OBJECTS are still UI_SPEC's: everything pressable keeps the four layers.
  */
 
 export type ResourceId = 'oro' | 'madera' | 'ron' | 'metal';
@@ -48,9 +64,23 @@ export interface HudState {
   builders: { free: number; total: number };
   /** §2.4 — one slot, one occupant, resolved by priority. */
   status: string;
-  /** Top → bottom. Staged reveal (§4.1): 3 rows early, 5 at Ayuntamiento 4. */
+  /** Left → right in the capsule. Staged reveal (§4.1): two currencies early,
+   *  four at Ayuntamiento 4. */
   resources: ResourceState[];
   gems: number;
+  /**
+   * §3.8 — a badge only for something CLAIMABLE in 1–2 taps.
+   *
+   * `construir` is deliberately not read by the nav bar. LAYOUT_SPEC §1 gives
+   * badges to two slots, Cofres and Diario, and our Isla slot is the one place
+   * that table and UI_SPEC §3.8 disagree — §3.8 lists Construir as a host for
+   * the free-builder signal. The table wins here because the signal it was
+   * carrying now has three louder channels that did not exist when §3.8 was
+   * written: the objective line says "un carpintero está libre" in words, the
+   * §4.8 cue rings the Isla slot, and the capsule's builder cell still tilts
+   * its carpenter and warms its face (§3.4). A red dot on top of that is the
+   * degradation §3.8 itself warns about — the channel is worth more kept scarce.
+   */
   badges: { cofres: number; diario: number; construir: number };
   /** Shortest running chest timer, shown as the Cofres tile caption. */
   chestTimerMs: number | null;
@@ -205,98 +235,91 @@ export async function createHud(
   const xp = el('div', 'xp', xpFill, el('i', 'xp__rim'));
   const levelRow = el('div', 'level-row', levelBadge, xp);
 
-  const builderChip = createBuilderChip({
-    icon: icons.carpintero,
-    onTap: () => open('Constructores'),
-    onPlus: () => open('Gemas'),
-  });
-  const statusChip = createStatusChip({
-    icon: icons.rango,
-    onTap: () => open('Rangos de Capitán'),
-  });
-
-  // The chip pair lives directly on the HUD, not inside the left column: in
-  // landscape it has to centre on the viewport (§2.2), not on the column.
-  const chips = el('div', 'zone-a-chips', builderChip.el, statusChip.el);
-  const zoneALeft = el('div', 'zone-a-left', levelRow);
-
-  // §4.1 staged reveal: three rows early, five at Ayuntamiento 4. The stack is
-  // rebuilt only when the SET of resources changes, so a new pill can slide in
-  // mid-session without the others being torn down and re-created every frame.
-  const pills = new Map<ResourceId, Pill>();
-  const zoneARight = el('div', 'zone-a-right');
   // §3.3 — the gem pill differs in exactly three ways: no fill bar, a `+` on
-  // the end OPPOSITE the icon, and a light rim top AND bottom.
+  // the end OPPOSITE the icon, and a light rim top AND bottom. It keeps its own
+  // frame while everything else groups: LAYOUT_SPEC §2 spends heavy framing on
+  // the premium currency and nothing else up here, and the `+` is the one Zone A
+  // control that is still pressable.
   const gemPill = createPill({ icon: icons.gema, onPlus: () => open('Gemas') });
-  let pillOrder = '';
 
-  function syncPills(): void {
-    const wanted = state.resources.map((r) => r.id);
-    const key = wanted.join(',');
-    if (key === pillOrder) return;
-    // The FIRST build of the stack is a layout, not a reveal. Every one after
-    // it is §4.1's staged reveal — the moment a brand-new currency enters the
-    // player's game — and it used to happen as a silent layout shift.
-    const staged = pillOrder !== '';
-    pillOrder = key;
-    ceilingCache = null;   // the stack just got taller or shorter
-    for (const id of wanted) {
-      if (pills.has(id)) continue;
-      const pill = createPill({ fill: RESOURCE_FILL[id], icon: icons[id] });
-      if (staged && !FROZEN) {
-        pill.el.classList.add('is-revealing');
-        pill.el.addEventListener('animationend', () => pill.el.classList.remove('is-revealing'), { once: true });
-        sfx('pop');
-      }
-      pills.set(id, pill);
-    }
-    for (const [id, pill] of [...pills]) {
-      if (wanted.includes(id)) continue;
-      pill.el.remove();
-      pills.delete(id);
-    }
-    zoneARight.append(...wanted.map((id) => pills.get(id)!.el), gemPill.el);
+  // LAYOUT_SPEC §2 — one dark translucent capsule with thin dividers, in place
+  // of the builder chip, the status chip and the stack of resource pills.
+  const readout = createReadout();
+
+  const zoneA = el(
+    'div', 'zone-a',
+    el('div', 'zone-a__row', levelRow, gemPill.el),
+    readout.el
+  );
+
+  /** The capsule's cells, in Kingshot's own order: the standing figure first,
+   *  then the builders, then the currencies as §4.1 reveals them. */
+  function readoutCells(): ReadoutCell[] {
+    return [
+      { id: 'rango', icon: icons.rango, label: COPY['panel.ranks'] },
+      { id: 'obreros', icon: icons.carpintero, label: COPY['panel.builders'] },
+      ...state.resources.map<ReadoutCell>((r) => ({
+        id: r.id,
+        icon: icons[r.id],
+        fill: RESOURCE_FILL[r.id],
+        label: COPY[`res.${r.id}`],
+      })),
+    ];
   }
-  syncPills();
 
-  /* --- ZONE C ----------------------------------------------------------- */
+  /** False until the capsule has been built once: the first build is a layout,
+   *  every one after it is §4.1's staged reveal and gets the beat. */
+  let laidOut = false;
+
+  function syncReadout(): void {
+    if (!readout.sync(readoutCells())) return;
+    ceilingCache = null;              // the capsule may have changed height
+    // §4.1's staged reveal — a brand-new currency entering the player's game
+    // used to be a silent layout shift.
+    if (laidOut && !FROZEN) sfx('pop');
+    laidOut = true;
+  }
+  syncReadout();
+
+  /* --- ZONE C — the bottom nav bar (LAYOUT_SPEC §1) ----------------------
+   * Five slots, one bar. Slot 3 is the §3.5 CTA unchanged, merely raised. */
   const sail = createTile({
     kind: 'cta', family: 'orange', icon: icons.zarpar, lock: icons.candado,
     caption: COPY['cta.sail'], label: COPY['cta.sail'],
-    onTap: () => {
-      // §3.5 — a locked CTA names the key. It also SHAKES, so the answer and
-      // the object it is about are visibly the same event.
-      if (state.sailLocked) { refuse(sail.el); open('Construye el Muelle'); return; }
-      open('Zarpar');
-    },
+    onTap: () => sailTapped(),
   });
-  const build = createTile({
-    kind: 'sub', family: 'orange', icon: icons.construir,
-    label: COPY['cta.build'],
-    onTap: () => open('Construir'),
-  });
-  const zoneCPrimary = el('div', 'zone-c-primary', sail.el, build.el);
 
-  const chests = createTile({
-    kind: 'featured', icon: icons.cofres,
-    caption: COPY['cta.chests'], label: COPY['cta.chests'],
-    onTap: () => open('Cofres'),
+  function sailTapped(): void {
+    // §3.5 — a locked CTA names the key. It also SHAKES, so the answer and the
+    // object it is about are visibly the same event.
+    if (state.sailLocked) { refuse(sail.el); open('Construye el Muelle'); return; }
+    open('Zarpar');
+  }
+
+  const isla = createNavSlot({
+    // Slot 1 is the island, and on this island the thing you do is build: the
+    // picker is what the destination opens. §2.1 requires the builder chip's
+    // route to be duplicated in the thumb zone, and this is that duplicate —
+    // which is what let the chip itself become a read-only cell in the capsule.
+    icon: icons.construir, label: COPY['cta.island'], onTap: () => open('Construir'),
   });
-  const log = createTile({
-    kind: 'icon', family: 'grey', icon: icons.diario,
-    label: COPY['cta.log'], onTap: () => open('Diario de a Bordo'),
+  const cofres = createNavSlot({
+    icon: icons.cofres, label: COPY['cta.chests'], onTap: () => open('Cofres'),
   });
-  const settings = createTile({
-    kind: 'icon', family: 'grey', icon: icons.ajustes,
-    label: COPY['cta.settings'], onTap: () => open('Ajustes'),
+  const diario = createNavSlot({
+    icon: icons.diario, label: COPY['cta.log'], onTap: () => open('Diario de a Bordo'),
   });
-  const zoneCUtility = el(
-    'div', 'zone-c-utility',
-    chests.el,
-    el('div', 'cluster-row', log.el, settings.el)
+  const ajustes = createNavSlot({
+    icon: icons.ajustes, label: COPY['cta.settings'], onTap: () => open('Ajustes'),
+  });
+  const navbar = createNavbar(
+    [isla.el, cofres.el, diario.el, ajustes.el],
+    sail.el
   );
 
-  const tray = createTray({ chest: icons.cofres, lock: icons.candado }, () => open('Cofres'));
+  // LAYOUT_SPEC §4 — the resolver, said out loud, one line above the nav.
+  const objective = createObjective(() => objectiveGo());
+  let objectiveGo: () => void = () => {};
 
   // §3.9 — offered only at 4+ pending bubbles. Below that, never: a shortcut
   // that appears for two bubbles teaches the player to stop tapping the island.
@@ -314,10 +337,17 @@ export async function createHud(
   const toasts = createToasts();
   const guide = el('div', 'layer-guide-host');
 
+  // The chest tray (§3.13) is not mounted here any more. §10.8 already
+  // collapsed it into the Cofres tile in portrait; the nav bar makes the same
+  // argument in landscape, where four 62px slots would sit exactly where the
+  // bar now is. Everything it said still gets said — the Cofres slot carries
+  // the ready badge, wears the shortest unlock timer in place of its label, and
+  // bobs when a chest is claimable — and the tray component itself is untouched
+  // for the Cofres panel, which is where a tray belongs.
   const hud = el(
     'div', 'hud',
-    zoneALeft, chips, zoneARight,
-    zoneCPrimary, zoneCUtility, tray.el, collectAll,
+    zoneA,
+    objective.el, navbar, collectAll,
     toasts.el, guide
   );
   root.append(zoneB, hud);
@@ -327,8 +357,6 @@ export async function createHud(
   let viewport = { w: window.innerWidth, h: window.innerHeight };
   /** Scene time in seconds, as of the last tick(). */
   let elapsedNow = 0;
-  /** Scene time at which the current HudState's timers were measured. */
-  let stateSetAt = 0;
 
   function addWorldItem(spec: WorldItemSpec): void {
     const wrap = el('div', 'world-item');
@@ -477,10 +505,10 @@ export async function createHud(
     // The stack's height only changes on a staged reveal or a resize, and both
     // invalidate the cache explicitly.
     if (ceilingCache === null) {
-      ceilingCache = Math.max(
-        zoneARight.getBoundingClientRect().bottom,
-        chips.getBoundingClientRect().bottom
-      ) + 8;
+      // One box now, where it used to be the taller of two columns: grouping
+      // the readouts (LAYOUT_SPEC §2) means Zone A is a single stack, and its
+      // bottom edge is the whole ceiling.
+      ceilingCache = zoneA.getBoundingClientRect().bottom + 8;
     }
     const ceiling = ceilingCache;
 
@@ -514,9 +542,9 @@ export async function createHud(
     }
   }
 
-  /* --- collection: the value FLIES to its pill (§5.4) ---------------------
-   * The sim is told immediately, so the state is never a lie. The PILL is not:
-   * the collected amount is held back from the displayed figure until the
+  /* --- collection: the value FLIES to its cell (§5.4) ---------------------
+   * The sim is told immediately, so the state is never a lie. The READOUT is
+   * not: the collected amount is held back from the displayed figure until the
    * number finishes its arc, otherwise the counter jumps a beat before the
    * value visibly arrives, and §5.4's whole point is that the destination
    * reacts on arrival. */
@@ -528,8 +556,8 @@ export async function createHud(
     if (spec.kind !== 'bubble' || !item.bubble) return;
     const rect = item.bubble.el.getBoundingClientRect();
     const from = { x: rect.left + rect.width / 2, y: rect.top + rect.height * 0.4 };
-    const pill = pills.get(spec.resource);
-    const flying = !!pill && !FROZEN && flights < 8;
+    const cell = readout.cell(spec.resource);
+    const flying = !!cell && !FROZEN && flights < 8;
 
     if (flying) inFlight.set(spec.resource, (inFlight.get(spec.resource) ?? 0) + spec.amount);
 
@@ -567,7 +595,7 @@ export async function createHud(
         if (left > 0) inFlight.set(spec.resource, left);
         else inFlight.delete(spec.resource);
       }
-      pill?.hit();
+      cell?.hit();
       // §5.4: the destination REACTS on arrival. Without a sound on the landing
       // the flight is a silent arc that ends in a colour change.
       if (flying) sfx('land');
@@ -577,7 +605,7 @@ export async function createHud(
     // Cap simultaneous flights at 8; beyond that the value lands directly.
     if (!flying) { land(); syncCollectAll(); return; }
     flights++;
-    flyNumber(from, pill!.target(), `+${n(moved)}`, () => { flights--; land(); });
+    flyNumber(from, cell!.target(), `+${n(moved)}`, () => { flights--; land(); });
     syncCollectAll();
   }
 
@@ -714,9 +742,91 @@ export async function createHud(
     return { x: r.left + r.width * 0.7, y: r.top + r.height / 2 };
   }
 
+  /* --- LAYOUT_SPEC §4 — the objective line -------------------------------
+   * The §4.8 resolver already ran, in the sim, and arrived as `state.cue`. All
+   * this does is put its verdict into words and hand the tap the route that
+   * verdict implies — there is no second priority list here to drift from the
+   * first. The progress figure beside each line is read from the same HudState
+   * the capsule and the badges are drawn from, for the same reason.
+   */
+  function objectiveView(): { text: string; count: string | null; go: () => void } | null {
+    switch (state.cue ?? 'none') {
+      case 'construir':
+        return {
+          text: COPY['obj.builder'],
+          count: `${state.builders.free}/${state.builders.total}`,
+          go: () => open('Construir'),
+        };
+      case 'cofres':
+        return {
+          text: COPY['obj.chest'],
+          count: state.badges.cofres > 0 ? String(state.badges.cofres) : null,
+          go: () => open('Cofres'),
+        };
+      case 'diario':
+        return {
+          text: COPY['obj.log'],
+          count: state.badges.diario > 0 ? String(state.badges.diario) : null,
+          go: () => open('Diario de a Bordo'),
+        };
+      case 'pills': {
+        // The cue fires when 2+ producers of one resource are capped, so the
+        // line has to name WHICH store — and it routes exactly where §3.10's
+        // `¡Lleno!` chip routes, carrying the resource with it so the sheet
+        // opens on the right building rather than the first store in the list.
+        const res = state.resources.find((r) => r.pressing) ?? state.resources[0];
+        if (!res) return null;
+        return {
+          text: `${COPY['obj.store']} ${COPY[`res.${res.id}`]}`,
+          count: `${nc(res.value)}/${nc(res.cap)}`,
+          go: () => open('Mejorar almacén', res.id),
+        };
+      }
+      case 'zarpar':
+        return { text: COPY['obj.sail'], count: null, go: sailTapped };
+      case 'recoger': {
+        const pending = pendingBubbles();
+        // §4.8's own note: this hit "surfaces no chrome — the bubbles are
+        // already saying so". The line still says it, because a goal line that
+        // blinks out is worse chrome than one that is always there; what it
+        // must NOT do is collect for you. §3.9 withholds Recoger Todo below
+        // four bubbles precisely so a shortcut never teaches the player to stop
+        // tapping the island, and this line would be that shortcut at one
+        // bubble. So the tap POINTS: every pending bubble punches at once.
+        return {
+          text: COPY['obj.collect'],
+          count: pending > 0 ? String(pending) : null,
+          go: pointAtBubbles,
+        };
+      }
+      default:
+        return null;
+    }
+  }
+
+  const pendingBubbles = (): number => {
+    let count = 0;
+    for (const item of world.values()) if (item.bubble) count++;
+    return count;
+  };
+
+  /** The 'recoger' line's tap: it points rather than collecting. Each answer
+   *  is the right one for its case — the bubbles answer visually when there
+   *  are any, and the game answers in words when the line has gone stale. */
+  function pointAtBubbles(): void {
+    let found = 0;
+    for (const item of world.values()) {
+      if (!item.bubble) continue;
+      punch(item.bubble.el);
+      found++;
+    }
+    if (found > 0) sfx('pop');
+    else toasts.say(COPY['obj.collectTip']);
+  }
+
   /* --- render ------------------------------------------------------------ */
   function render(): void {
-    syncPills();
+    syncReadout();
     const view: XpView = xpHold ?? { level: state.level, xp: state.xp, xpMax: state.xpMax };
     if (!xpHold && (!painted || painted.xp !== view.xp || painted.level !== view.level)) {
       previous = painted;
@@ -747,36 +857,49 @@ export async function createHud(
       xp.style.setProperty('--pct', String(Math.max(0, Math.min(1, view.xp / view.xpMax))));
     }
 
-    builderChip.set(state.builders.free, state.builders.total);
-    statusChip.set(state.status);
+    // The capsule's three kinds of cell. §2.4's status readout and §3.4's
+    // builder counter are figures the player reads and never presses, which is
+    // exactly LAYOUT_SPEC's test for what may be grouped and made translucent.
+    readout.cell('rango')?.setText(state.status);
+    const obreros = readout.cell('obreros');
+    obreros?.setText(`${state.builders.free}/${state.builders.total}`);
+    // §3.4 — a free builder must annoy: the carpenter tilts and the cell warms.
+    obreros?.setFree(state.builders.free > 0);
 
     for (const res of state.resources) {
-      const pill = pills.get(res.id);
-      if (!pill) continue;
-      // Value still arcing towards this pill is withheld until it lands (§5.4).
-      pill.set(Math.max(0, res.value - (inFlight.get(res.id) ?? 0)), res.cap);
-      pill.setPressing(Boolean(res.pressing));
+      const cell = readout.cell(res.id);
+      if (!cell) continue;
+      // Value still arcing towards this cell is withheld until it lands (§5.4).
+      cell.set(Math.max(0, res.value - (inFlight.get(res.id) ?? 0)), res.cap);
+      cell.setPressing(Boolean(res.pressing));
     }
     gemPill.set(state.gems);
 
-    chests.badge.set(state.badges.cofres);
-    log.badge.set(state.badges.diario);
-    build.badge.set(state.badges.construir);
-    // §5.6's permitted idle loop. The tray carries it in landscape; in portrait
-    // the tray is collapsed into this tile (§10.8), so the tile carries it.
-    chests.setReady(state.chestSlots.some((s) => s.state === 'ready'));
-    chests.setTimer(state.chestTimerMs);
+    cofres.badge.set(state.badges.cofres);
+    diario.badge.set(state.badges.diario);
+    // §5.6's permitted idle loop, which used to live on the featured Cofres
+    // tile: it moved with the destination rather than being dropped with the
+    // frame. (`chestTimerMs` stays on HudState for the Cofres panel — see the
+    // note in navbar.ts on why the nav bar deliberately does not show it.)
+    cofres.setReady(state.chestSlots.some((s) => s.state === 'ready'));
     sail.setLocked(state.sailLocked);
-    tray.set(state.chestSlots);
 
     // §4.8 is resolved in the sim and handed over in `cue`, so there is exactly
     // one implementation of the priority list rather than two that drift.
     const next = state.cue ?? 'none';
-    build.setCued(next === 'construir');
-    chests.setCued(next === 'cofres');
-    log.setCued(next === 'diario');
+    isla.setCued(next === 'construir');
+    cofres.setCued(next === 'cofres');
+    diario.setCued(next === 'diario');
     sail.setCued(next === 'zarpar');
 
+    // …and the same verdict, said in words (LAYOUT_SPEC §4).
+    const goal = objectiveView();
+    objectiveGo = goal?.go ?? (() => {});
+    objective.set(goal);
+
+    // The nav bar's primary is CENTRED, so there is no longer a handed cluster
+    // to mirror — which is one more thing the bar bought. The class stays on
+    // the host for anything downstream that reads it (§10.1's Zurdo / Diestro).
     hud.classList.toggle('is-left-handed', state.leftHanded);
   }
 
@@ -795,6 +918,8 @@ export async function createHud(
    * had no reader anywhere in src/, so a player who never looks at Zone A never
    * learns that a chip out of thumb reach is about a tile in it. §3.4 is
    * explicit that the escalation is what stops the tilt becoming wallpaper.
+   *
+   * It now points at the nav bar's Isla slot, which is where the builder went.
    */
   let lastTouch = 0;
   let tip: HTMLElement | null = null;
@@ -812,7 +937,7 @@ export async function createHud(
     // CAPTURE, not FROZEN: the tooltip is information, and §5 keeps every state
     // change when motion is cut. Only a deterministic capture suppresses it.
     if (tip || CAPTURE) return;
-    const target = build.el.getBoundingClientRect();
+    const target = isla.el.getBoundingClientRect();
     const host = hud.getBoundingClientRect();
     const arrow = el('i', 'guide-tip__arrow');
     tip = el('div', 'guide-tip', el('span', 't', COPY['guide.idleBuilder']), arrow);
@@ -820,9 +945,9 @@ export async function createHud(
     guide.append(tip);
 
     // The bubble is clamped inside the viewport, so on a 430pt screen it cannot
-    // sit above the tile it is about. The ARROW is what carries the meaning —
-    // it is placed against the TILE and only then clamped inside the bubble, so
-    // it keeps pointing at Construir however far the bubble had to move.
+    // sit above the slot it is about. The ARROW is what carries the meaning —
+    // it is placed against the SLOT and only then clamped inside the bubble, so
+    // it keeps pointing at Isla however far the bubble had to move.
     const width = tip.getBoundingClientRect().width;
     const left = Math.min(host.width - width - 8, Math.max(8, target.left - host.left - 12));
     tip.style.left = `${left}px`;
@@ -848,7 +973,6 @@ export async function createHud(
     state: () => state,
     setState(patch) {
       Object.assign(state, patch);
-      stateSetAt = elapsedNow;
       render();
     },
     holdXp,
@@ -872,8 +996,8 @@ export async function createHud(
       elapsedNow = elapsed;
       spread();
 
-      // §3.4 — 30s idle with a free builder escalates the Zone A nag into a
-      // tooltip pointing at the tile that can spend him.
+      // §3.4 — 30s idle with a free builder escalates the capsule's nag into a
+      // tooltip pointing at the slot that can spend him.
       if (state.builders.free > 0 && !tip && elapsed - lastTouch > 30) showGuide();
       else if (state.builders.free <= 0 && tip) dismissGuide();
 
@@ -882,11 +1006,6 @@ export async function createHud(
         const since = (elapsed - item.setAt) * 1000;
         item.bar.set(Math.max(0, item.spec.remainingMs - since), item.spec.totalMs);
       }
-      const since = (elapsed - stateSetAt) * 1000;
-      if (state.chestTimerMs != null) chests.setTimer(Math.max(0, state.chestTimerMs - since));
-      tray.set(state.chestSlots.map((s) =>
-        s.state === 'unlocking' ? { ...s, remainingMs: Math.max(0, s.remainingMs - since) } : s
-      ));
     },
   };
 }

@@ -16,6 +16,12 @@
 @import './components/timer.css';
 @import './components/tray.css';
 
+/* LAYOUT_SPEC's three structural objects. After chip.css, because the grouped
+   capsule IS `.cap` with a row of cells added to it. */
+@import './components/readout.css';
+@import './components/navbar.css';
+@import './components/objective.css';
+
 @import './panels/panels.css';
 
 /* §5 — the payoff layer and the answer to a refused tap. Both mount into
