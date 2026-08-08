@@ -77,8 +77,9 @@ const lum = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
  * Reads the four layers out of one vertical column.
  *
  * Tolerances are deliberately generous: the point is to catch a component that
- * is flat, not to police a few luminance units. A face that steps 0.62 or
- * deeper passes; Clash's own buttons sit near 0.47.
+ * is flat, not to police a few luminance units. The gloss test asks for a
+ * BREAK rather than a deep one — see the note on it below, and the measurement
+ * of Clash's own face that corrected it.
  */
 function measure(column, edge = 0) {
   const n = column.length;
@@ -114,21 +115,35 @@ function measure(column, edge = 0) {
   const rimPeak = Math.max(...interior.slice(0, 3));
   const rim = rimPeak > faceMean + 12;
 
-  // 3. Hard gloss step: the biggest single-row fall between 30% and 70% height.
-  let stepAt = -1;
-  let stepRatio = 1;
-  const lo = Math.floor(interior.length * 0.3);
-  const hi = Math.ceil(interior.length * 0.7);
-  for (let i = lo; i < hi; i++) {
-    const above = interior.slice(Math.max(0, i - 3), i);
-    const below = interior.slice(i, Math.min(interior.length, i + 3));
-    if (!above.length || !below.length) continue;
-    const a = above.reduce((x, y) => x + y, 0) / above.length;
-    const b = below.reduce((x, y) => x + y, 0) / below.length;
-    const ratio = a > 0 ? b / a : 1;
-    if (ratio < stepRatio) { stepRatio = ratio; stepAt = i; }
-  }
-  const step = stepRatio <= 0.62;
+  // 3. Hard gloss step — measured as SHARPNESS, not depth.
+  //
+  // This test used to demand that the lower face be at most 0.62 of the upper
+  // one, on a note claiming Clash's buttons sit near 0.47. Measured off
+  // reference/clash/coc_speedup.jpg, the green Finish Now button's face steps
+  // 192 -> 161: a ratio of 0.84, essentially identical to ours. The 0.47 came
+  // from columns crossing the button's TEXT and GEM ART rather than its face —
+  // the same contamination that had sea-metrics counting the HUD as water.
+  //
+  // Acting on it would have repainted every button in the game to depart from
+  // the very reference it cites, so what the rule actually asks for is worth
+  // restating: two planes MEETING, not a deep drop. The signature of that is a
+  // single-row fall far larger than the local gradient. Clash's face runs 1.0
+  // luminance per row and then falls 20.0 in one — twenty times over. A smooth
+  // ramp of the same total depth would show no such spike.
+  //
+  // The bar is 6x, generously below the reference, because the failure this
+  // catches is a face with NO break at all.
+  const deltas = [];
+  for (let i = 0; i < interior.length - 1; i++) deltas.push(interior[i] - interior[i + 1]);
+  const lo = Math.floor(interior.length * 0.25);
+  const hi = Math.ceil(interior.length * 0.75);
+  const window = deltas.slice(lo, hi);
+  const biggest = window.length ? Math.max(...window) : 0;
+  const sorted = deltas.map(Math.abs).sort((a, b) => a - b);
+  const typical = Math.max(0.5, sorted[Math.floor(sorted.length / 2)] ?? 0.5);
+  const stepRatio = biggest / typical;
+  const stepAt = window.length ? lo + window.indexOf(biggest) : -1;
+  const step = stepRatio >= 6;
 
   // 4. Lip and extrusion: the last interior rows darker than the face, and a
   //    dark band below the bottom contour.
@@ -142,7 +157,7 @@ function measure(column, edge = 0) {
   return {
     ok: layers.every(Boolean),
     contour, rim, step, lip: lip || extrusion,
-    stepRatio: Number(stepRatio.toFixed(2)),
+    stepRatio: Number(stepRatio.toFixed(1)),
     stepAt: stepAt < 0 ? null : Number((stepAt / interior.length).toFixed(2)),
     height: interior.length,
   };
@@ -248,7 +263,7 @@ console.log(`\n  ${results.filter((r) => r.ok).length}/${results.filter((r) => !
 if (failures.length) {
   console.log('\n  Pressable components missing a layer:');
   for (const f of failures) {
-    const gone = [!f.contour && 'ink contour', !f.rim && 'warm rim', !f.step && `hard gloss step (ratio ${f.stepRatio}, needs ≤0.62)`, !f.lip && 'lip/extrusion']
+    const gone = [!f.contour && 'ink contour', !f.rim && 'warm rim', !f.step && `hard gloss step (sharpness ${f.stepRatio}x, needs ≥6x)`, !f.lip && 'lip/extrusion']
       .filter(Boolean);
     console.log(`    ${f.name}: missing ${gone.join(', ')}`);
   }
