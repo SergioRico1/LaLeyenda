@@ -393,6 +393,15 @@ function draw(
   const prevTarget = renderer.getRenderTarget();
   const prevClear = renderer.getClearColor(new THREE.Color());
   const prevAlpha = renderer.getClearAlpha();
+  // The bake borrows the game's renderer, so it has to borrow it in a known
+  // state — the same reason the target and the clear colour are saved above.
+  // render/stage.ts now installs a highlight shoulder for the island frame, and
+  // that curve is solved for the ISLAND's light rig; these icons have their own
+  // rig and their palettes were measured against the reference with no curve on
+  // the output at all (§3.1.7). Letting the stage's setting leak in here would
+  // re-grade every icon in the HUD whenever the island's exposure is retuned.
+  const prevTone = renderer.toneMapping;
+  renderer.toneMapping = THREE.NoToneMapping;
 
   renderer.setRenderTarget(target);
   renderer.setClearColor(0x000000, 0);
@@ -402,6 +411,7 @@ function draw(
   const pixels = new Uint8Array(size * size * 4);
   renderer.readRenderTargetPixels(target, 0, 0, size, size, pixels);
 
+  renderer.toneMapping = prevTone;
   renderer.setRenderTarget(prevTarget);
   renderer.setClearColor(prevClear, prevAlpha);
   target.dispose();

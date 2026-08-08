@@ -588,9 +588,13 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
       follow.lerp(new THREE.Vector3(voyage.x, SEA_Y, voyage.y), Math.min(1, dt * 4));
       stage.camera.position.copy(follow).add(CAM_OFFSET);
       stage.camera.lookAt(follow);
-      stage.sun.position.copy(follow).add(new THREE.Vector3(49, 80, 35));
-      stage.sun.target.position.copy(follow);
-      stage.sun.target.updateMatrixWorld();
+      // Via the stage's own offset, not a triple of this file's. The island's
+      // sun was re-solved off the reference (a low, warm 31 degrees) and its
+      // shadow frustum's near and far planes are now bracketed around the arm
+      // that offset is parked on; a private (49, 80, 35) here put the sea under
+      // a different sun from the island it sails out of, and hung the ship's
+      // shadow at a different angle from every shadow on the beach it just left.
+      stage.aimSun(follow);
     },
 
     async settle() {
