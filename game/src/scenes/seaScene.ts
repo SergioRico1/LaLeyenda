@@ -4,6 +4,7 @@ import { Water, swellAt } from '../render/water';
 import { instantiate, preload, type ModelInstance } from '../render/assets';
 import { Rng } from '../core/rng';
 import { createStick, type Stick } from '../ui/stick';
+import { createSeaHud, type SeaHud } from '../ui/seaHud';
 import {
   MOBS, SEA_CELL, SEA_RANGE, SEA_STEP, SHIPS, sitesNear, startVoyage, steer, stepVoyage,
   type MobKind, type SeaEvent, type Site, type Voyage,
@@ -79,12 +80,22 @@ export interface SeaSceneOptions {
   seed?: string;
   /** Fired for every simulation event, so the HUD can react without polling. */
   onEvent?: (event: SeaEvent) => void;
+  /**
+   * The voyage is over. Called once, with the hold as it stands — half of it
+   * already gone if the reason is 'sunk'. The router lands it in the island's
+   * stores; this scene never touches the economy itself.
+   */
+  onEnd?: (voyage: Voyage, reason: 'home' | 'sunk' | 'left') => void;
 }
 
 export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): Promise<SeaScene> {
   const params = new URLSearchParams(location.search);
   const shot = params.get('shot') === '1';
   const seed = opts.seed ?? params.get('seed') ?? 'la-leyenda';
+
+  // What the stage already had is what the stage keeps: the lights belong to
+  // it and outlive every scene that borrows the stage.
+  const preexisting = new Set(stage.scene.children);
 
   await preload(SEA_MODELS);
 
@@ -153,6 +164,26 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
   stage.camera.lookAt(follow);
 
   const stick: Stick | null = shot ? null : createStick(document.body);
+
+  const uiRoot = document.getElementById('ui');
+  let ended: 'home' | 'sunk' | 'left' | null = null;
+  const hud: SeaHud | null = uiRoot
+    ? createSeaHud(uiRoot, { onLeave: () => end('left') })
+    : null;
+
+  /**
+   * Ends the voyage exactly once.
+   *
+   * Three ways out and they must not race: the hull reaching zero, the ship
+   * reaching home water, and the player pressing Volver. Whichever lands first
+   * wins and the rest are ignored, because handing the same cargo to the island
+   * twice would be a duplication bug the player would learn to trigger.
+   */
+  function end(reason: 'home' | 'sunk' | 'left'): void {
+    if (ended) return;
+    ended = reason;
+    void hud?.finish(voyage, reason).then(() => opts.onEnd?.(voyage, reason));
+  }
 
   let voyage = startVoyage(seed);
   // `?at=x,y` drops the ship somewhere specific. A capture of the open sea is
@@ -408,7 +439,11 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
         owed -= SEA_STEP;
         const out = stepVoyage(voyage);
         voyage = out.voyage;
-        for (const event of out.events) opts.onEvent?.(event);
+        for (const event of out.events) {
+          opts.onEvent?.(event);
+          if (event.kind === 'sunk') end('sunk');
+          if (event.kind === 'home') end('home');
+        }
       }
 
       // The hull rides the swell, and heels into its turn.
@@ -426,6 +461,7 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
       water.mesh.position.z = Math.round(voyage.y / 2) * 2;
       water.update(elapsed, stage.camera);
 
+      hud?.update(voyage);
       for (const mixer of mixers) mixer.update(dt);
       syncSites();
       syncMobs();
@@ -457,8 +493,13 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
 
     dispose() {
       stick?.dispose();
+      hud?.dispose();
       water.dispose();
       stage.scene.fog = null;
+      for (const child of [...stage.scene.children]) {
+        if (preexisting.has(child)) continue;
+        stage.scene.remove(child);
+      }
     },
   };
 }

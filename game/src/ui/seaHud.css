@@ -1,0 +1,219 @@
+/**
+ * seaHud.css — the voyage readouts.
+ *
+ * LAYOUT_SPEC's resolution applies: the four-layer rule governs anything the
+ * player can press, and a read-only readout is a LABEL. Everything here is a
+ * label, so this is Kingshot's language rather than Clash's — dark translucent
+ * capsules with thin separators, letting the sea show through, because at sea
+ * the world is the thing worth looking at and the chrome should stay out of it.
+ *
+ * The one exception is the abandon button, which IS pressable and therefore
+ * carries the full four layers.
+ */
+
+.sea {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-family: var(--ui-font-display);
+  color: #fff;
+}
+
+/* --- the readout row, top of the screen --------------------------------- */
+
+.sea__bar {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  left: 12px;
+  right: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.sea__cap {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  background: rgba(10, 22, 34, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(3px);
+  font-size: 14px;
+  letter-spacing: 0.2px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5);
+}
+
+.sea__cap--grow { flex: 1; }
+
+.sea__label {
+  font-size: 11px;
+  opacity: 0.66;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+/* --- the hull track ------------------------------------------------------ */
+/* A bar rather than a number: a player under fire has no attention to spare
+   for arithmetic, and the RATE it empties is the information that matters. */
+
+.sea__hull {
+  position: relative;
+  flex: 1;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.46);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  overflow: hidden;
+}
+
+.sea__hullFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--ui-ok-gloss-a) 0 50%, var(--ui-ok-a) 50% 100%);
+  transition: width 0.18s ease-out, background 0.3s linear;
+}
+
+/* Below a third the bar turns and starts breathing. Colour alone is not enough
+   on a phone in sunlight, and this is the last warning before the hold halves. */
+.sea__hull.is-hurt .sea__hullFill {
+  background: linear-gradient(180deg, var(--ui-red-gloss-a) 0 50%, var(--ui-red-a) 50% 100%);
+  animation: sea-pulse 0.7s ease-in-out infinite;
+}
+
+@keyframes sea-pulse {
+  50% { filter: brightness(1.45); }
+}
+
+/* --- the compass --------------------------------------------------------- */
+/* Home is invisible from two cells out, and a player who cannot find it has no
+   way to bank what they are carrying. The arrow is the whole return mechanism. */
+
+.sea__home {
+  position: absolute;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 22px);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 13px 7px 9px;
+  border-radius: 999px;
+  background: rgba(10, 22, 34, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 13px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5);
+}
+
+.sea__arrow {
+  width: 22px;
+  height: 22px;
+  display: block;
+  /* Rotated by the scene, in degrees, toward the harbour. */
+  transform: rotate(var(--sea-bearing, 0deg));
+  transition: transform 0.12s linear;
+}
+
+/* --- the abandon button, the one pressable thing ------------------------- */
+
+.sea__leave {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 56px);
+  right: 12px;
+  pointer-events: auto;
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  color: #fff;
+  padding: 8px 14px 10px;
+  border-radius: 12px;
+  /* The four layers, because this one is pressed: ink contour, hard gloss step
+     at half height, warm top rim, dark lip plus a zero-x extrusion shadow. */
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  background:
+    linear-gradient(180deg, var(--ui-red-gloss-a) 0 50%, var(--ui-red-a) 50% 100%);
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim),
+    inset 0 -3px 0 var(--ui-red-lip),
+    var(--ui-drop-sm);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.42);
+}
+
+.sea__leave:active {
+  transform: translateY(2px);
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim),
+    inset 0 -3px 0 var(--ui-red-lip),
+    0 1px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* --- the end-of-voyage card ---------------------------------------------- */
+
+.sea__end {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--ui-scrim);
+  pointer-events: auto;
+}
+
+.sea__endCard {
+  min-width: 250px;
+  max-width: 78vw;
+  padding: 18px 20px 20px;
+  border-radius: 16px;
+  text-align: center;
+  background: var(--ui-panel);
+  color: var(--ui-ink);
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  box-shadow: inset 0 3px 0 var(--ui-rim), inset 0 -4px 0 var(--ui-lip), var(--ui-drop-lg);
+}
+
+.sea__endTitle {
+  font-size: 21px;
+  margin-bottom: 4px;
+}
+
+.sea__endNote {
+  font-size: 13px;
+  opacity: 0.72;
+  margin-bottom: 12px;
+}
+
+.sea__endList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.sea__endItem {
+  font-size: 14px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--ui-well);
+  color: #fff;
+}
+
+.sea__endCta {
+  width: 100%;
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 16px;
+  color: #fff;
+  padding: 11px 16px 13px;
+  border-radius: 13px;
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  background: linear-gradient(180deg, var(--ui-green-gloss-a) 0 50%, var(--ui-green-a) 50% 100%);
+  box-shadow:
+    inset 0 3px 0 var(--ui-rim),
+    inset 0 -4px 0 var(--ui-green-lip),
+    var(--ui-drop);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.4);
+}

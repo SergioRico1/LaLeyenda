@@ -167,6 +167,41 @@ export function collectInPlace(state: GameState, building: Building): CollectOut
   return { resource, moved, spilled };
 }
 
+/**
+ * Unloads a voyage's hold into the island's stores.
+ *
+ * This is the one function that closes PLAN.md's main loop: everything the sea
+ * pays out has to arrive here or sailing is a side activity rather than the
+ * other half of the game.
+ *
+ * It obeys the SAME cap a collection does, and for the same reason — a store
+ * that can be exceeded from the dock makes upgrading it pointless. What spills
+ * is reported rather than silently dropped, because arriving with a full hold
+ * and being told nothing is the version of this that feels like a bug.
+ */
+export function landCargoInPlace(
+  state: GameState,
+  cargo: Partial<Record<ResourceId, number>>
+): { landed: Partial<Record<ResourceId, number>>; spilled: Partial<Record<ResourceId, number>> } {
+  const landed: Partial<Record<ResourceId, number>> = {};
+  const spilled: Partial<Record<ResourceId, number>> = {};
+
+  for (const resource of RESOURCE_IDS) {
+    const held = cargo[resource] ?? 0;
+    if (held <= 0) continue;
+    const room = Math.max(0, storeCap(state, resource) - state.store[resource]);
+    const moved = Math.min(held, room);
+    if (moved > 0) {
+      state.store[resource] = Math.round((state.store[resource] + moved) * 1000) / 1000;
+      landed[resource] = moved;
+    }
+    const over = held - moved;
+    if (over > 0) spilled[resource] = over;
+  }
+
+  return { landed, spilled };
+}
+
 /* --------------------------------------------------------------------------
  * paying for things
  * ----------------------------------------------------------------------- */

@@ -114,6 +114,8 @@ export type WorldItemSpec =
 
 export interface Hud {
   readonly root: HTMLElement;
+  /** Removes the HUD and every listener it owns. A scene switch calls this. */
+  dispose(): void;
   setState(patch: Partial<HudState>): void;
   state(): Readonly<HudState>;
   /**
@@ -959,17 +961,24 @@ export async function createHud(
   /** Any tap anywhere restarts the idle clock and dismisses an open tooltip. */
   root.addEventListener('pointerdown', () => { lastTouch = elapsedNow; dismissGuide(); }, true);
 
+  // Aborted by dispose(). A resize handler that outlives its HUD would keep a
+  // torn-down scene's DOM alive and recompute a layout nobody is looking at.
+  const listeners = new AbortController();
   window.addEventListener('resize', () => {
     viewport = { w: window.innerWidth, h: window.innerHeight };
     ceilingCache = null;
     for (const item of world.values()) item.size = null;
-  });
+  }, { signal: listeners.signal });
 
   render();
   syncCollectAll();
 
   return {
     root: hud,
+    dispose() {
+      listeners.abort();
+      hud.remove();
+    },
     state: () => state,
     setState(patch) {
       Object.assign(state, patch);

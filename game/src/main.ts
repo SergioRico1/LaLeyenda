@@ -1,5 +1,7 @@
 import { Stage } from './render/stage';
 import { createIslandScene } from './scenes/islandScene';
+import { createGame, type Game } from './core/game';
+import { landCargoInPlace } from './sim';
 
 /** Entry point. `?scene=` picks the scene, `?shot=1` freezes time and reports
  *  readiness so the screenshot harness can capture a deterministic frame. */
@@ -38,6 +40,17 @@ async function boot() {
       ? { width: Number(params.get('w') ?? 1280), height: Number(params.get('h') ?? 720) }
       : null,
   });
+
+  // Outside shot mode the island and the sea take turns on the same stage, and
+  // runGame owns the handover. It has to be decided BEFORE the switch below:
+  // building a scene here and then letting the router build another one gives
+  // the player two islands, two HUDs and two update loops on one camera.
+  //
+  // In shot mode there is exactly one scene and no switching, so captures
+  // behave exactly as they always have.
+  if (!shotMode && (sceneName === 'island' || sceneName === 'sea')) {
+    return runGame(stage, sceneName);
+  }
 
   let scene;
   switch (sceneName) {
@@ -167,6 +180,71 @@ async function boot() {
     last = now;
     elapsed += dt;
     scene.update(dt, elapsed);
+    stage.render();
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+  window.__ready = true;
+}
+
+
+/**
+ * The island and the sea, taking turns.
+ *
+ * The GAME is created here rather than inside a scene, and that is the whole
+ * point: a voyage that restarted the island's economy every time the player
+ * sailed would lose the timers running while they were away, and cargo would
+ * have nowhere to land. Scenes are views of a simulation that outlives them.
+ *
+ * Each switch disposes the outgoing scene before building the incoming one, so
+ * two scenes never share the stage — the alternative is two update loops
+ * fighting over the same camera, which reads as the game having a seizure.
+ */
+async function runGame(stage: Stage, start: 'island' | 'sea'): Promise<void> {
+  const game: Game = await createGame({
+    seed,
+    start: params.get('save') === 'demo' ? 'demo' : params.get('save') === 'new' ? 'new' : 'stored',
+  });
+
+  let current: { update(dt: number, elapsed: number): void; dispose(): void } | null = null;
+  let elapsed = 0;
+
+  async function toIsland(): Promise<void> {
+    current?.dispose();
+    current = await createIslandScene(stage, seed, { game, onSail: () => void toSea() });
+  }
+
+  async function toSea(): Promise<void> {
+    current?.dispose();
+    const { createSeaScene } = await import('./scenes/seaScene');
+    current = await createSeaScene(stage, {
+      seed,
+      onEnd: (voyage) => {
+        // The one place the sea touches the island's economy, and it goes
+        // through the sim like every other change: caps apply, and what will
+        // not fit is reported rather than silently dropped.
+        game.dispatch((state) => {
+          const { spilled } = landCargoInPlace(state, voyage.cargo);
+          const over = Object.values(spilled).reduce((a, b) => a + (b ?? 0), 0);
+          if (over > 0) console.log(`[voyage] ${Math.round(over)} units would not fit in the stores`);
+          return { ok: true, state, events: [] };
+        });
+        void game.saveNow().then(() => toIsland());
+      },
+    });
+  }
+
+  // `?scene=sea` drops straight into a voyage, which is how the sea gets
+  // played without building a shipyard first.
+  if (start === 'sea') await toSea();
+  else await toIsland();
+
+  let last = performance.now();
+  const frame = (now: number) => {
+    const dt = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    elapsed += dt;
+    current?.update(dt, elapsed);
     stage.render();
     requestAnimationFrame(frame);
   };

@@ -1,8 +1,11 @@
 import {
-  MOBS, SEA_CELL, SEA_STEP, SHIPS, holdUsed, mobsAt, ringOf, siteAt,
+  MOBS, SEA_CELL, SEA_STEP, SHIPS, bearingHome, holdUsed, mobsAt, ringOf, siteAt,
   startVoyage, steer, stepVoyage, type SeaEvent, type Voyage,
 } from '../../src/sim/sea';
+import { landCargoInPlace, storeCap } from '../../src/sim';
+import { clone } from '../../src/sim/economy';
 import { describe, eq, near, ok, test } from './harness';
+import { quiet } from './fixtures';
 
 /**
  * The voyage is the half of the game PLAN.md calls Fase 2, and the half that
@@ -339,5 +342,60 @@ describe('the loop closes', () => {
         'nothing is still chasing from cells away'
       );
     }
+  });
+});
+
+describe('the hold reaches the island', () => {
+  test('cargo lands in the stores, capped like any other income', () => {
+    const start = quiet();
+    const before = start.store.madera;
+    const cap = storeCap(start, 'madera');
+    const state = clone(start);
+    const { landed, spilled } = landCargoInPlace(state, { madera: 40 });
+    eq(landed.madera, 40, 'forty of the wood arrived');
+    eq(spilled.madera, undefined, 'and none of it spilled');
+    eq(state.store.madera, before + 40, 'the store went up by exactly that');
+    ok(state.store.madera <= cap, 'and stayed inside the cap');
+  });
+
+  test('what will not fit is reported rather than dropped in silence', () => {
+    const state = clone(quiet());
+    const cap = storeCap(state, 'madera');
+    state.store.madera = cap - 10;
+    const { landed, spilled } = landCargoInPlace(state, { madera: 100 });
+    eq(landed.madera, 10, 'only the room that existed was filled');
+    eq(spilled.madera, 90, 'and the rest is named');
+    eq(state.store.madera, cap, 'the store is exactly full, never over');
+  });
+
+  test('a hold full of something the island cannot store spills entirely', () => {
+    const state = clone(quiet());
+    const cap = storeCap(state, 'oro');
+    state.store.oro = cap;
+    const { landed, spilled } = landCargoInPlace(state, { oro: 25 });
+    eq(landed.oro, undefined, 'nothing landed');
+    eq(spilled.oro, 25, 'all of it is accounted for');
+  });
+});
+
+describe('finding the way home', () => {
+  /** Where a screen-up arrow rotated clockwise by `a` actually points, in
+   *  world (x, y) — the same convention the fixed-orientation camera uses. */
+  const pointsAt = (a: number) => ({ x: Math.sin(a), y: -Math.cos(a) });
+
+  test('the arrow points at the harbour from anywhere', () => {
+    for (const [x, y] of [[150, 40], [-90, 0], [0, 220], [0, -70], [-30, -180], [400, -400]]) {
+      const to = pointsAt(bearingHome(x, y));
+      const want = { x: -x, y: -y };
+      const length = Math.hypot(want.x, want.y);
+      const dot = (to.x * want.x + to.y * want.y) / length;
+      near(dot, 1, 1e-9, `from ${x},${y} the arrow points at the origin`);
+    }
+  });
+
+  test('due east of home, the arrow points west', () => {
+    const to = pointsAt(bearingHome(200, 0));
+    near(to.x, -1, 1e-9, 'straight back along the x axis');
+    near(to.y, 0, 1e-9, 'and not up or down it');
   });
 });

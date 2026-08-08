@@ -607,6 +607,25 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
   return { voyage: v, events };
 }
 
+/**
+ * Which way home is, as an angle to rotate a screen-up arrow by, clockwise.
+ *
+ * Pure and here rather than in the HUD because it is not decoration: home is
+ * invisible from two cells out, so a player who cannot find it cannot bank
+ * anything they are carrying, and an arrow pointing the wrong way is worse than
+ * no arrow at all. It was wrong the first time — computed as the bearing FROM
+ * home rather than TO it — which is exactly the kind of sign error that looks
+ * plausible in a screenshot and strands somebody in open water.
+ *
+ * The camera holds a fixed world orientation, so screen-up is world -y and
+ * screen-right is world +x. An arrow rotated clockwise by theta points along
+ * (sin theta, -cos theta); pointing it at the origin from (x, y) therefore
+ * wants sin theta = -x/d and cos theta = y/d.
+ */
+export function bearingHome(x: number, y: number): number {
+  return Math.atan2(-x, y);
+}
+
 /** Sets the helm for the next steps. Clamped here so no caller can exceed it. */
 export function steer(v: Voyage, helm: Partial<Helm>): Voyage {
   return {

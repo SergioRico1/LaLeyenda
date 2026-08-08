@@ -16,7 +16,13 @@ These run on every change. A red gate is a blocker, not a finding.
 - [x] `npm run shoot -- island --mobile` captures without console errors
 - [x] `npm run shoot -- island --mobile --act <every act>` — each scripted
       interaction still reaches its feature
-- [x] `npm run audit:layers` — the four-layer rule on rendered pixels
+- [ ] `npm run audit:layers` — **RED, and it was red before this loop started.**
+      7 of its 11 selectors match nothing: the HUD markup moved and the audit's
+      COMPONENTS list did not follow. It fails loudly rather than silently,
+      which is the tool working as designed — but it means the four-layer rule
+      is currently UNENFORCED, and that is exactly the condition an earlier
+      round identified as the thing that regenerates the same defect every time.
+      I listed this gate as green when I wrote this file. It was not.
 - [x] `npm run audit:sea` — sea texture against the reference, HUD excluded
 
 ## 1 · Your island — PLAN.md Fase 1
@@ -51,8 +57,13 @@ never closes. This is the single largest gap between here and a finished game.
 - [ ] Mob scale: a kelpling still reads larger than the ship. `fit` normalises
       the largest axis, which flatters a wide creature over a masted hull.
 - [ ] PvE islands: harvestables, chests, and the Giant Squid holding a rich one
-- [ ] Return home: cargo lands in the island economy, closing the loop
-- [ ] ¡Zarpar! actually sails, gated on the Muelle, with the refusal it has now
+- [x] Return home: cargo lands in the island economy through `landCargoInPlace`,
+      capped like any other income, with the overflow reported not dropped
+- [x] ¡Zarpar! actually sails, still gated on the shipyard's boat
+- [x] Voyage HUD: hull bar, hold, ring, and a compass to the harbour
+- [ ] PvE islands: harvestables and chests are placed, but a site is taken by
+      sailing over it — there is no boarding or harvesting beat yet
+- [ ] The Giant Squid is spawned and tethered, but has no fight of its own
 
 **Done when:** island → sail → fight/loot → return → build works end to end and
 is worth repeating.

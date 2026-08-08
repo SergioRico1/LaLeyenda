@@ -32,6 +32,7 @@ export {
 } from './build';
 export {
   storeCap, storeCaps, producerCapacity, producerRate, producerResource, isProducer, isFull,
+  landCargoInPlace,
   townHallLevel, fillTimeMs, canAfford, productionMultiplier,
 } from './economy';
 export { readyCount, unlockingSlot, skipCost, type Loot } from './chests';

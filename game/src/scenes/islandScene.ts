@@ -44,13 +44,40 @@ export const ISLAND_MODELS = [
 
 export interface IslandScene {
   update(dt: number, elapsed: number): void;
+  /** Tears the scene down so another one can have the stage. Everything this
+   *  added to the scene graph, the DOM and the canvas goes with it — the game
+   *  itself does NOT, because it outlives any one view of it. */
+  dispose(): void;
+}
+
+export interface IslandSceneOptions {
+  /**
+   * The simulation to draw. Passed in when something outside owns it — the
+   * router does, because sailing away and coming back must not restart the
+   * island's economy. Left out, the scene makes its own, which is what every
+   * screenshot and every direct boot still does.
+   */
+  game?: Game;
+  /** Called when ¡Zarpar! is tapped and the shipyard has actually given the
+   *  player a boat. Without it the tile falls back to saying "soon". */
+  onSail?: () => void;
 }
 
 /** A screenshot must be byte-identical between runs, so under `?shot=1` the
  *  sim clock is frozen here instead of reading the wall clock. */
 const SHOT_EPOCH = Date.UTC(2026, 0, 5, 12, 0, 0);
 
-export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Promise<IslandScene> {
+export async function createIslandScene(
+  stage: Stage,
+  seed = 'la-leyenda',
+  opts: IslandSceneOptions = {}
+): Promise<IslandScene> {
+  // Everything the scene puts on the stage is removed on dispose, and the only
+  // reliable way to know what that is, is to remember what was already there.
+  const preexisting = new Set(stage.scene.children);
+  // One signal for every canvas listener, so none can outlive the scene and
+  // start driving a scene that has been replaced.
+  const listeners = new AbortController();
   const params = new URLSearchParams(location.search);
   const shot = params.get('shot') === '1';
 
@@ -82,7 +109,7 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
   // Ayuntamiento-4 fixture, which exists to frame shots and exercise the
   // late-game HUD — it is not a game anyone starts.
   const saveParam = params.get('save');
-  const game: Game = await createGame({
+  const game: Game = opts.game ?? await createGame({
     seed,
     persist: !shot,
     start: saveParam === 'demo' ? 'demo' : saveParam === 'new' ? 'new' : 'stored',
@@ -640,8 +667,8 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
     const id = buildingUnder(event);
     if (id !== null) openSheetFor(id);
   };
-  canvas.addEventListener('pointerup', release);
-  canvas.addEventListener('pointercancel', () => { down = null; });
+  canvas.addEventListener('pointerup', release, { signal: listeners.signal });
+  canvas.addEventListener('pointercancel', () => { down = null; }, { signal: listeners.signal });
 
   /**
    * Placeholder routes. The panels are the next slice; until they exist each
@@ -720,6 +747,14 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
        * twice, and `console.log` is not an answer on a phone. */
       case 'Construye el Muelle':
         hud?.say(COPY['toast.sailLocked'], { tone: 'refuse' });
+        return;
+      case 'Zarpar':
+        // The shipyard has given the player a boat, so this is the one route
+        // that leaves the island entirely. Without a router listening it falls
+        // through to the default and says "soon", which is what it did before
+        // there was a sea to go to.
+        if (opts.onSail) { opts.onSail(); return; }
+        hud?.say(`${what} · ${COPY['toast.soon']}`);
         return;
       default:
         hud?.say(`${what} · ${COPY['toast.soon']}`);
@@ -822,6 +857,32 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
       }
 
       hud.tick(elapsed);
+    },
+
+    dispose() {
+      // The canvas listeners go first: a tap landing after this point would
+      // drive a scene that is being taken apart.
+      listeners.abort();
+      rig.dispose();
+      water.dispose();
+      ghost.dispose?.();
+      hud?.dispose();
+      // The picker, the sheet, the build bar and the celebration layer all
+      // live under #ui and hold no listeners outside their own subtree, so
+      // emptying it takes all four. The HUD is the exception — it listens for
+      // resize on the window — which is why it has a dispose of its own.
+      uiRoot?.replaceChildren();
+
+      // Everything this scene put on the stage, and nothing that was already
+      // there — the lights belong to the Stage and outlive every scene.
+      for (const child of [...stage.scene.children]) {
+        if (preexisting.has(child)) continue;
+        stage.scene.remove(child);
+      }
+      mixers.length = 0;
+      // The game is deliberately NOT stopped: the router hands the same one to
+      // the sea and back, and stopping it here would end the autosave on a
+      // voyage the player has not finished.
     },
   };
 }
