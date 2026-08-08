@@ -1,146 +1,254 @@
 #!/usr/bin/env node
-// Builds the live progress page from progress/status.json plus whatever
-// screenshots the rounds reference. Images are inlined so the page can be
-// published as a single self-contained file.
+/**
+ * tools/progress.mjs — the live progress page.
+ *
+ *   node tools/progress.mjs
+ *
+ * Reads PROGRESS.json (appended to after every round) and writes progress.html,
+ * a self-contained page with every frame embedded. It is published as an
+ * Artifact, which runs under a strict CSP: no CDN, no external font, no remote
+ * image. Everything is inlined, including the game's own two typefaces — the
+ * page is literally made of the thing it documents.
+ *
+ * The page KEEPS THE BLIND. Each round's two frames are shown unlabelled, the
+ * way the judging agent saw them, and which is which is revealed only when the
+ * reader asks. A progress page that captions "ours" and "theirs" up front is
+ * asking to be read charitably; this one makes you commit first.
+ */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.join(HERE, '..');
-const STATUS = path.join(ROOT, 'progress', 'status.json');
-const OUT = path.join(ROOT, 'progress', 'index.html');
+const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+const data = JSON.parse(fs.readFileSync(path.join(ROOT, 'PROGRESS.json'), 'utf8'));
 
-const status = JSON.parse(fs.readFileSync(STATUS, 'utf8'));
+const font = (file) =>
+  fs.readFileSync(path.join(ROOT, 'public/fonts', file)).toString('base64');
 
-const inlined = new Map();
-async function dataUri(rel, width = 900) {
-  if (!rel) return null;
-  if (inlined.has(rel)) return inlined.get(rel);
-  const file = path.join(ROOT, rel);
-  if (!fs.existsSync(file)) return null;
-  const buf = await sharp(file).resize(width, null, { withoutEnlargement: true }).webp({ quality: 78 }).toBuffer();
-  const uri = `data:image/webp;base64,${buf.toString('base64')}`;
-  inlined.set(rel, uri);
-  return uri;
+/** A frame, downscaled and inlined. The 16MB artifact ceiling is generous but
+ *  a dozen rounds of 1280px PNGs would eat it. */
+async function frame(file) {
+  const full = path.isAbsolute(file) ? file : path.join(ROOT, file);
+  if (!fs.existsSync(full)) return null;
+  const buf = await sharp(full).resize(720, null, { withoutEnlargement: true })
+    .jpeg({ quality: 74 }).toBuffer();
+  return `data:image/jpeg;base64,${buf.toString('base64')}`;
 }
 
-const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-const STATE_LABEL = { done: 'wins the blind test', in_progress: 'in progress', pending: 'not started' };
+const VERDICT_LABEL = {
+  'ours-better': 'ahead',
+  close: 'level',
+  'ours-worse': 'behind',
+  'ours-much-worse': 'far behind',
+};
 
-const sections = [];
-for (const piece of status.pieces) {
-  const barShot = /\.(png|jpg)$/.test(piece.bar ?? '') ? await dataUri(piece.bar) : null;
-  const rounds = [];
-  for (const round of piece.rounds) {
-    const shot = await dataUri(round.shot);
-    rounds.push(`
-      <li class="round">
-        <div class="round-head"><span class="badge">Round ${round.n}</span></div>
-        <p class="summary">${esc(round.summary)}</p>
-        ${round.gap ? `<p class="gap"><strong>Biggest remaining gap:</strong> ${esc(round.gap)}</p>` : ''}
-        ${
-          shot
-            ? `<div class="compare">
-                 <figure><img src="${shot}" alt="our output"><figcaption>Ours</figcaption></figure>
-                 ${barShot ? `<figure><img src="${barShot}" alt="the bar"><figcaption>The bar</figcaption></figure>` : ''}
-               </div>`
-            : ''
-        }
-      </li>`);
-  }
+const plates = [];
+for (const r of data.rounds) {
+  const a = await frame(r.a);
+  const b = await frame(r.b);
+  if (!a || !b) continue;
 
-  sections.push(`
-    <section class="piece" id="${esc(piece.id)}">
-      <header>
-        <h2>${esc(piece.name)}</h2>
-        <span class="state state-${esc(piece.status)}">${esc(STATE_LABEL[piece.status] ?? piece.status)}</span>
-      </header>
-      <p class="piece-bar"><strong>Bar:</strong> ${esc(/\.(png|jpg)$/.test(piece.bar ?? '') ? 'blind A/B against ' + piece.bar : piece.bar)}</p>
-      ${rounds.length ? `<ol class="rounds">${rounds.join('')}</ol>` : '<p class="empty">No rounds yet.</p>'}
-    </section>`);
+  const decided = r.better
+    ? `<p class="call">
+         The judge chose <b>${esc(r.better)}</b> — ${r.weWon
+           ? '<span class="won">ours</span>' : '<span class="lost">the shipped game</span>'},
+         gap <b>${esc(r.gapSize ?? '—')}</b>.
+       </p>`
+    : '<p class="call">Baseline. No judgement taken.</p>';
+
+  const pieces = (r.pieces ?? []).map((p) => `
+    <li>
+      <span class="chip chip--${esc(p.verdict ?? 'close')}">${esc(VERDICT_LABEL[p.verdict] ?? p.verdict ?? '—')}</span>
+      <b>${esc(p.piece)}</b>
+      <span>${esc(p.biggestGap)}</span>
+    </li>`).join('');
+
+  plates.push(`
+  <article class="plate" id="r${r.round}">
+    <header class="plate__head">
+      <span class="rnd">Round ${String(r.round).padStart(2, '0')}</span>
+      <h2>${esc(r.title ?? 'The island, held against the shipped game')}</h2>
+    </header>
+
+    <div class="pair" data-revealed="false">
+      <figure><img src="${a}" alt="Frame A"><figcaption><span class="tag">A</span><span class="who">${esc(r.key?.a ?? '')}</span></figcaption></figure>
+      <figure><img src="${b}" alt="Frame B"><figcaption><span class="tag">B</span><span class="who">${esc(r.key?.b ?? '')}</span></figcaption></figure>
+    </div>
+    <button class="reveal" type="button">Reveal which is which</button>
+
+    ${decided}
+    ${r.biggestFlaw ? `<p class="gap"><span>Biggest remaining gap</span>${esc(r.biggestFlaw)}</p>` : ''}
+    ${r.differences?.length ? `<ol class="diffs">${r.differences.map((d) => `<li>${esc(d)}</li>`).join('')}</ol>` : ''}
+    ${pieces ? `<ul class="pieces">${pieces}</ul>` : ''}
+  </article>`);
 }
 
-const done = status.pieces.filter((p) => p.status === 'done').length;
-const html = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(status.title)}</title>
+const latest = data.rounds[data.rounds.length - 1] ?? {};
+
+const html = `<title>La Leyenda Pirata — held against the bar</title>
 <style>
+  @font-face { font-family:'Lilita'; src:url(data:font/woff2;base64,${font('LilitaOne-Regular.woff2')}) format('woff2'); font-display:swap; }
+  @font-face { font-family:'Fredoka'; src:url(data:font/woff2;base64,${font('Fredoka-SemiBold.woff2')}) format('woff2'); font-weight:600; font-display:swap; }
+
+  /* The palette is the game's own token file. Light is chart paper, dark is
+     the deep water the whole thing is set in. */
   :root {
-    --bg: #f4f1ea; --panel: #fffdf8; --ink: #241a12; --muted: #6c5c4c;
-    --line: #ded5c6; --accent: #1f7a8c; --warn: #c26b1c; --ok: #3f8f3f;
+    --ink:#14100C; --body:#3A3630; --faint:#7A7266;
+    --ground:#EFE7D6; --panel:#F8F3E7; --edge:#D8CCB2;
+    --accent:#177C90; --gold:#9A6B0E; --won:#2F7D2A; --lost:#9A3320;
   }
-  :root:not([data-theme="light"]) { color-scheme: light dark; }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --bg: #14110e; --panel: #1e1a15; --ink: #f0e8dc; --muted: #a08f7c;
-      --line: #342d24; --accent: #4fc3d9; --warn: #e39a4a; --ok: #6fc46f;
+      --ink:#F2EADA; --body:#CBBFA8; --faint:#8A9AA6;
+      --ground:#06202F; --panel:#0C2E42; --edge:#17455E;
+      --accent:#4FC3D8; --gold:#F3BB26; --won:#7ED957; --lost:#FF8A6B;
     }
   }
   :root[data-theme="dark"] {
-    --bg: #14110e; --panel: #1e1a15; --ink: #f0e8dc; --muted: #a08f7c;
-    --line: #342d24; --accent: #4fc3d9; --warn: #e39a4a; --ok: #6fc46f;
+    --ink:#F2EADA; --body:#CBBFA8; --faint:#8A9AA6;
+    --ground:#06202F; --panel:#0C2E42; --edge:#17455E;
+    --accent:#4FC3D8; --gold:#F3BB26; --won:#7ED957; --lost:#FF8A6B;
   }
-  * { box-sizing: border-box; }
+
+  * { box-sizing:border-box; }
   body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin:0; background:var(--ground); color:var(--body);
+    font:16px/1.6 ui-sans-serif,-apple-system,"Segoe UI",system-ui,sans-serif;
+    padding:0 20px 80px;
   }
-  .wrap { max-width: 1000px; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
-  h1 { font-size: clamp(1.6rem, 4vw, 2.3rem); margin: 0 0 .4rem; letter-spacing: -.01em; }
-  .lede { color: var(--muted); margin: 0 0 .3rem; }
-  .barline {
-    margin: 1.25rem 0 2.5rem; padding: .9rem 1.1rem; background: var(--panel);
-    border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 6px;
+  .wrap { max-width:940px; margin:0 auto; }
+
+  header.top { padding:56px 0 30px; border-bottom:2px solid var(--edge); }
+  h1 {
+    font-family:'Lilita',system-ui,sans-serif; font-weight:400;
+    font-size:clamp(34px,6vw,58px); line-height:1.02; margin:0 0 10px;
+    color:var(--ink); text-wrap:balance; letter-spacing:.2px;
   }
-  .barline strong { color: var(--accent); }
-  .piece { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 1.25rem 1.4rem; margin-bottom: 1.5rem; }
-  .piece header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-  .piece h2 { font-size: 1.2rem; margin: 0; }
-  .state { font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
-  .state-done { color: var(--ok); border-color: var(--ok); }
-  .state-in_progress { color: var(--warn); border-color: var(--warn); }
-  .piece-bar { color: var(--muted); font-size: .92rem; margin: .5rem 0 1rem; }
-  .rounds { list-style: none; margin: 0; padding: 0; }
-  .round { border-top: 1px solid var(--line); padding: 1rem 0 .4rem; }
-  .badge { font-size: .78rem; font-weight: 600; letter-spacing: .04em; color: var(--accent); text-transform: uppercase; }
-  .summary { margin: .4rem 0 .5rem; }
-  .gap { margin: .4rem 0 .8rem; color: var(--muted); font-size: .95rem; }
-  .compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .9rem; margin: .8rem 0 .4rem; }
-  figure { margin: 0; }
-  figure img { width: 100%; height: auto; display: block; border-radius: 6px; border: 1px solid var(--line); }
-  figcaption { font-size: .8rem; color: var(--muted); margin-top: .35rem; text-align: center; }
-  .empty { color: var(--muted); font-style: italic; margin: .5rem 0 0; }
-  footer { color: var(--muted); font-size: .85rem; margin-top: 2.5rem; text-align: center; }
+  .sub { max-width:62ch; margin:0; }
+  .standing {
+    display:flex; flex-wrap:wrap; gap:10px 26px; margin-top:24px;
+    font-family:'Fredoka',system-ui,sans-serif; font-weight:600;
+    font-variant-numeric:tabular-nums;
+  }
+  .standing div { display:flex; flex-direction:column; gap:2px; }
+  .standing span { font-size:11px; letter-spacing:.10em; text-transform:uppercase; color:var(--faint); }
+  .standing b { font-size:23px; color:var(--ink); font-weight:600; }
+
+  .plate { padding:44px 0; border-bottom:1px solid var(--edge); }
+  .plate__head { display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin-bottom:18px; }
+  .rnd {
+    font-family:'Fredoka',system-ui,sans-serif; font-weight:600; font-size:12px;
+    letter-spacing:.12em; text-transform:uppercase; color:var(--accent);
+    font-variant-numeric:tabular-nums;
+  }
+  .plate h2 {
+    font-family:'Lilita',system-ui,sans-serif; font-weight:400;
+    font-size:clamp(20px,2.6vw,27px); margin:0; color:var(--ink); text-wrap:balance;
+  }
+
+  /* The blind. Captions carry the answer but stay hidden until asked for. */
+  .pair { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media (max-width:620px) { .pair { grid-template-columns:1fr; } }
+  .pair figure { margin:0; }
+  .pair img {
+    display:block; width:100%; height:auto; border-radius:5px;
+    border:1px solid var(--edge); background:var(--panel);
+  }
+  figcaption {
+    display:flex; align-items:center; gap:9px; margin-top:8px;
+    font-family:'Fredoka',system-ui,sans-serif; font-weight:600; font-size:13px;
+  }
+  .tag {
+    display:grid; place-items:center; width:23px; height:23px; border-radius:4px;
+    background:var(--ink); color:var(--ground); font-size:12px;
+  }
+  .who { color:var(--faint); opacity:0; transition:opacity .18s ease; }
+  .pair[data-revealed="true"] .who { opacity:1; color:var(--accent); }
+
+  .reveal {
+    margin-top:14px; font:inherit; font-family:'Fredoka',system-ui,sans-serif;
+    font-weight:600; font-size:13px; cursor:pointer;
+    background:none; color:var(--accent);
+    border:1px solid var(--edge); border-radius:999px; padding:7px 15px;
+  }
+  .reveal:hover { border-color:var(--accent); }
+  .reveal:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+  .call { margin:22px 0 0; color:var(--ink); }
+  .won { color:var(--won); font-weight:700; }
+  .lost { color:var(--lost); font-weight:700; }
+
+  .gap {
+    margin:16px 0 0; padding:14px 16px; background:var(--panel);
+    border-left:3px solid var(--gold); border-radius:0 5px 5px 0; color:var(--ink);
+  }
+  .gap span {
+    display:block; font-family:'Fredoka',system-ui,sans-serif; font-weight:600;
+    font-size:11px; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--faint); margin-bottom:4px;
+  }
+
+  .diffs { margin:16px 0 0; padding-left:22px; }
+  .diffs li { margin:5px 0; }
+
+  .pieces { list-style:none; margin:22px 0 0; padding:0; display:grid; gap:8px; }
+  .pieces li {
+    display:grid; grid-template-columns:auto auto 1fr; gap:11px; align-items:baseline;
+    padding:10px 12px; background:var(--panel); border-radius:5px; font-size:14px;
+  }
+  .pieces b { font-family:'Fredoka',system-ui,sans-serif; font-weight:600; color:var(--ink); }
+  .chip {
+    font-family:'Fredoka',system-ui,sans-serif; font-weight:600; font-size:11px;
+    letter-spacing:.06em; text-transform:uppercase; padding:3px 9px; border-radius:999px;
+    background:var(--edge); color:var(--ink); white-space:nowrap;
+  }
+  .chip--ours-better { background:var(--won); color:var(--ground); }
+  .chip--close { background:var(--gold); color:var(--ground); }
+  .chip--ours-worse, .chip--ours-much-worse { background:var(--lost); color:var(--ground); }
+
+  footer { padding-top:34px; color:var(--faint); font-size:14px; max-width:62ch; }
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
 </style>
-</head>
-<body>
-  <div class="wrap">
-    <h1>${esc(status.title)}</h1>
-    <p class="lede">${esc(status.goal)}</p>
-    <div class="barline"><strong>The bar:</strong> ${esc(status.bar)}</div>
-    <p class="lede">${done} of ${status.pieces.length} pieces currently win the blind comparison.</p>
-    ${sections.join('')}
-    <footer>Built from progress/status.json — regenerate with <code>node tools/progress.mjs</code></footer>
-  </div>
-</body>
-</html>`;
 
-fs.mkdirSync(path.dirname(OUT), { recursive: true });
-fs.writeFileSync(OUT, html);
-console.log(`${path.relative(ROOT, OUT)} (${(html.length / 1024).toFixed(0)}KB)`);
+<div class="wrap">
+  <header class="top">
+    <h1>Held against the bar</h1>
+    <p class="sub">
+      Pirate Nation shipped a commercial game from the same CC0 voxel library this one is
+      built from, so every difference between their screenshot and ours is execution, not art.
+      Each round below puts the two frames side by side with the labels off — the way the
+      judging agent sees them — and records which one a cold eye picks.
+    </p>
+    <div class="standing">
+      <div><span>Rounds run</span><b>${data.rounds.filter((r) => r.better).length}</b></div>
+      <div><span>Blind wins</span><b>${data.rounds.filter((r) => r.weWon).length}</b></div>
+      <div><span>Current gap</span><b>${esc(latest.gapSize ?? 'unjudged')}</b></div>
+    </div>
+  </header>
 
-// A body-only copy for publishing as an Artifact, which supplies its own
-// document skeleton and rejects a second <html>/<head>.
-const fragment = html
-  .replace(/^[\s\S]*?<title>/, '<title>')
-  .replace(/<\/head>\s*<body>/, '')
-  .replace(/<\/body>\s*<\/html>\s*$/, '');
-const FRAGMENT_OUT = path.join(ROOT, 'progress', 'artifact.html');
-fs.writeFileSync(FRAGMENT_OUT, fragment);
-console.log(`${path.relative(ROOT, FRAGMENT_OUT)} (${(fragment.length / 1024).toFixed(0)}KB)`);
+  ${plates.join('\n')}
+
+  <footer>
+    Frames are captured from the running game by <code>tools/blind.mjs</code>, which renders ours
+    at the reference's size and aspect so the comparison is of craft rather than crop. The judging
+    agent is never told which frame is which and never reads the source.
+  </footer>
+</div>
+
+<script>
+  for (const button of document.querySelectorAll('.reveal')) {
+    button.addEventListener('click', () => {
+      const pair = button.previousElementSibling;
+      const shown = pair.dataset.revealed === 'true';
+      pair.dataset.revealed = shown ? 'false' : 'true';
+      button.textContent = shown ? 'Reveal which is which' : 'Hide the labels again';
+    });
+  }
+</script>`;
+
+fs.writeFileSync(path.join(ROOT, 'progress.html'), html);
+console.log(`progress.html — ${data.rounds.length} rounds, ${(html.length / 1024 / 1024).toFixed(2)} MB`);

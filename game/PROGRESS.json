@@ -1,0 +1,22 @@
+{
+  "rounds": [
+    {
+      "round": 0,
+      "title": "Baseline — before any of this round's work",
+      "a": "shots/blind/island-r0/a.png",
+      "b": "shots/blind/island-r0/b.png",
+      "key": { "a": "ours", "b": "the shipped game" },
+      "better": null,
+      "weWon": false,
+      "biggestFlaw": "Our island is a speck in a huge, uniformly speckled sea. Theirs fills two thirds of the frame and sits in calm deep water with a clean turquoise shelf and a crisp surf collar.",
+      "differences": [
+        "Composition: their island fills the frame; ours is lost in ocean.",
+        "Water: theirs is calm with foam only at the shore; ours has white chips everywhere.",
+        "Density: theirs is packed with props, fences and crops; ours is sparse.",
+        "Light: theirs is warm and directional with readable shadows; ours is flat.",
+        "Colour: their greens and sands are vivid; ours are duller and greyer."
+      ],
+      "pieces": []
+    }
+  ]
+}
