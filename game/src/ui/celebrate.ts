@@ -86,6 +86,7 @@ export function createCelebrate(): Celebrate {
     reward({ title, label, items, cta }) {
       return new Promise<void>((resolve) => {
         const grid = el('div', 'reward__grid');
+        grid.style.setProperty('--cols', String(items.length === 4 ? 2 : Math.min(3, items.length)));
         const button = el('button', 'btn btn--green reward__cta tap',
           el('span', 't t-btn', cta));
         button.type = 'button';

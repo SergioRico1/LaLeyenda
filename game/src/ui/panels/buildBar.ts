@@ -1,4 +1,5 @@
 import { el, pressable } from '../components/dom';
+import { markCheck, markX } from './marks';
 import { createCostRow, type CostLike } from './cost';
 import { refusalText, type RefusalKey } from '../copy';
 import type { IconSet } from '../icons';
@@ -41,11 +42,16 @@ export function createBuildBar(opts: {
 
   // §3.15: two 56×56 rounded squares — 64×64 in portrait, "up from 56 because
   // they are the whole bar". Left = red X, right = green ✓ (--ui-ok-*).
-  const cancel = el('button', 'btn btn--red buildbar__btn buildbar__x', el('span', 't', '✕'));
+  //
+  // The marks are DRAWN (marks.ts), not typed. A font dingbat is centred on its
+  // glyph box rather than its ink, which left the ✓ floating up and to the
+  // right of a 64px button, and its ~4px arms are a third of the weight the
+  // reference gives the same mark.
+  const cancel = el('button', 'btn btn--red buildbar__btn buildbar__x', markX('buildbar__mark'));
   cancel.type = 'button';
   cancel.setAttribute('aria-label', 'Cancelar');
 
-  const confirm = el('button', 'btn btn--ok buildbar__btn buildbar__ok', el('span', 't', '✓'));
+  const confirm = el('button', 'btn btn--ok buildbar__btn buildbar__ok', markCheck('buildbar__mark'));
   confirm.type = 'button';
   confirm.setAttribute('aria-label', 'Confirmar');
 

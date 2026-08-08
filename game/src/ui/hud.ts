@@ -10,7 +10,7 @@ import { createBubble, BUBBLE_TIP, type Bubble } from './components/bubble';
 import { createTray, type SlotState } from './components/tray';
 import { n } from './format';
 import { COPY } from './copy';
-import { FROZEN } from './env';
+import { FROZEN, CAPTURE } from './env';
 import { detectPack } from './pack';
 import { createToasts, refuse } from './toast';
 import { sfx } from './sfx';
@@ -809,17 +809,25 @@ export async function createHud(
   }
 
   function showGuide(): void {
-    if (tip || FROZEN) return;
+    // CAPTURE, not FROZEN: the tooltip is information, and §5 keeps every state
+    // change when motion is cut. Only a deterministic capture suppresses it.
+    if (tip || CAPTURE) return;
     const target = build.el.getBoundingClientRect();
     const host = hud.getBoundingClientRect();
-    tip = el('div', 'guide-tip',
-      el('span', 't', COPY['guide.idleBuilder']),
-      el('i', 'guide-tip__arrow'));
-    // Sits directly above the tile it points at, inside the viewport — the
-    // arrow is what connects it to Construir, so the two must line up.
-    tip.style.left = `${Math.min(host.width - 222, Math.max(8, target.left - host.left - 12))}px`;
+    const arrow = el('i', 'guide-tip__arrow');
+    tip = el('div', 'guide-tip', el('span', 't', COPY['guide.idleBuilder']), arrow);
     tip.style.bottom = `${host.bottom - target.top + 14}px`;
     guide.append(tip);
+
+    // The bubble is clamped inside the viewport, so on a 430pt screen it cannot
+    // sit above the tile it is about. The ARROW is what carries the meaning —
+    // it is placed against the TILE and only then clamped inside the bubble, so
+    // it keeps pointing at Construir however far the bubble had to move.
+    const width = tip.getBoundingClientRect().width;
+    const left = Math.min(host.width - width - 8, Math.max(8, target.left - host.left - 12));
+    tip.style.left = `${left}px`;
+    const aim = target.left - host.left + target.width / 2 - left - 11;
+    arrow.style.left = `${Math.min(width - 32, Math.max(10, aim))}px`;
     sfx('pop');
   }
 

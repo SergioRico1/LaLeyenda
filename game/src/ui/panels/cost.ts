@@ -1,4 +1,5 @@
 import { el, iconImg } from '../components/dom';
+import { markClock } from './marks';
 import { dur, n } from '../format';
 import type { IconSet } from '../icons';
 
@@ -42,7 +43,10 @@ export function createCostRow(opts: CostRowOptions): HTMLElement {
 
   if (opts.timeMs !== undefined) {
     const time = el('span', 'cost-item cost-item--time');
-    time.append(el('span', 'cost-item__clock', '⏱'), el('span', 'num cost-item__n'));
+    // A drawn dial, not the system emoji. `⏱` rendered as a pale hairline ring
+    // six pixels from a baked voxel log — one glyph borrowed from the OS in the
+    // middle of a set of rendered props reads as a bug, not as an icon.
+    time.append(markClock('cost-item__clock'), el('span', 'num cost-item__n'));
     (time.lastElementChild as HTMLElement).innerHTML = dur(opts.timeMs);
     row.append(time);
   }

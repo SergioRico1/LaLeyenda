@@ -172,7 +172,11 @@
 .reward__label{ font-size:14px; color:#7FB2E0; -webkit-text-stroke:0; text-shadow:none; }
 
 .reward__grid{
-  display:grid; grid-template-columns:repeat(3, 88px);
+  /* §3.22 asks for a 3-column grid, which is right for 3, 5 or 6 tiles and
+   * wrong for 4: three across plus one orphan under the left column reads as a
+   * layout fault rather than a reward. The column count is set from the item
+   * count so every row is full. */
+  display:grid; grid-template-columns:repeat(var(--cols,3), 88px);
   gap:12px; justify-content:center;
 }
 /* §3.21 reward tile — the same physical object as everything else, at 88px. */

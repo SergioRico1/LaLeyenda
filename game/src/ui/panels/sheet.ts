@@ -1,4 +1,5 @@
-import { el, pressable } from '../components/dom';
+import { el, iconImg, pressable } from '../components/dom';
+import { markX } from './marks';
 import { FROZEN } from '../env';
 import { sfx } from '../sfx';
 
@@ -37,24 +38,50 @@ export interface Sheet {
   onClosed(fn: () => void): void;
 }
 
-export function createSheet(options: { title?: string; onClose?: () => void } = {}): Sheet {
+export function createSheet(
+  options: { title?: string; art?: readonly [string?, string?]; onClose?: () => void } = {}
+): Sheet {
   const closers: Array<() => void> = [];
   if (options.onClose) closers.push(options.onClose);
 
   const title = el('h2', 't sheet__title', options.title ?? '');
 
   // §3.14 — the red X overlaps and BREAKS the corner rather than sitting
-  // politely inside the header. Hit area padded to 56×56 by the CSS.
-  const close = el('button', 'btn btn--red btn-x sheet__x', el('span', 't', '✕'));
+  // politely inside the header. Hit area padded to 56×56 by the CSS, and the
+  // mark itself is drawn (marks.ts) rather than typed.
+  const close = el('button', 'btn btn--red btn-x sheet__x', markX('sheet__x-mark'));
   close.type = 'button';
   close.setAttribute('aria-label', 'Cerrar');
 
+  // §3.17 — "illustrated props bleed in from each side, behind the title". The
+  // header was otherwise a blank cream strip with one word on it, which is the
+  // one part of the reference's panel that carries no information and is
+  // nonetheless the reason it does not read as a dialog box.
+  const deco = (side: 'l' | 'r', src?: string): HTMLElement => {
+    const img = iconImg(src, `sheet__deco sheet__deco--${side}`);
+    img.hidden = !src;
+    return img;
+  };
+
   const body = el('div', 'sheet__body');
   const footer = el('div', 'sheet__footer');
+  // The X is a child of the PANEL, not of the header: §3.14 has it overlapping
+  // the panel's corner, and a header that clips its own bleeding props (§3.17)
+  // would clip the close button with them.
   const panel = el('div', 'sheet__panel',
     el('div', 'sheet__grab'),
-    el('header', 'sheet__head', title, close),
-    body, footer);
+    el('header', 'sheet__head',
+      deco('l', options.art?.[0]), deco('r', options.art?.[1]),
+      title),
+    body, footer, close);
+
+  // A list that continues past the fold has to say so, and only while it
+  // actually does — the cue clears on the last row (see .sheet__footer::before).
+  const syncScrollCue = (): void => {
+    const more = body.scrollHeight - body.clientHeight - body.scrollTop > 8;
+    root.classList.toggle('can-scroll', more);
+  };
+  body.addEventListener('scroll', syncScrollCue, { passive: true });
 
   // No scrim (§3.16). This is a transparent catcher so an outside tap closes
   // the sheet — the affordance every bottom sheet on a phone has — without
@@ -70,13 +97,17 @@ export function createSheet(options: { title?: string; onClose?: () => void } = 
     isOpen: false,
     setTitle(text) { title.textContent = text; },
     open() {
-      if (api.isOpen) return;
+      // Already open still re-measures: the caller has just rebuilt the body,
+      // and a list that grew past the fold has to raise the cue.
+      if (api.isOpen) { syncScrollCue(); return; }
       (api as { isOpen: boolean }).isOpen = true;
       root.hidden = false;
       body.scrollTop = 0;
       // Force a reflow so the entrance transition runs from its start state
-      // instead of being coalesced away with the `hidden` flip.
+      // instead of being coalesced away with the `hidden` flip. It also gives
+      // the scroll cue a laid-out body to measure.
       if (!FROZEN) void root.offsetHeight;
+      syncScrollCue();
       root.classList.add('is-open');
       sfx('sheetIn');
     },

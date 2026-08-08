@@ -257,7 +257,11 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
   function syncHud(): void {
     if (!hud) return;
     anchors = toWorldItems(game.state(), game.now());
-    for (const [buildingId, lift] of awaiting) {
+    for (const [buildingId, lift] of [...awaiting]) {
+      // A building the player started upgrading again has moved on: its ✓ would
+      // sit next to the new job's timer bar arguing about the same roof.
+      const building = game.state().buildings.find((b) => b.id === buildingId);
+      if (!building || building.work) { awaiting.delete(buildingId); continue; }
       anchors.push({ buildingId, lift, item: { id: `done-${buildingId}`, kind: 'done' } });
     }
     hud.setState(toHudState(game.state(), game.now()));

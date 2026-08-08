@@ -16,6 +16,38 @@
 .sheet__why[hidden],
 .buildbar__why[hidden]{ display:none !important; }
 
+/* --- drawn marks (marks.ts): the ✗, the ✓ and the clock ------------------
+ * They used to be typed characters — ✗ ✓ ⏱ — which put font dingbats and one
+ * system emoji in the middle of a set of baked voxel props, at a third of the
+ * reference's weight and centred on their glyph boxes rather than their ink.
+ * Drawn, they are the same physical object as everything else: constant-weight
+ * contour, white body, hard zero-blur drop. */
+.mark{
+  display:block;
+  overflow:visible;
+  filter:drop-shadow(0 2px 0 rgba(0,0,0,.45));
+  /* Decoration inside a control never takes the tap — the same rule
+   * `.tile__art` follows. Without it the hit target of a close button is an
+   * SVG path, which every automation layer and some assistive tech resolve to
+   * something other than the button. */
+  pointer-events:none;
+}
+.mark__ink{
+  fill:#fff;
+  stroke:var(--ui-ink);
+  /* `vector-effect:non-scaling-stroke` (set in marks.ts) measures this in SCREEN
+   * pixels, so the contour holds its weight whether the mark is drawn at 23px
+   * in a close button or at 54px in the build-mode ✓ — §6.9's rule that a
+   * contour never scales with its element. Half of a centred stroke is covered
+   * by the fill, so the visible contour is 2.5px. */
+  stroke-width:5;
+  stroke-linejoin:round;
+}
+.mark--clock{ flex:0 0 auto; }
+.mark__face { fill:#F4F1E2; stroke:var(--ui-ink); stroke-width:4; }
+.mark__rim  { fill:none; stroke:rgba(255,255,250,.85); stroke-width:2; stroke-linecap:round; }
+.mark__hands{ fill:none; stroke:var(--ui-ink); stroke-width:2.6; stroke-linecap:round; stroke-linejoin:round; }
+
 /* --- the sheet shell ----------------------------------------------------- */
 .sheet{
   position:fixed; inset:0;
@@ -39,10 +71,17 @@
   border:var(--ui-frame-w) solid var(--ui-frame);
   border-bottom:0;
   border-radius:var(--ui-r-panel) var(--ui-r-panel) 0 0;
+  /* §3.16's three-layer edge: near-black outside, taupe band, light rim inside,
+   * then cream. The ground shadow is the same HARD offset with a 1–2px soft
+   * edge every other object in the game casts, mirrored upward because this
+   * panel is hinged on the bottom of the screen. It was 44px of blur — §1.9
+   * names blur as the fastest way to look like a generic mobile game, and the
+   * three-layer edge is already doing the separating. */
   box-shadow:
     0 0 0 3px var(--ui-frame-dark),          /* outer near-black stroke */
     inset 0 0 0 1px rgba(255,255,255,.55),   /* light rim inside the frame */
-    0 -10px 44px rgba(0,0,0,.55);
+    0 -4px 0 rgba(0,0,0,.22),
+    0 -6px 4px rgba(0,0,0,.32);
 
   /* §5's tier-1 entrance is a scale with a real overshoot. Bottom-hinging the
    * sheet is a documented deviation (§3.15's thumb rule) but the PHYSICALITY is
@@ -74,25 +113,76 @@ html.shot:not(.motion) .sheet__panel{ transition:none; }
   background:rgba(23,19,14,.22);
 }
 
-/* --- §3.17 the header: the title sits directly on the cream -------------- */
+/* --- §3.17 the header: the title sits directly on the cream --------------
+ * No header bar, no second background: cream, a centred title, illustrated
+ * props bleeding in from both sides behind it, and one hairline. */
 .sheet__head{
   position:relative;
   display:flex; align-items:center; justify-content:center;
   min-height:64px; padding:6px 64px 10px;
   border-bottom:1px solid rgba(0,0,0,.12);   /* the hairline, and nothing else */
+  /* The bleeding props are clipped by the header band rather than spilling
+   * over the list below it. */
+  overflow:hidden;
 }
 .sheet__title{
+  position:relative; z-index:1;
   font-size:27px; text-align:center;
   color:#fff;
 }
-/* §3.14 — the X OVERLAPS and breaks the corner, never sits politely inside. */
-.sheet__x{
-  position:absolute; right:10px; top:2px;
-  width:48px; height:48px; min-height:0; padding:0;
-  --brk:59%;
-  border-radius:13px;
+/* §3.17 — "illustrated props bleed in from each side, behind the title". Ours
+ * are the same baked voxel renders the rest of the UI uses, half-cut by the
+ * band's own edges exactly as the reference cuts its cannon and its tower. The
+ * header was otherwise a blank cream strip with a word on it. */
+.sheet__deco{
+  position:absolute; top:50%; width:96px; height:96px;
+  transform:translateY(-50%);
+  opacity:.30;
+  object-fit:contain;
+  pointer-events:none;
 }
-.sheet__x span{ font-size:23px; -webkit-text-stroke:var(--ui-txt-stroke-x) var(--ui-ink); }
+.sheet__deco--l{ left:-26px;  rotate:-9deg; }
+.sheet__deco--r{ right:-26px; rotate:9deg; }
+.sheet__deco[hidden]{ display:none !important; }
+
+/* §3.14 — the X OVERLAPS and BREAKS the corner, never sits politely inside.
+ * It shipped 15px in from the panel's right edge and 17px below its top, which
+ * is the one placement the section rules out.
+ *
+ * The reference's `translate(40%,-40%)` assumes a panel floating with margins
+ * on all four sides. This one is hinged flush to the bottom of the screen and
+ * runs the full width, so the only free direction is UP: the X straddles the
+ * panel's top edge — half on the cream, half on the island — and stays inside
+ * the right margin instead of being cut in two by the viewport. */
+.sheet__x{
+  position:absolute; right:10px; top:0;
+  /* The independent `translate` property, NOT `transform`: `.btn.is-pressed`
+   * writes `transform:translateY(4px)` for the press travel, and it wins on
+   * specificity — so an offset declared in `transform` here is REPLACED the
+   * instant a finger lands, and the button leaps 26px down the screen instead
+   * of depressing 4px into its own shadow. */
+  translate:0 -46%;
+  width:48px; height:48px; min-height:0; padding:0;
+  border-radius:11px;                        /* 0.23 × side */
+  overflow:visible;
+  z-index:2;
+  /* §3.14 — "the gloss is visibly an INSET panel: it stops ~4px short of the
+   * left and right contour so a sliver of deep base red frames it". That sliver
+   * only exists if the face UNDER the plate is the body red rather than the
+   * gloss ramp, so this button paints its own two-stop body (no --brk) and puts
+   * the plate on top of it in ::before. */
+  background:linear-gradient(180deg,
+    var(--ui-red-a) 0%, var(--ui-red-b) 92%,
+    var(--ui-red-lip) 92.01%, var(--ui-red-lip) 100%);
+}
+.sheet__x .mark--x{ width:46%; }
+.sheet__x::before{
+  content:''; position:absolute; inset:3px 4px auto 4px; height:52%;
+  border-radius:8px 8px 4px 4px;
+  background:linear-gradient(180deg,var(--ui-red-gloss-a),var(--ui-red-gloss-b));
+  pointer-events:none;
+}
+.sheet__x .mark{ position:relative; z-index:1; }
 
 .sheet__body{
   overflow-y:auto; -webkit-overflow-scrolling:touch;
@@ -100,24 +190,47 @@ html.shot:not(.motion) .sheet__panel{ transition:none; }
   overscroll-behavior:contain;
 }
 .sheet__footer{
+  position:relative;
   padding:10px 14px calc(12px + var(--ui-safe-b));
   display:flex; flex-direction:column; align-items:stretch; gap:6px;
 }
+/* A list that continues past the fold has to say so. `.can-scroll` is set by
+ * sheet.ts whenever the body has further to travel, so the cue appears only
+ * when there is actually something below it and clears on the last row. */
+.sheet__footer::before{
+  content:''; position:absolute; left:0; right:0; bottom:100%;
+  height:30px;
+  background:linear-gradient(180deg, rgba(234,234,226,0) 0%, var(--ui-panel) 82%);
+  opacity:0; transition:opacity .16s ease-out;
+  pointer-events:none;
+}
+.sheet.can-scroll .sheet__footer::before{ opacity:1; }
 
-/* §3.17 — list content goes in a --ui-well inset panel. */
+/* §3.17 — list content goes in a --ui-well inset panel. A well is a RECESS, so
+ * its top shadow is the exact inverse of an extrusion: hard, zero blur, no
+ * x-offset. The 6px blur it shipped with was one of the six soft shadows §6
+ * calls out. */
 .well{
   background:var(--ui-well);
   border-radius:12px;
-  box-shadow:inset 0 2px 6px rgba(0,0,0,.5);
+  box-shadow:
+    inset 0 3px 0 rgba(0,0,0,.42),
+    inset 0 -2px 0 rgba(255,255,255,.07),
+    0 1px 0 rgba(255,255,255,.35);           /* the cream catching light below */
   padding:6px;
 }
 
 /* --- cost rows (§3.20's footer rule) ------------------------------------- */
 .cost-row{ display:flex; align-items:center; flex-wrap:wrap; gap:6px 14px; }
-.cost-item{ display:inline-flex; align-items:center; gap:3px; }
+/* A price never breaks mid-number: the row may wrap between items on a narrow
+ * phone, but "1 000" splitting into "1" and "000" across two lines is a
+ * different number. */
+.cost-item{ display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
 .cost-item__icon{ width:26px; height:26px; object-fit:contain; margin:-6px 0; }
 .cost-item__n{ font-size:19px; }
-.cost-item__clock{ font-size:15px; filter:grayscale(1) brightness(2); }
+/* A drawn dial (marks.ts). It was the system emoji ⏱ with a grayscale filter,
+ * which rendered as a pale hairline ring six pixels from a baked voxel log. */
+.cost-item__clock{ width:21px; height:21px; }
 /* Red is reserved for a price you cannot currently meet — the one number in
  * the row that is actually stopping the player. */
 .cost-item.is-short .cost-item__n{ color:#FF7A6E; }
@@ -127,50 +240,127 @@ html.shot:not(.motion) .sheet__panel{ transition:none; }
 .picker__list{ display:flex; flex-direction:column; gap:6px; }
 .picker__empty{ font-size:17px; padding:14px; text-align:center; opacity:.85; }
 
+/* §3.20 calls a building option a CARD, and gives it the blue item family: a
+ * hue-matched dark stroke rather than the universal ink, a cyan rim inside it,
+ * a lit face with a real step, a white radial starburst behind the product art
+ * and an inset dark cost footer.
+ *
+ * What shipped was rgba(255,255,255,.10) over the well behind a 2px
+ * rgba(0,0,0,.45) border — which composites to about #201F1E on #3A3635, a
+ * hairline rather than a contour — with a translucent ramp and no step, no lip
+ * and no extrusion. The rows read as list separators; they had to read as
+ * objects the player is choosing between. */
 .pick-row{
   position:relative;
   display:flex; align-items:center; gap:10px;
-  width:100%; min-height:76px;
+  width:100%; min-height:78px;
   padding:8px 10px;
   text-align:left;
-  border:2px solid rgba(0,0,0,.45);
-  border-radius:12px;
-  background:linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.03));
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.14);
+  border:3px solid var(--ui-blue-stroke);
+  border-radius:var(--ui-r-card);
+  background:linear-gradient(180deg,
+    #6FDCF0 0%,               #4ECBE6 50%,
+    #3FA8CA 50.01%,           #3E9FC0 92%,
+    #2B7994 92.01%,           #2B7994 100%);
+  box-shadow:
+    inset 0 0 0 1px var(--ui-blue-rim),
+    inset 0 2px 0 rgba(255,255,255,.55),
+    var(--ui-drop-sm), var(--ui-cast);
 }
-.pick-row{ transition:transform .06s ease-out, background .06s ease-out, filter .06s ease-out; }
+.pick-row{ transition:transform .06s ease-out, box-shadow .06s ease-out, filter .06s ease-out; }
 /* A background tint with no travel is not a press (§5 law 2, §3.0: "any shape
  * at any size"). A catalogue row is the tap that spends a builder. */
 .pick-row:active,
 .pick-row.is-pressed{
-  background:rgba(255,255,255,.16);
   transform:translateY(3px);
+  box-shadow:inset 0 0 0 1px var(--ui-blue-rim),
+             inset 0 2px 0 rgba(255,255,255,.35),
+             0 1px 0 rgba(0,0,0,.30);
   filter:brightness(.95);
 }
 .pick-row__art{
-  flex:0 0 auto; width:56px; height:56px;
+  position:relative;
+  flex:0 0 auto; width:60px; height:60px;
   display:grid; place-items:center;
-  /* §3.20 — every valuable object in Clash sits on a white radial starburst. */
-  background:radial-gradient(circle at 50% 52%, rgba(255,255,255,.30) 0%, transparent 62%);
 }
-.pick-row__art img{ width:100%; height:100%; object-fit:contain; }
-.pick-row__text{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:3px; }
+/* §3.20's halo, drawn properly: a white radial with twelve faint conic rays
+ * over it. The single 30%-alpha radial it replaced read as a grey smear. */
+.pick-row__art::before{
+  content:''; position:absolute; inset:-18%;
+  background:
+    repeating-conic-gradient(from 8deg,
+      rgba(255,255,255,.34) 0deg 8deg, rgba(255,255,255,0) 8deg 30deg),
+    radial-gradient(circle at 50% 50%,
+      rgba(255,255,255,.62) 0%, rgba(255,255,255,.22) 38%, rgba(255,255,255,0) 66%);
+  -webkit-mask-image:radial-gradient(circle at 50% 50%, #000 34%, transparent 68%);
+  mask-image:radial-gradient(circle at 50% 50%, #000 34%, transparent 68%);
+  pointer-events:none;
+}
+.pick-row__art img{
+  position:relative;
+  width:100%; height:100%; object-fit:contain;
+  filter:drop-shadow(0 2px 0 rgba(0,0,0,.35));
+}
+.pick-row__text{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:4px; }
 .pick-row__head{ display:flex; align-items:baseline; gap:8px; }
-.pick-row__name{ font-size:20px; }
-.pick-row__count{ font-size:15px; opacity:.75; margin-left:auto; }
-.pick-row__meta{ display:flex; flex-direction:column; gap:2px; }
-.pick-row__why{ font-size:15px; color:#FFD27A; }
+/* §3.20 — "title colour follows the card hue: lime with a dark green outline
+ * on a blue card". Body numerals never change colour. */
+.pick-row__name{ font-size:20px; color:#A6F02B; -webkit-text-stroke-color:#20430C; }
+.pick-row__count{ font-size:15px; opacity:.8; margin-left:auto; }
+.pick-row__meta{ display:flex; flex-direction:column; align-items:flex-start; gap:3px; }
+.pick-row__why{ font-size:15px; color:#FFD98A; }
+/* §3.20's cost footer: an inset dark panel, not numbers loose on the face. */
+.pick-row .cost-row{
+  padding:2px 9px 3px;
+  border-radius:9px;
+  background:rgba(0,0,0,.30);
+  box-shadow:inset 0 1px 0 rgba(0,0,0,.35);
+}
 .pick-row__go{
   flex:0 0 auto; min-height:44px; padding:8px 16px; --brk:56%;
   pointer-events:none;   /* the whole row is the target */
 }
 .pick-row__go .t-btn{ font-size:17px; }
 
-/* A blocked row is the same object, drained — never a row with parts removed
- * (§6.10). It keeps its price so the player can plan for it. */
-.pick-row.is-blocked{ filter:saturate(.3) brightness(.82); }
-.pick-row.is-blocked .cost-row{ opacity:.65; }
-.pick-row.is-blocked .pick-row__why{ filter:saturate(3) brightness(1.2); }
+/* iPhone SE and below. The price is one strip in §3.20, and at 360px it was
+ * wrapping onto a second line — which grows every row by 20px and costs the
+ * list a whole entry above the fold. The art and the button give the width
+ * back instead. */
+@media (max-width:379px){
+  .pick-row{ gap:8px; padding:8px; }
+  .pick-row__art{ width:52px; height:52px; }
+  .pick-row__go{ padding:8px 11px; }
+  .pick-row__go .t-btn{ font-size:16px; }
+  .pick-row .cost-row{ gap:4px 9px; padding:2px 7px 3px; }
+  .pick-row .cost-item__icon{ width:23px; height:23px; }
+  .pick-row .cost-item__clock{ width:19px; height:19px; }
+  .pick-row .cost-item__n{ font-size:18px; }
+}
+
+/* A blocked row is THE SAME OBJECT IN THE PASSIVE HUE — stone instead of blue —
+ * never that object drained by a filter or with its button torn out (§6.10).
+ * It keeps its price and its Colocar so the right-hand column stays regular and
+ * the player can plan for it. */
+.pick-row.is-blocked{
+  border-color:#3A3730;
+  background:linear-gradient(180deg,
+    var(--ui-grey2-gloss-a) 0%,  var(--ui-grey2-gloss-b) 50%,
+    var(--ui-grey2-a) 50.01%,    var(--ui-grey2-b) 92%,
+    var(--ui-grey-lip-2) 92.01%, var(--ui-grey-lip-2) 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,.35),
+    inset 0 2px 0 rgba(255,255,255,.5),
+    var(--ui-drop-xs);
+}
+.pick-row.is-blocked .pick-row__name{ color:#EDEDE4; -webkit-text-stroke-color:var(--ui-ink); }
+/* The reason line is the most valuable text on a blocked row (§3.15), so it
+ * takes the warm dark that reads on stone rather than the pale amber it used
+ * over the old translucent face. */
+.pick-row.is-blocked .pick-row__why{
+  color:#5A3B10; -webkit-text-stroke:0; text-shadow:0 1px 0 rgba(255,255,255,.4);
+}
+.pick-row.is-blocked .pick-row__art::before{ opacity:.45; }
+.pick-row.is-blocked .pick-row__art img{ filter:grayscale(.55) brightness(.9); }
 
 /* `ui-refuse` and `.is-refused` now live in base.css: everything that can
  * refuse shakes with the same 220ms, not just this row. */
@@ -178,14 +368,40 @@ html.shot:not(.motion) .sheet__panel{ transition:none; }
 /* --- §3.16 the upgrade sheet body ---------------------------------------- */
 .sheet__identity{
   display:flex; align-items:center; gap:12px;
-  padding:2px 6px 10px;
+  padding:2px 4px 10px;
 }
+/* The portrait sits in its own small WELL. §1.2's rule is "cream frames,
+ * charcoal holds": art dropped straight onto the cream had nothing holding it,
+ * and the white starburst §3.20 asks for is invisible on a cream ground — it
+ * only exists against something darker. */
 .sheet__art{
-  width:72px; height:72px; flex:0 0 auto;
+  position:relative;
+  width:76px; height:76px; flex:0 0 auto;
   display:grid; place-items:center;
-  background:radial-gradient(circle at 50% 52%, rgba(255,255,255,.55) 0%, transparent 60%);
+  background:var(--ui-well);
+  border-radius:12px;
+  box-shadow:
+    inset 0 3px 0 rgba(0,0,0,.42),
+    inset 0 -2px 0 rgba(255,255,255,.07),
+    0 1px 0 rgba(255,255,255,.35);
 }
-.sheet__art img{ width:100%; height:100%; object-fit:contain; }
+.sheet__art::before{
+  content:''; position:absolute; inset:6%;
+  border-radius:8px;
+  background:
+    repeating-conic-gradient(from 8deg,
+      rgba(255,255,255,.30) 0deg 8deg, rgba(255,255,255,0) 8deg 30deg),
+    radial-gradient(circle at 50% 50%,
+      rgba(255,255,255,.58) 0%, rgba(255,255,255,.20) 38%, rgba(255,255,255,0) 66%);
+  -webkit-mask-image:radial-gradient(circle at 50% 50%, #000 32%, transparent 68%);
+  mask-image:radial-gradient(circle at 50% 50%, #000 32%, transparent 68%);
+  pointer-events:none;
+}
+.sheet__art img{
+  position:relative;
+  width:86%; height:86%; object-fit:contain;
+  filter:drop-shadow(0 2px 0 rgba(0,0,0,.4));
+}
 .sheet__art.is-blank{ display:none; }
 .sheet__level{ font-size:22px; color:#3A3635; -webkit-text-stroke:0; text-shadow:none; }
 
@@ -204,7 +420,16 @@ html.shot:not(.motion) .sheet__panel{ transition:none; }
 .gain__arrow{ font-size:15px; opacity:.6; }
 .gain__to{ font-size:19px; color:#C6F06A; }
 .gain--unlocks .gain__to{ font-size:16px; text-align:right; max-width:60%; }
-.sheet__price{ padding-top:8px; border-top:1px solid rgba(255,255,255,.12); }
+/* §3.20's cost footer: an inset dark panel holding the price, not numbers loose
+ * on the well. Same object as the one inside a picker row, so the two panels
+ * agree about what a price looks like. */
+.sheet__price{ margin-top:8px; }
+.sheet__price .cost-row{
+  padding:4px 10px 5px;
+  border-radius:10px;
+  background:rgba(0,0,0,.30);
+  box-shadow:inset 0 1px 0 rgba(0,0,0,.35);
+}
 
 /* The CTA at thumb height — §4.10 beat 0:45's entire requirement. */
 .sheet__cta{
@@ -215,61 +440,99 @@ html.shot:not(.motion) .sheet__panel{ transition:none; }
 .sheet__cta-time,
 .sheet__cta-price{ display:inline-flex; align-items:center; gap:4px; font-size:19px; opacity:.95; }
 .sheet__gem{ width:26px; height:26px; object-fit:contain; margin:-6px 0; }
-/* Blocked, not dead: it keeps its place and answers with the line below it. */
-.sheet__cta.is-blocked{ filter:saturate(.25); }
+/* Blocked, not dead: it keeps its place, its four layers and its full size, and
+ * answers with the line below it. upgradeSheet.ts already swaps the family to
+ * --ui-grey2 — the passive stone hue §1.3 reserves for exactly this — so the
+ * saturate(.25) on top of it was draining an object that had already said what
+ * it needed to say, which is the mistake §6.10 names. */
 .sheet__why{
   font-size:16px; text-align:center; color:#8A3A22;
   -webkit-text-stroke:0; text-shadow:none;
 }
 
-/* --- §3.15 the build bar ------------------------------------------------- */
+/* --- §3.15 the confirm / cancel pair -------------------------------------
+ *
+ * THERE IS NO BAR. `coc_build_mode.jpg` has no container at all: the ✗ and the
+ * ✓ float directly over the grass beside the ghost, each carrying its own four
+ * layers, and the world stays visible edge to edge behind them.
+ *
+ * What shipped here was the exact opposite — a full-bleed 96px slab of
+ * rgba(23,19,14,.72) with one hairline, no contour, no gloss step, no lip and
+ * no extrusion. It was simultaneously the largest surface in build mode and the
+ * only object in the game carrying none of §0.2's four layers: a translucent
+ * web toolbar bolted across the bottom of a Clash screen.
+ *
+ * §3.15's hard rule — no primary action above 55% of viewport height — is about
+ * where the two buttons SIT, not about giving them a slab to sit on. So the
+ * layer keeps its bottom anchor and loses its background: the pair spreads to
+ * the two thumb corners, the caption rides above it as free text the way the
+ * reference draws "Cannon / Level 1" over the grass, and the island is
+ * uninterrupted. */
 .buildbar{
   position:fixed; left:0; right:0; bottom:0;
   z-index:var(--z-buildbar);
-  min-height:calc(96px + var(--ui-safe-b));
-  padding:10px calc(24px + var(--ui-safe-r)) calc(10px + var(--ui-safe-b)) calc(24px + var(--ui-safe-l));
-  display:flex; align-items:center; gap:12px;
-  background:rgba(23,19,14,.72);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.22);
-  pointer-events:auto;
-  /* §5 law 1: nothing appears out of nothing. A full-width 96px bar
-   * materialising in a single frame is the loudest possible version of that
-   * mistake — it slides up from the edge it is anchored to instead.
+  padding:0 calc(var(--ui-cluster-x) + var(--ui-safe-r))
+          calc(var(--ui-cluster-y) + var(--ui-safe-b))
+          calc(var(--ui-cluster-x) + var(--ui-safe-l));
+  display:flex; flex-direction:column; align-items:center; gap:10px;
+  /* With the slab gone the bottom of the island is draggable ground again
+   * rather than dead chrome; only the drawn objects take a finger. */
+  pointer-events:none;
+  /* §5 law 1: nothing appears out of nothing — the group slides up from the
+   * edge it is anchored to.
    *
-   * Portrait only: in landscape the bar carries a projected translate3d for the
-   * ghost it follows, and a keyframe writing `transform` would throw it across
-   * the screen. That orientation gets the `scale` property, which composes. */
+   * Portrait only: in landscape the group carries a projected translate3d for
+   * the ghost it follows, and a keyframe writing `transform` would throw it
+   * across the screen. That orientation gets `scale`, which composes. */
   animation:ui-slide-in-bottom .2s cubic-bezier(.2,1.1,.4,1);
 }
-.buildbar__text{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:3px; }
-.buildbar__caption{ font-size:19px; }
-.buildbar__why{ font-size:15px; color:#FF9C8E; }
-.buildbar__pair{ display:flex; align-items:center; gap:22px; flex:0 0 auto; }
+/* Sits over the island with no plate behind it, the way the reference draws
+ * "Cannon / Level 1" straight onto the grass in `coc_speedup.jpg`. §1.9's two
+ * text mixins are built for exactly this — heavy face, constant-weight contour,
+ * hard drop — so nothing else is needed to hold it against the sand. */
+.buildbar__text{
+  display:flex; flex-direction:column; align-items:center; gap:2px;
+  max-width:100%; text-align:center;
+}
+.buildbar__caption{ font-size:21px; }
+.buildbar__costs .cost-row{ justify-content:center; }
+.buildbar__why{ font-size:16px; color:#FF9C8E; }
+.buildbar__pair{
+  display:flex; align-items:center; justify-content:space-between;
+  width:100%; pointer-events:none;
+}
 .buildbar__btn{
   width:64px; height:64px; min-height:0; padding:0;
-  border-radius:13px; --brk:52%;
+  border-radius:15px; --brk:52%;
+  pointer-events:auto;
+  overflow:visible;             /* the ✓ breaks its own right-hand contour */
 }
-.buildbar__btn span{ font-size:28px; -webkit-text-stroke:var(--ui-txt-stroke-x) var(--ui-ink); }
-.buildbar__ok.is-blocked{ filter:saturate(.2); }
+/* Measured off the reference's pair: the ✗ ink is 47% of the button side and
+ * the ✓ is 84% wide by 59% tall, its tip crossing the right-hand contour. */
+.buildbar__btn .mark--x    { width:52%; }
+.buildbar__btn .mark--check{ width:92%; translate:13% -3%; }
+/* Blocked = the same object in the passive stone hue (buildBar.ts swaps the
+ * family to --ui-grey2). It does NOT also get drained by a filter: §6.10 says a
+ * secondary is that object in a duller hue, never that object with a layer
+ * removed. The mark takes the family's own light value rather than staying pure
+ * white, so the whole button reads as one drained object instead of a live
+ * white ✓ sitting on a dead face. */
+.buildbar__ok.is-blocked .mark__ink{ fill:#DEDCD2; }
 .buildbar.is-refused{ animation:ui-refuse .22s ease-in-out; }
 
 /* §10.2 — in landscape the whole screen is in reach, so the pair goes back to
- * following the ghost in world space, exactly as the reference does it. The
- * caption rides above the buttons instead of beside them. */
+ * following the ghost in world space, exactly as the reference does it, and the
+ * two buttons close up to §3.15's 22px gap around the caption above them. */
 @media (orientation:landscape){
   .buildbar{
     left:auto; right:auto; bottom:auto;
-    min-height:0; width:max-content;
-    padding:10px 14px;
-    flex-direction:column; gap:8px;
-    border-radius:16px;
+    width:max-content; padding:0;
     transform:translate3d(var(--gx,50vw), var(--gy,50vh), 0) translate(-50%,-118%);
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.22), 0 8px 20px rgba(0,0,0,.45);
     /* Arrives by scaling with an overshoot on the `scale` property, so the
      * projected transform above survives the entrance untouched. */
     animation:ui-pop-s .22s cubic-bezier(.2,1.4,.4,1);
   }
-  .buildbar__text{ align-items:center; text-align:center; }
+  .buildbar__pair{ width:auto; gap:22px; justify-content:center; }
   .buildbar__btn{ width:56px; height:56px; }
 }
 
@@ -304,17 +567,21 @@ html.shot:not(.motion) .sheet__panel{ transition:none; }
 .collect-all{
   transition:transform .18s cubic-bezier(.2,1.1,.4,1);
 }
+/* The extra 22px is what a tile's OVERHANGS need: a badge breaks its tile's
+ * top-right corner by 12px and the padlock its top-left by the same, so a
+ * cluster pushed down by exactly its own height leaves a red badge stuck to the
+ * bottom edge of the screen through the whole placement. */
 #ui.is-placing .zone-c-primary,
 #ui.is-placing .zone-c-utility,
 #ui.is-placing .tray{
-  transform:translateY(calc(100% + var(--ui-cluster-y) + var(--ui-safe-b)));
+  transform:translateY(calc(100% + 22px + var(--ui-cluster-y) + var(--ui-safe-b)));
   pointer-events:none;
   transition:transform .16s ease-in;
 }
 /* The tray and Recoger Todo already carry a centring translate, so their exit
  * has to compose with it rather than replace it. */
 #ui.is-placing .tray{
-  transform:translateX(-50%) translateY(calc(100% + 16px + var(--ui-safe-b)));
+  transform:translateX(-50%) translateY(calc(100% + 38px + var(--ui-safe-b)));
 }
 #ui.is-placing .collect-all{
   transform:translateX(-50%)

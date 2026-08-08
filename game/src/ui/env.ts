@@ -30,5 +30,14 @@ export const MOTION = SHOT && params.get('motion') === '1';
 /** Skip travel and overshoot, keep every state change (§5). */
 export const FROZEN = (SHOT && !MOTION) || REDUCED;
 
+/**
+ * True ONLY for a deterministic capture — reduced motion is deliberately not
+ * included. Use this to suppress something because the harness must not see it;
+ * use FROZEN to suppress travel. §5 keeps every state change when motion is cut,
+ * so anything that carries INFORMATION has to survive REDUCED and gate on this
+ * instead.
+ */
+export const CAPTURE = SHOT && !MOTION;
+
 if (SHOT) document.documentElement.classList.add('shot');
 if (MOTION) document.documentElement.classList.add('motion');

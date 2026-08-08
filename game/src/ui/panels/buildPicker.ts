@@ -1,4 +1,6 @@
 import { el, iconImg, pressable } from '../components/dom';
+import { refuse } from '../toast';
+import { sfx } from '../sfx';
 import { createSheet, type Sheet } from './sheet';
 import { createCostRow, type CostLike } from './cost';
 import { COPY, refusalText, type RefusalKey } from '../copy';
@@ -52,7 +54,13 @@ export function createBuildPicker(opts: {
   onSuggestion(buildingId: number): void;
   onClose?(): void;
 }): BuildPicker {
-  const sheet: Sheet = createSheet({ title: COPY['panel.build'], onClose: opts.onClose });
+  // §3.17's bleeding props: the two things a build is made of, half-cut by the
+  // header band's own edges the way the reference cuts its cannon and tower.
+  const sheet: Sheet = createSheet({
+    title: COPY['panel.build'],
+    art: [opts.icons.construir, opts.icons.madera],
+    onClose: opts.onClose,
+  });
   const list = el('div', 'well picker__list');
   sheet.body.append(list);
 
@@ -92,19 +100,23 @@ export function createBuildPicker(opts: {
     }
 
     node.append(art, el('div', 'pick-row__text', head, meta));
+    // The button stays on a blocked row, in the passive stone hue. Removing it
+    // broke the right-hand column into a ragged edge and made a blocked row a
+    // different SHAPE from a takeable one, when the only difference is whether
+    // the player can act on it today (§3.20, §6.10).
+    node.append(el('span',
+      `btn ${blocked ? 'btn--grey2' : 'btn--green'} pick-row__go`,
+      el('span', 't t-btn', COPY['build.place'])));
     if (!blocked) {
-      node.append(el('span', 'btn btn--green pick-row__go', el('span', 't t-btn', COPY['build.place'])));
       pressable(node, () => { sheet.close(); opts.onPick(option.type); });
     } else {
       node.setAttribute('aria-disabled', 'true');
       // Never a dead tap: a blocked row still answers, with a shake and the
-      // reason it already carries.
-      node.addEventListener('click', () => {
-        node.classList.remove('is-refused');
-        void node.offsetWidth;
-        node.classList.add('is-refused');
-        navigator.vibrate?.([12, 40, 12]);
-      });
+      // reason it already carries. Routed through the shared refuse() so every
+      // "no" in the game shakes and sounds the same — this row used to be the
+      // only place in the build that did it at all, which made the silence
+      // everywhere else read as a bug rather than as a different answer.
+      node.addEventListener('click', () => { refuse(node); sfx('refuse'); });
     }
     // Ayuntamiento level ordering puts the reachable rows first without hiding
     // anything, so the ladder still reads top to bottom.

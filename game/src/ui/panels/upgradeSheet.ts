@@ -71,7 +71,13 @@ export function createUpgradeSheet(opts: {
   onFinishNow(buildingId: number): void;
   onClose?(): void;
 }): UpgradeSheet {
-  const sheet: Sheet = createSheet({ onClose: opts.onClose });
+  // §3.17's bleeding props. The building itself is already in the identity row
+  // below, so the header carries the two things an upgrade SPENDS — a carpenter
+  // and materials — rather than repeating the art six pixels above itself.
+  const sheet: Sheet = createSheet({
+    art: [opts.icons.carpintero, opts.icons.madera],
+    onClose: opts.onClose,
+  });
 
   const art = el('span', 'sheet__art', iconImg(undefined, ''));
   const level = el('span', 'num sheet__level');
