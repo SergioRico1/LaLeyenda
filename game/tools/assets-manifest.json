@@ -61,6 +61,58 @@
     { "id": "mob_trilobite",     "source": "Mob Enemies /Trilobite/Trilobite Neutral/model.gltf" },
     { "id": "mob_jellyfish",     "source": "Mob Enemies /Mutant Jellyfish/Mutant Jellyfish Neutral /model.gltf" },
     { "id": "mob_anglerfish",    "source": "Mob Enemies /Anglerfish/Anglerfish Neutral /model.gltf" },
-    { "id": "mob_sealion",       "source": "Mob Enemies /Sea Lion/Sea Lion Neutral /model.gltf" }
+    { "id": "mob_sealion",       "source": "Mob Enemies /Sea Lion/Sea Lion Neutral /model.gltf" },
+
+    { "_comment": "Templates 01-10 also ship a stray un-rigged copy of the body plus baked hair/beard meshes outside the armature; 11-20 are clean single-armature bodies. Only pick from 11-20.",
+      "id": "av_body_pale",      "source": "Avatar/Naked Pirate/Naked Pirate Templates/GLTF/Pirate_Template_13.gltf" },
+    { "id": "av_body_tan",       "source": "Avatar/Naked Pirate/Naked Pirate Templates/GLTF/Pirate_Template_15.gltf" },
+    { "id": "av_body_dark",      "source": "Avatar/Naked Pirate/Naked Pirate Templates/GLTF/Pirate_Template_20.gltf" },
+
+    { "id": "av_hair_short",     "source": "Avatar/hair/1/model.gltf" },
+    { "id": "av_hair_dreads",    "source": "Avatar/hair/7/model.gltf" },
+    { "id": "av_hair_kelp",      "source": "Avatar/hair/11/model.gltf" },
+    { "id": "av_hair_long",      "source": "Avatar/hair/13/model.gltf" },
+    { "id": "av_hair_blonde",    "source": "Avatar/hair/16/model.gltf" },
+    { "id": "av_hair_blue",      "source": "Avatar/hair/18/model.gltf" },
+    { "id": "av_hair_grey",      "source": "Avatar/hair/20/model.gltf" },
+    { "id": "av_hair_ginger",    "source": "Avatar/hair/23/model.gltf" },
+
+    { "id": "av_hat_bandana",    "source": "Avatar/headwear/2/model.gltf" },
+    { "id": "av_hat_tophat",     "source": "Avatar/headwear/7/model.gltf" },
+    { "id": "av_hat_captain",    "source": "Avatar/headwear/8/model.gltf" },
+    { "id": "av_hat_voodoo",     "source": "Avatar/headwear/13/model.gltf" },
+    { "id": "av_hat_straw",      "source": "Avatar/headwear/14/model.gltf" },
+    { "id": "av_hat_wizard",     "source": "Avatar/headwear/15/model.gltf" },
+    { "id": "av_hat_skull",      "source": "Avatar/headwear/24/model.gltf" },
+    { "id": "av_hat_crown",      "source": "Avatar/headwear/42/model.gltf" },
+
+    { "id": "av_top_vest",       "source": "Avatar/tops/2/model.gltf" },
+    { "id": "av_top_armor",      "source": "Avatar/tops/8/model.gltf" },
+    { "id": "av_top_coat_red",   "source": "Avatar/tops/9/model.gltf" },
+    { "id": "av_top_bones",      "source": "Avatar/tops/33/model.gltf" },
+    { "id": "av_top_ruffle",     "source": "Avatar/tops/49/model.gltf" },
+    { "id": "av_top_strap",      "source": "Avatar/tops/53/model.gltf" },
+    { "id": "av_top_coat_green", "source": "Avatar/tops/59/model.gltf" },
+    { "id": "av_top_tee",        "source": "Avatar/tops/66/model.gltf" },
+
+    { "id": "av_bottom_black",   "source": "Avatar/bottoms/2/model.gltf" },
+    { "id": "av_bottom_brown",   "source": "Avatar/bottoms/5/model.gltf" },
+    { "id": "av_bottom_striped", "source": "Avatar/bottoms/9/model.gltf" },
+    { "id": "av_bottom_tiger",   "source": "Avatar/bottoms/13/model.gltf" },
+    { "id": "av_bottom_bones",   "source": "Avatar/bottoms/16/model.gltf" },
+    { "id": "av_bottom_royal",   "source": "Avatar/bottoms/18/model.gltf" },
+
+    { "id": "av_beard_goatee",   "source": "Avatar/facialhair/1/model.gltf" },
+    { "id": "av_beard_fumanchu", "source": "Avatar/facialhair/3/model.gltf" },
+    { "id": "av_beard_full",     "source": "Avatar/facialhair/6/model.gltf" },
+    { "id": "av_beard_braided",  "source": "Avatar/facialhair/8/model.gltf" },
+    { "id": "av_beard_ginger",   "source": "Avatar/facialhair/13/model.gltf" },
+    { "_comment": "facialhair 15-18 are a different export batch (Root-Global rig, negative scale, ~100x extent) and do not share the parts' scale. 14 is the grey option that matches.",
+      "id": "av_beard_grey",     "source": "Avatar/facialhair/14/model.gltf" },
+
+    { "id": "av_eyes_patch",     "source": "Avatar/eyewear/4/model.gltf" },
+    { "id": "av_eyes_monocle",   "source": "Avatar/eyewear/7/model.gltf" },
+    { "id": "av_eyes_shades",    "source": "Avatar/eyewear/13/model.gltf" },
+    { "id": "av_eyes_goggles",   "source": "Avatar/eyewear/19/model.gltf" }
   ]
 }

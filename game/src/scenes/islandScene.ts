@@ -249,9 +249,14 @@ export async function createIslandScene(
    * REACH. Their island spans 0.70 of the frame's width and 0.91 of its
    * height, and better than a third of their frame is land. Ours spanned
    * 0.42 / 0.53 / 0.12: a speck adrift in ocean. So the distance stopped being
-   * a hand-tuned triple and is solved from the coast's own projected width —
-   * which is also the only way one rule frames both a 16:9 capture and a
-   * portrait phone.
+   * a hand-tuned triple. It is solved from the coast's own measured silhouette
+   * against the SHARE OF THE FRAME it should hold, and the share is an area
+   * rather than a width because a phone's frame is a different SHAPE, not just
+   * a smaller one — hold the width there and the island shrinks back to a
+   * speck between two vast bands of sea; hold the height and the coast runs
+   * three screens wide. Holding its share gives their 0.70 of the width at
+   * 16:9 and a coast that overruns a portrait screen by a third, which is what
+   * a builder on a phone wants and what the pan gesture is for.
    *
    * `?cam=x,y,z` still overrides the position outright, so a shot can be
    * framed without editing code.
@@ -262,10 +267,11 @@ export async function createIslandScene(
   /** Long enough that the coast's near edge outgrows its far one by a fifth,
    *  not by half. Restored on dispose. */
   const LENS = 10;
-  /** Coast width ÷ frame width at 16:9. Calibrated on the capture until the
-   *  island measured 0.70 of it, as theirs does — the walk below sees the
-   *  beach skirt that runs down under the waterline, which the frame does not. */
-  const COAST_FILL = 0.72;
+  /** The coast's screen box as a share of the frame's area. Calibrated on the
+   *  capture until the island measured their 0.70 of a 16:9 frame's width: the
+   *  walk below also sees the beach skirt that runs down under the waterline,
+   *  which the frame does not, so this is not simply 0.70 × 0.83. */
+  const FRAME_SHARE = 0.564;
   /** What stands above the terrain AT THE SILHOUETTE's top and bottom edge —
    *  which is barely anything, because the tall props all live inland. Measured
    *  at a unit and a half; two leaves a little headroom. */
@@ -312,20 +318,12 @@ export async function createIslandScene(
   stage.camera.updateProjectionMatrix();
   const aspect = stage.camera.aspect;
   const halfLens = Math.tan(THREE.MathUtils.degToRad(LENS) / 2);
-  // Their 0.68 is a 16:9 number. A phone's frame is narrow and very tall, so
-  // holding it there would strand the island in open sea all over again; a
-  // narrow frame gets a bigger share of its width instead, and the sea that
-  // leaves above and below the coast is where the HUD bars sit anyway.
-  const fill = THREE.MathUtils.clamp(
-    THREE.MathUtils.mapLinear(aspect, 0.5, 16 / 9, 0.96, COAST_FILL),
-    COAST_FILL,
-    0.96
-  );
   const distance = Math.max(
-    coastWide / (2 * fill * halfLens * aspect),
-    // On a frame wider than 16:9 the width stops being what binds; without
-    // this the coast would be cropped off the top and bottom instead. Theirs
-    // runs to 0.91 of the frame height, so 0.92 is the ceiling, not a target.
+    Math.sqrt((coastWide * coastTall) / (4 * aspect * FRAME_SHARE)) / halfLens,
+    // A frame wider than 16:9 runs out of height before it runs out of share,
+    // and without this the coast would be cropped off the top and the bottom.
+    // Theirs reaches 0.91 of the frame height, so 0.92 is a ceiling to stay
+    // under, not a target to hit.
     (coastTall + RISE * Math.cos(PITCH)) / (2 * 0.92 * halfLens)
   );
 

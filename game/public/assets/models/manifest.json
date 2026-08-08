@@ -1,4 +1,706 @@
 {
+  "av_beard_braided": {
+    "kb": 26,
+    "clips": [],
+    "size": [
+      0.09,
+      0.19,
+      0.24
+    ],
+    "min": [
+      -0.07,
+      0,
+      -0.12
+    ]
+  },
+  "av_beard_full": {
+    "kb": 13,
+    "clips": [],
+    "size": [
+      0.08,
+      0.12,
+      0.24
+    ],
+    "min": [
+      -0.07,
+      0,
+      -0.12
+    ]
+  },
+  "av_beard_fumanchu": {
+    "kb": 11,
+    "clips": [],
+    "size": [
+      0.08,
+      0.11,
+      0.24
+    ],
+    "min": [
+      -0.07,
+      0,
+      -0.12
+    ]
+  },
+  "av_beard_ginger": {
+    "kb": 20,
+    "clips": [],
+    "size": [
+      0.09,
+      0.17,
+      0.26
+    ],
+    "min": [
+      -0.04,
+      0,
+      -0.13
+    ]
+  },
+  "av_beard_goatee": {
+    "kb": 5,
+    "clips": [],
+    "size": [
+      0.02,
+      0.08,
+      0.14
+    ],
+    "min": [
+      -0.01,
+      0,
+      -0.07
+    ]
+  },
+  "av_beard_white": {
+    "kb": 14,
+    "clips": [],
+    "size": [
+      23.253,
+      15.397,
+      28
+    ],
+    "min": [
+      -6,
+      -3.397,
+      -14
+    ]
+  },
+  "av_body_dark": {
+    "kb": 743,
+    "clips": [
+      "00_TPose",
+      "01_Idle_1",
+      "02_Idle_2",
+      "03_Idle_3",
+      "04_Walk",
+      "05_Run",
+      "06_Jump_Run",
+      "07_Jump_Stand",
+      "08_Action_One-Handed_Low",
+      "09_Action_One-Handed_Mid",
+      "10_Action_One-Handed_High",
+      "11_Action_Two-Handed_Low",
+      "12_Action_Two-Handed_Mid",
+      "13_Action_Two-Handed_High",
+      "14_Action_Chopping",
+      "15_Waving_Right",
+      "16_Waving_Left",
+      "17_Two-Handed_Wave",
+      "18_Success_Celebration",
+      "19_Suprised_Scared",
+      "20_Dance_1",
+      "21_Dance_2",
+      "22_Drunk",
+      "23_Kick_Sand",
+      "24_Pushups",
+      "25_Jumpingjacks",
+      "26_Looking_Horizon",
+      "27_Dance_3_Backspin",
+      "28_Dance_4_Robot",
+      "29_Dance_5_Cabbage_Patch"
+    ],
+    "size": [
+      0.27,
+      0.71,
+      0.58
+    ],
+    "min": [
+      -0.13,
+      0,
+      -0.29
+    ]
+  },
+  "av_body_pale": {
+    "kb": 659,
+    "clips": [
+      "00_TPose",
+      "01_Idle_1",
+      "01_Idle_1.PFP",
+      "02_Idle_2",
+      "02_Idle_2.PFP",
+      "03_Idle_3",
+      "03_Idle_3.PFP",
+      "04_Walk",
+      "05_Run",
+      "06_Jump_Run",
+      "07_Jump_Stand",
+      "08_Action_One-Handed_Low",
+      "09_Action_One-Handed_Mid",
+      "10_Action_One-Handed_High",
+      "11_Action_Two-Handed_Low",
+      "12_Action_Two-Handed_Mid",
+      "13_Action_Two-Handed_High",
+      "14_Action_Chopping",
+      "15_Waving_Right",
+      "17_Two-Handed_Wave",
+      "17_Two-Handed_Wave.PFP",
+      "18_Success_Celebration",
+      "19_Suprised_Scared",
+      "20_Dance_1",
+      "21_Dance_2",
+      "22_Drunk",
+      "23_Drunk_NOPE",
+      "23_Kick_Sand",
+      "24_Pushups",
+      "25_Jumpingjacks",
+      "26_Looking_Horizon",
+      "27_Dance_3_Backspin",
+      "28_Dance_4_Robot",
+      "29_Dance_5_Cabbage_Patch"
+    ],
+    "size": [
+      0.17,
+      0.59,
+      0.58
+    ],
+    "min": [
+      -0.07,
+      0,
+      -0.29
+    ]
+  },
+  "av_body_tan": {
+    "kb": 697,
+    "clips": [
+      "00_TPose",
+      "01_Idle_1",
+      "01_Idle_1.PFP",
+      "02_Idle_2",
+      "02_Idle_2.PFP",
+      "03_Idle_3.PFP",
+      "04_Walk",
+      "05_Run",
+      "06_Jump_Run",
+      "07_Jump_Stand",
+      "08_Action_One-Handed_Low",
+      "09_Action_One-Handed_Mid",
+      "10_Action_One-Handed_High",
+      "11_Action_Two-Handed_Low",
+      "12_Action_Two-Handed_Mid",
+      "13_Action_Two-Handed_High",
+      "14_Action_Chopping",
+      "15_Waving_Right",
+      "17_Two-Handed_Wave",
+      "17_Two-Handed_Wave.PFP",
+      "18_Success_Celebration",
+      "19_Suprised_Scared",
+      "20_Dance_1",
+      "21_Dance_2",
+      "22_Drunk",
+      "23_Drunk_NOPE",
+      "23_Kick_Sand",
+      "24_Pushups",
+      "25_Jumpingjacks",
+      "26_Looking_Horizon",
+      "27_Dance_3_Backspin",
+      "28_Dance_4_Robot",
+      "29_Dance_5_Cabbage_Patch"
+    ],
+    "size": [
+      0.362,
+      0.66,
+      0.58
+    ],
+    "min": [
+      -0.262,
+      0,
+      -0.29
+    ]
+  },
+  "av_bottom_black": {
+    "kb": 7,
+    "clips": [],
+    "size": [
+      0.08,
+      0.11,
+      0.18
+    ],
+    "min": [
+      -0.04,
+      0,
+      -0.09
+    ]
+  },
+  "av_bottom_bones": {
+    "kb": 27,
+    "clips": [],
+    "size": [
+      0.08,
+      0.11,
+      0.18
+    ],
+    "min": [
+      -0.04,
+      0,
+      -0.09
+    ]
+  },
+  "av_bottom_brown": {
+    "kb": 7,
+    "clips": [],
+    "size": [
+      0.08,
+      0.11,
+      0.18
+    ],
+    "min": [
+      -0.04,
+      0,
+      -0.09
+    ]
+  },
+  "av_bottom_royal": {
+    "kb": 35,
+    "clips": [],
+    "size": [
+      0.08,
+      0.11,
+      0.18
+    ],
+    "min": [
+      -0.04,
+      0,
+      -0.09
+    ]
+  },
+  "av_bottom_striped": {
+    "kb": 36,
+    "clips": [],
+    "size": [
+      0.08,
+      0.11,
+      0.18
+    ],
+    "min": [
+      -0.04,
+      0,
+      -0.09
+    ]
+  },
+  "av_bottom_tiger": {
+    "kb": 55,
+    "clips": [],
+    "size": [
+      0.08,
+      0.11,
+      0.18
+    ],
+    "min": [
+      -0.04,
+      0,
+      -0.09
+    ]
+  },
+  "av_eyes_goggles": {
+    "kb": 59,
+    "clips": [],
+    "size": [
+      0.37,
+      0.19,
+      0.24
+    ],
+    "min": [
+      -0.18,
+      0,
+      -0.12
+    ]
+  },
+  "av_eyes_monocle": {
+    "kb": 19,
+    "clips": [],
+    "size": [
+      0.01,
+      0.19,
+      0.13
+    ],
+    "min": [
+      0,
+      0,
+      -0.07
+    ]
+  },
+  "av_eyes_patch": {
+    "kb": 16,
+    "clips": [],
+    "size": [
+      0.18,
+      0.09,
+      0.24
+    ],
+    "min": [
+      -0.09,
+      0,
+      -0.12
+    ]
+  },
+  "av_eyes_shades": {
+    "kb": 24,
+    "clips": [],
+    "size": [
+      0.13,
+      0.09,
+      0.24
+    ],
+    "min": [
+      -0.06,
+      0,
+      -0.12
+    ]
+  },
+  "av_hair_blonde": {
+    "kb": 27,
+    "clips": [],
+    "size": [
+      0.16,
+      0.25,
+      0.26
+    ],
+    "min": [
+      -0.08,
+      0,
+      -0.13
+    ]
+  },
+  "av_hair_blue": {
+    "kb": 8,
+    "clips": [],
+    "size": [
+      0.16,
+      0.25,
+      0.26
+    ],
+    "min": [
+      -0.08,
+      0,
+      -0.13
+    ]
+  },
+  "av_hair_dreads": {
+    "kb": 97,
+    "clips": [],
+    "size": [
+      0.23,
+      0.31,
+      0.3
+    ],
+    "min": [
+      -0.11,
+      0,
+      -0.15
+    ]
+  },
+  "av_hair_ginger": {
+    "kb": 55,
+    "clips": [],
+    "size": [
+      0.3,
+      0.38,
+      0.28
+    ],
+    "min": [
+      -0.2,
+      0.34,
+      -0.14
+    ]
+  },
+  "av_hair_grey": {
+    "kb": 5,
+    "clips": [],
+    "size": [
+      0.16,
+      0.22,
+      0.26
+    ],
+    "min": [
+      -0.09,
+      0,
+      -0.13
+    ]
+  },
+  "av_hair_kelp": {
+    "kb": 118,
+    "clips": [],
+    "size": [
+      0.39,
+      0.3,
+      0.45
+    ],
+    "min": [
+      -0.19,
+      0,
+      -0.22
+    ]
+  },
+  "av_hair_long": {
+    "kb": 45,
+    "clips": [],
+    "size": [
+      0.21,
+      0.35,
+      0.3
+    ],
+    "min": [
+      -0.12,
+      0,
+      -0.15
+    ]
+  },
+  "av_hair_short": {
+    "kb": 6,
+    "clips": [],
+    "size": [
+      0.16,
+      0.25,
+      0.26
+    ],
+    "min": [
+      -0.08,
+      0,
+      -0.13
+    ]
+  },
+  "av_hat_bandana": {
+    "kb": 22,
+    "clips": [],
+    "size": [
+      0.22,
+      0.19,
+      0.36
+    ],
+    "min": [
+      -0.11,
+      0,
+      -0.18
+    ]
+  },
+  "av_hat_captain": {
+    "kb": 36,
+    "clips": [],
+    "size": [
+      0.26,
+      0.24,
+      0.42
+    ],
+    "min": [
+      -0.13,
+      0,
+      -0.21
+    ]
+  },
+  "av_hat_crown": {
+    "kb": 136,
+    "clips": [],
+    "size": [
+      0.24,
+      0.18,
+      0.3
+    ],
+    "min": [
+      -0.12,
+      0,
+      -0.15
+    ]
+  },
+  "av_hat_skull": {
+    "kb": 28,
+    "clips": [],
+    "size": [
+      0.19,
+      0.27,
+      0.26
+    ],
+    "min": [
+      -0.08,
+      0,
+      -0.13
+    ]
+  },
+  "av_hat_straw": {
+    "kb": 156,
+    "clips": [],
+    "size": [
+      0.36,
+      0.16,
+      0.4
+    ],
+    "min": [
+      -0.18,
+      0,
+      -0.2
+    ]
+  },
+  "av_hat_tophat": {
+    "kb": 18,
+    "clips": [],
+    "size": [
+      0.29,
+      0.24,
+      0.34
+    ],
+    "min": [
+      -0.15,
+      0,
+      -0.17
+    ]
+  },
+  "av_hat_voodoo": {
+    "kb": 58,
+    "clips": [],
+    "size": [
+      0.3,
+      0.24,
+      0.36
+    ],
+    "min": [
+      -0.14,
+      0,
+      -0.16
+    ]
+  },
+  "av_hat_wizard": {
+    "kb": 64,
+    "clips": [],
+    "size": [
+      0.38,
+      0.21,
+      0.42
+    ],
+    "min": [
+      -0.19,
+      0,
+      -0.21
+    ]
+  },
+  "av_top_armor": {
+    "kb": 73,
+    "clips": [],
+    "size": [
+      0.14,
+      0.23,
+      0.48
+    ],
+    "min": [
+      -0.07,
+      0,
+      -0.24
+    ]
+  },
+  "av_top_bones": {
+    "kb": 41,
+    "clips": [],
+    "size": [
+      0.1,
+      0.21,
+      0.48
+    ],
+    "min": [
+      -0.05,
+      0,
+      -0.24
+    ]
+  },
+  "av_top_coat_green": {
+    "kb": 69,
+    "clips": [],
+    "size": [
+      0.14,
+      0.22,
+      0.48
+    ],
+    "min": [
+      -0.06,
+      0,
+      -0.24
+    ]
+  },
+  "av_top_coat_red": {
+    "kb": 65,
+    "clips": [],
+    "size": [
+      0.13,
+      0.22,
+      0.48
+    ],
+    "min": [
+      -0.06,
+      0,
+      -0.24
+    ]
+  },
+  "av_top_ruffle": {
+    "kb": 41,
+    "clips": [],
+    "size": [
+      0.13,
+      0.22,
+      0.48
+    ],
+    "min": [
+      -0.06,
+      0,
+      -0.24
+    ]
+  },
+  "av_top_strap": {
+    "kb": 35,
+    "clips": [],
+    "size": [
+      0.14,
+      0.22,
+      0.48
+    ],
+    "min": [
+      -0.06,
+      0,
+      -0.24
+    ]
+  },
+  "av_top_tee": {
+    "kb": 10,
+    "clips": [],
+    "size": [
+      0.1,
+      0.21,
+      0.34
+    ],
+    "min": [
+      -0.05,
+      0,
+      -0.17
+    ]
+  },
+  "av_top_vest": {
+    "kb": 85,
+    "clips": [],
+    "size": [
+      0.13,
+      0.23,
+      0.22
+    ],
+    "min": [
+      -0.06,
+      0,
+      -0.11
+    ]
+  },
   "bldg_bank": {
     "kb": 235,
     "clips": [],
