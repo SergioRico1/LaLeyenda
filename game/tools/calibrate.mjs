@@ -75,10 +75,11 @@ async function silhouette(buf) {
   return maxX < 0 ? null : { minX, minY, maxX, maxY, w: info.width, h: info.height };
 }
 
-async function shoot(id, extent, axis) {
+async function shoot(id, extent, axis, clip) {
   const url =
     `http://localhost:${port}/?scene=measure&shot=1&w=${W}&h=${H}&t=0` +
-    `&id=${encodeURIComponent(id)}&extent=${extent}&axis=${axis}`;
+    `&id=${encodeURIComponent(id)}&extent=${extent}&axis=${axis}` +
+    (clip ? `&clip=${encodeURIComponent(clip)}` : '');
   await page.goto(url, { waitUntil: 'load', timeout: 60000 });
   await page.waitForFunction(() => window.__ready === true || window.__error, { timeout: 90000 });
   const err = await page.evaluate(() => window.__error);
@@ -87,9 +88,9 @@ async function shoot(id, extent, axis) {
 }
 
 /** Measures one axis pair, zooming in until the silhouette fills a useful area. */
-async function measure(id, axis) {
+async function measure(id, axis, clip) {
   let extent = 4000;
-  let shot = await shoot(id, extent, axis);
+  let shot = await shoot(id, extent, axis, clip);
   if (!shot) throw new Error('nothing rendered');
 
   // Zoom in until the silhouette covers a decent share of the frame, so a few
@@ -98,7 +99,7 @@ async function measure(id, axis) {
   for (let pass = 0; pass < 4; pass++) {
     const frac = Math.max((shot.maxX - shot.minX) / shot.w, (shot.maxY - shot.minY) / shot.h);
     if (frac > 0.35) break;
-    const next = await shoot(id, extent * Math.max(frac / 0.6, 0.01), axis);
+    const next = await shoot(id, extent * Math.max(frac / 0.6, 0.01), axis, clip);
     if (!next) break;
     extent *= Math.max(frac / 0.6, 0.01);
     shot = next;
@@ -123,10 +124,30 @@ const ids = Object.keys(manifest);
 
 for (const id of ids) {
   try {
-    const front = await measure(id, 'front'); // x, y
-    const top = await measure(id, 'top');     // x, z
-    const size = [front.a, front.b, top.b];
-    const centre = [front.centreA, front.centreB, top.centreB];
+    // Measure under every clip and keep the largest.
+    //
+    // A model's extent is not a property of the mesh alone: these clips move
+    // parts around in the armature's local space, which the armature scale then
+    // multiplies. The foundry's "action" clip holds it at 116 units while "idle"
+    // spreads it over 463 — sizing against one clip and then playing the other
+    // put a 5-unit building on screen at 20. Taking the max means the model
+    // never outgrows its footprint whichever clip is running.
+    const clips = manifest[id].clips?.length ? manifest[id].clips : [undefined];
+    let size = [0, 0, 0];
+    let centre = [0, 0, 0];
+    let widest = null;
+
+    for (const clip of clips) {
+      const front = await measure(id, 'front', clip); // x, y
+      const top = await measure(id, 'top', clip);     // x, z
+      const s = [front.a, front.b, top.b];
+      if (Math.max(s[0], s[2]) > Math.max(size[0], size[2])) {
+        size = s;
+        centre = [front.centreA, front.centreB, top.centreB];
+        widest = clip;
+      }
+    }
+    if (clips.length > 1) manifest[id].widestClip = widest ?? null;
 
     manifest[id].size = size.map((v) => Number(v.toFixed(3)));
     manifest[id].min = [
@@ -135,7 +156,8 @@ for (const id of ids) {
       Number((centre[2] - size[2] / 2).toFixed(3)),
     ];
     console.log(
-      `  ${id.padEnd(20)} ${size.map((v) => v.toFixed(1).padStart(9)).join(' x ')}   baseY ${manifest[id].min[1].toFixed(1)}`
+      `  ${id.padEnd(20)} ${size.map((v) => v.toFixed(1).padStart(9)).join(' x ')}   baseY ${manifest[id].min[1].toFixed(1)}` +
+      (widest ? `   widest under "${widest}"` : '')
     );
   } catch (err) {
     console.error(`  FAILED ${id}: ${err.message}`);

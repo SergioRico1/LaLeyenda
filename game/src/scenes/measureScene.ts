@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Stage } from '../render/stage';
-import { instantiate } from '../render/assets';
+import { instantiate, loadManifest } from '../render/assets';
 
 /**
  * Renders one model as a flat white silhouette on black, under an orthographic
@@ -67,7 +67,12 @@ export async function createMeasureScene(
   stage.camera.lookAt(0, 0, 0);
   stage.camera.updateMatrixWorld(true);
 
-  console.log(`[measure] id=${id} extent=${extent} axis=${axis}`);
+  const dims = (await loadManifest())[id];
+  console.log(
+    `[measure] id=${id} extent=${extent} axis=${axis} fit=${fit ?? 'none'}` +
+    ` appliedScale=${inst.object.scale.x.toFixed(5)}` +
+    ` manifestSize=${dims?.size ? dims.size.map((v) => v.toFixed(1)).join('x') : 'MISSING'}`
+  );
 
   return {
     update(dt: number) {
