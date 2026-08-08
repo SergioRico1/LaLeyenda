@@ -2,10 +2,13 @@
   "rounds": [
     {
       "round": 0,
-      "title": "Baseline — before any of this round's work",
+      "title": "Baseline \u2014 before any of this round's work",
       "a": "shots/blind/island-r0/a.png",
       "b": "shots/blind/island-r0/b.png",
-      "key": { "a": "ours", "b": "the shipped game" },
+      "key": {
+        "a": "ours",
+        "b": "the shipped game"
+      },
       "better": null,
       "weWon": false,
       "biggestFlaw": "Our island is a speck in a huge, uniformly speckled sea. Theirs fills two thirds of the frame and sits in calm deep water with a clean turquoise shelf and a crisp surf collar.",
@@ -17,6 +20,49 @@
         "Colour: their greens and sands are vivid; ours are duller and greyer."
       ],
       "pieces": []
+    },
+    {
+      "round": 1,
+      "title": "Camera, water, terrain, density and light \u2014 all five rebuilt",
+      "a": "shots/blind/island-r1/a.png",
+      "b": "shots/blind/island-r1/b.png",
+      "key": {
+        "a": "the shipped game",
+        "b": "ours"
+      },
+      "better": "A",
+      "weWon": false,
+      "gapSize": "obvious",
+      "biggestFlaw": "We cast no shadows. Not weak ones, not wrong-angle ones \u2014 zero. Four of the five critics named this independently, without seeing each other's verdicts. The reference lays a directional shadow from every flag, fence post, palm frond and 12px stone block; our isolated shed sits on 200px of open sand and touches it nowhere. The result reads as stickers on a blockout rather than a lit scene.",
+      "differences": [
+        "The coast is a 3-4 block cliff of flat untextured sand dropping straight into the sea. Theirs is a low one-block lip meeting the water almost at sea level, with a wet-sand band behind the surf collar.",
+        "Every interior surface is empty. The whole decoration budget is welded around the coastline as a hedge of palms; step inland and it is bare slabs.",
+        "Broken style and scale consistency \u2014 flat-shaded low-poly palm fronds next to voxel rocks, at a visibly coarser texel density.",
+        "The buildings crowd into a band across the top-right, leaving large empty plots dead in the bottom-left.",
+        "Deep-water local contrast averages 2.25 against their 20.04 \u2014 but this directly contradicts the water builder's own measurement and is not being acted on until resolved."
+      ],
+      "pieces": [
+        {
+          "piece": "water",
+          "verdict": "ours-worse",
+          "biggestGap": "Open ocean has no sun glitter past the shallow ring \u2014 deep-water contrast 2.25 vs their 20.04. CONTESTED: the builder measured the reference's open water as having ZERO pixels above L=200 and removed the glitter deliberately. Two measurements of the same pixels disagree; resolving that comes before either is acted on."
+        },
+        {
+          "piece": "terrain",
+          "verdict": "ours-worse",
+          "biggestGap": "No cast shadows on the ground at all, and 8-12px grey blotch noise on the sand swinging 25 levels where the reference is one clean flat value."
+        },
+        {
+          "piece": "density",
+          "verdict": "ours-much-worse",
+          "biggestGap": "Not one standing prop on any grass cell or sand plaza inside the island. All decoration is a hedge around the coast."
+        },
+        {
+          "piece": "light",
+          "verdict": "ours-much-worse",
+          "biggestGap": "Zero cast shadows. Measured off their flag: a point at screen-height H drops its shadow ~0.68H, and lit sand (225,211,180) lands at (167,163,142) in shadow \u2014 a 25% multiply, not a grey overlay."
+        }
+      ]
     }
   ]
 }
