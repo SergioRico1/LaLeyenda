@@ -1,7 +1,7 @@
 import {
   BALANCE, buildersFree, buildersTotal, buildingSpec, claimableQuests, dailyAvailable, isFull,
-  isProducer, nextAction, producerCapacity, producerResource, storeCap, townHallLevel,
-  type Building, type GameState, type ResourceId,
+  isProducer, nextAction, producerResource, storeCap, townHallLevel,
+  type GameState, type ResourceId,
 } from '../sim';
 import { n } from './format';
 import type { HudState, ResourceState, WorldItemSpec } from './hud';
@@ -161,9 +161,4 @@ export function toWorldItems(state: GameState, now: number): WorldAnchor[] {
 export function buildingIdOf(worldItemId: string): number | null {
   const match = /^[a-z]+-(\d+)$/.exec(worldItemId);
   return match ? Number(match[1]) : null;
-}
-
-/** Producers with something to collect — drives `Recoger Todo` (§3.9). */
-export function pendingBubbles(state: GameState): Building[] {
-  return state.buildings.filter((b) => isProducer(b) && Math.floor(b.stock) >= 1 && producerCapacity(b) > 0);
 }

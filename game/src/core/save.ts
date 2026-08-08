@@ -286,23 +286,24 @@ export class SaveStore {
     };
 
     const timer = setInterval(() => write(Date.now()), intervalMs);
-    const onHide = () => {
-      if (typeof document === 'undefined' || document.visibilityState === 'hidden') write(Date.now());
-    };
+    // Only `visibilitychange` is conditional: it fires on the way IN as well.
+    // `pagehide` and `beforeunload` are the last call, visible or not.
+    const onVisibility = () => { if (document.visibilityState === 'hidden') write(Date.now()); };
+    const onLeave = () => write(Date.now());
 
-    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onHide);
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility);
     if (typeof window !== 'undefined') {
-      window.addEventListener('pagehide', onHide);
-      window.addEventListener('beforeunload', onHide);
+      window.addEventListener('pagehide', onLeave);
+      window.addEventListener('beforeunload', onLeave);
     }
 
     return () => {
       stopped = true;
       clearInterval(timer);
-      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onHide);
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility);
       if (typeof window !== 'undefined') {
-        window.removeEventListener('pagehide', onHide);
-        window.removeEventListener('beforeunload', onHide);
+        window.removeEventListener('pagehide', onLeave);
+        window.removeEventListener('beforeunload', onLeave);
       }
     };
   }

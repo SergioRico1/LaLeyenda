@@ -22,7 +22,7 @@ import type { ActionResult, GameState, SimEvent, SimResult } from './types';
 export * from './balance';
 export * from './types';
 export { createNewGame, createDemoIsland } from './state';
-export { advanceInPlace, type OfflineSummary } from './offline';
+export { advanceInPlace, applyLongAbsenceGiftInPlace, type OfflineSummary } from './offline';
 export {
   buildersFree, buildersTotal, buildersBusy, gemSpeedupCost, finishNowCost, upgradePlan, placeable,
 } from './build';
@@ -165,9 +165,12 @@ export function openChest(state: GameState, slot: number): ActionResult & { loot
   const loot = openChestInPlace(next, slot);
   if (!loot) return { ...fail(next, 'not-ready'), loot: null };
   noteInPlace(next, 'chestsOpened');
+  const { rolled, ...granted } = loot;
   return {
     state: next, ok: true, loot,
-    events: [{ type: 'chest-opened', slot, chest, loot: { ...loot } }],
+    // The event carries what LANDED. `rolled` stays on the action result for a
+    // UI that wants to point out the store cap ate the difference.
+    events: [{ type: 'chest-opened', slot, chest, loot: { ...granted } }],
   };
 }
 
@@ -202,7 +205,7 @@ export function claimQuest(state: GameState, index: number): ActionResult {
  * §4.8 — the next-action resolver, as a mechanism rather than an intention
  * ----------------------------------------------------------------------- */
 
-export type NextAction = 'construir' | 'cofres' | 'diario' | 'pills' | 'zarpar' | 'none';
+export type NextAction = 'construir' | 'cofres' | 'diario' | 'pills' | 'zarpar' | 'recoger' | 'none';
 
 /**
  * Evaluated on every session start and after every state change; the first hit
@@ -212,10 +215,12 @@ export type NextAction = 'construir' | 'cofres' | 'diario' | 'pills' | 'zarpar' 
 export function nextAction(state: GameState, now: number): NextAction {
   if (buildersFree(state, now) > 0) return 'construir';
 
-  const waiting = state.chests.some((s) => s.state === 'waiting' || s.state === 'ready');
+  // §4.8 #2: a chest sitting in the tray with nothing brewing, or one already
+  // open-able. Both are one tap from a reward; a chest mid-timer is not.
+  const ready = state.chests.some((s) => s.state === 'ready');
+  const waiting = state.chests.some((s) => s.state === 'waiting');
   const unlocking = state.chests.some((s) => s.state === 'unlocking');
-  if (waiting && !unlocking) return 'cofres';
-  if (state.chests.some((s) => s.state === 'ready')) return 'cofres';
+  if (ready || state.freeChestsBanked > 0 || (waiting && !unlocking)) return 'cofres';
 
   if (dailyAvailable(state, now) || state.quests.daily.some((q) => !q.claimed && q.progress >= q.target)) {
     return 'diario';
@@ -239,6 +244,13 @@ export function nextAction(state: GameState, now: number): NextAction {
     return b.stock < cap * 0.2;
   });
   if (idle) return 'zarpar';
+
+  // ✎ §4.8's five rules leave one hole: every builder busy, every chest
+  // brewing, nothing claimable, and producers sitting between 20% and full.
+  // There IS something to do there — collect — and the bubbles are already
+  // saying so, so this hit surfaces no chrome. It exists so that 'none' keeps
+  // meaning "the loop is genuinely broken" rather than "the list is short".
+  if (producers.some((b) => b.stock >= 1)) return 'recoger';
 
   return 'none';
 }

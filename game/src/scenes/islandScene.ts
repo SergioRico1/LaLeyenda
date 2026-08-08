@@ -6,10 +6,10 @@ import { instantiate, preload } from '../render/assets';
 import { Rng } from '../core/rng';
 import { createGame, type Game } from '../core/game';
 import {
-  BALANCE, buildingSpec, claimDaily, claimFreeChest, claimQuest, collect, collectAll, openChest,
-  placeable, questComplete, startChest, startUpgrade, upgradePlan, type GameState,
+  BALANCE, buildingSpec, claimDaily, claimFreeChest, claimQuest, collect, collectAll, finishNow,
+  openChest, placeable, questComplete, startChest, startUpgrade, upgradePlan, type GameState,
 } from '../sim';
-import { createHud, type Hud } from '../ui/hud';
+import { createHud, type Hud, type ResourceId } from '../ui/hud';
 import { buildingIdOf, toHudState, toWorldItems } from '../ui/present';
 
 /** The home island: the builder scene, seen from the Clash-of-Clans style camera.
@@ -225,7 +225,7 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
    * destination performs the one action it would offer, so every badge is
    * actually clearable and the §4.8 resolver can be exercised end to end.
    */
-  function route(what: string): void {
+  function route(what: string, detail?: string): void {
     const now = game.now();
     const state = game.state();
 
@@ -252,16 +252,32 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
         console.log('[route] construibles:', placeable(state, now));
         return;
       }
-      case 'Mejorar almacén':
       case 'Terminar Ya': {
-        // Upgrade the first thing that can be upgraded and paid for — enough to
-        // prove the builder limit and the timers from the island itself.
-        for (const b of state.buildings) {
+        // §4.4 — and the last five minutes of any timer cost exactly one gem.
+        const running = state.buildings.find((b) => b.work);
+        if (!running) return;
+        const result = game.dispatch((s) => finishNow(s, running.id, now));
+        console.log(`[route] terminar ya: ${running.type} por ${result.gems} 💎 (${result.ok ? 'ok' : result.refusal})`);
+        return;
+      }
+      case 'Mejorar almacén': {
+        // §3.10 / §10.11 — `¡Lleno!` is a button, and it goes to the store for
+        // THAT resource. The chip now carries the resource with it; without it
+        // a metal producer's chip would upgrade whichever store happened to be
+        // affordable first, which is a different building entirely.
+        const resource = detail as ResourceId | undefined;
+        const stores = state.buildings.filter((b) => {
+          const spec = buildingSpec(b.type);
+          return spec.kind === 'store' && (!resource || spec.resource === resource);
+        });
+        for (const b of stores) {
           const plan = upgradePlan(b);
           if (!plan) continue;
           const result = game.dispatch((s) => startUpgrade(s, b.id, now));
           if (result.ok) { console.log(`[route] mejorando ${b.type} → Nv${plan.toLevel}`); return; }
+          console.log(`[route] ${b.type} Nv${plan.toLevel}: ${result.refusal}`);
         }
+        console.log(`[route] sin almacén mejorable para ${resource ?? 'ningún recurso'}`);
         return;
       }
       default:

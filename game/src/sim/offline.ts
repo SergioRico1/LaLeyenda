@@ -52,16 +52,22 @@ export function advanceInPlace(state: GameState, to: number): { events: SimEvent
   const before = new Map<number, number>();
   for (const b of state.buildings) before.set(b.id, b.stock);
 
-  if (to <= from) {
-    state.now = Math.max(state.now, to);
-    return { events, summary: summarise(state, from, before, finished, 0) };
-  }
+  // Never return before settling work that is already due.
+  //
+  // Paying gems to finish a job sets its endsAt to the current instant and then
+  // advances to that same instant. Bailing out here on `to <= from` meant the
+  // player was charged and the building stayed under construction, with no
+  // completion event emitted — and since the scene ticks several times a second,
+  // that was the common path rather than an edge case. Clamping instead of
+  // returning lets the loop below collect anything ending at exactly `now`,
+  // while zero-length production slices contribute nothing.
+  const target = Math.max(to, from);
 
   let cursor = from;
   let freeGranted = 0;
 
   for (let guard = 0; guard < MAX_EVENTS; guard++) {
-    const next = nextEventTime(state, to);
+    const next = nextEventTime(state, target);
     if (next === null) break;
     const at = Math.max(cursor, next);
 
@@ -104,8 +110,8 @@ export function advanceInPlace(state: GameState, to: number): { events: SimEvent
     }
   }
 
-  slice(state, cursor, to, events);
-  state.now = to;
+  slice(state, cursor, target, events);
+  state.now = target;
 
   // The three dailies refresh at 04:00 local (§4.7 / §9).
   if (state.quests.rolledDay !== questDayIndex(state, to)) {

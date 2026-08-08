@@ -34,8 +34,9 @@ export interface ResourceState {
 }
 
 /** §4.8's next-action resolver, resolved in the sim and handed to the HUD so
- *  there is exactly one implementation of it. */
-export type HudCue = 'construir' | 'cofres' | 'diario' | 'pills' | 'zarpar' | 'none';
+ *  there is exactly one implementation of it. `recoger` deliberately cues no
+ *  tile: the collect bubbles on the island are already the affordance. */
+export type HudCue = 'construir' | 'cofres' | 'diario' | 'pills' | 'zarpar' | 'recoger' | 'none';
 
 export interface HudState {
   level: number;
@@ -65,7 +66,7 @@ export interface HudHooks {
    *  — 0 means refused (a full Almacén), and the bubble stays put. */
   onCollect?(worldItemId: string): number;
   onCollectAll?(): void;
-  onOpen?(what: string): void;
+  onOpen?(what: string, detail?: string): void;
 }
 
 export type WorldItemSpec =
@@ -278,7 +279,9 @@ export async function createHud(
     } else {
       // §10.11 — `¡Lleno!` keeps the informational dashed border but opens the
       // storage upgrade sheet in one tap. A scolding becomes a conversion.
-      anchor.append(createChip(COPY['chip.full'], () => open('Mejorar almacén')));
+      // The resource travels with the tap: without it the route cannot tell
+      // which store this producer's chip belongs to.
+      anchor.append(createChip(COPY['chip.full'], () => open('Mejorar almacén', spec.resource)));
       item.ay = 0.5;
       anchor.style.setProperty('--ay', '-50%');
     }
@@ -486,11 +489,11 @@ export async function createHud(
     hud.classList.toggle('is-left-handed', state.leftHanded);
   }
 
-  function open(what: string): void {
+  function open(what: string, detail?: string): void {
     // Panels are the next slice; until then the owner decides what a route
     // does, and a tap is never silent.
-    if (hooks.onOpen) hooks.onOpen(what);
-    else console.log(`[hud] open: ${what}`);
+    if (hooks.onOpen) hooks.onOpen(what, detail);
+    else console.log(`[hud] open: ${what}${detail ? ` (${detail})` : ''}`);
   }
 
   window.addEventListener('resize', () => {

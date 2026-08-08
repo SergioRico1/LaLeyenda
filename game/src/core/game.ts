@@ -1,5 +1,5 @@
 import {
-  advanceInPlace, createDemoIsland, createNewGame, nextAction,
+  advanceInPlace, applyLongAbsenceGiftInPlace, createDemoIsland, createNewGame, nextAction,
   type ActionResult, type GameState, type OfflineSummary, type SimEvent,
 } from '../sim';
 import { SaveStore, exportSaveFile, importSaveFile } from './save';
@@ -61,6 +61,9 @@ export async function createGame(options: GameOptions): Promise<Game> {
   // Offline progress is applied BEFORE the first frame, which is what lets §7
   // demand a collect bubble in frame 1 of a cold start.
   const welcome = advanceInPlace(state, Math.max(state.now, clock())).summary;
+  // §3.22C — after ≥72h away the return ships with a gift chest, so the tray is
+  // never the thing that is empty when someone comes back.
+  if (welcome.longAbsence) applyLongAbsenceGiftInPlace(state);
   if (welcome.elapsedMs > 0) {
     console.log(
       `[sim] welcome back after ${Math.round(welcome.elapsedMs / 60000)}m — ` +

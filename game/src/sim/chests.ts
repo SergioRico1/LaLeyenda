@@ -1,5 +1,5 @@
 import type { Rng } from '../core/rng';
-import { BALANCE, chestSpec, type ResourceId } from './balance';
+import { BALANCE, chestSpec } from './balance';
 import { gemSpeedupCost } from './build';
 import { grantInPlace } from './economy';
 import { withRng } from './rng';
@@ -74,6 +74,13 @@ export interface Loot {
   fragmentos: number;
 }
 
+/** What a chest actually paid out, plus what it rolled before the store cap
+ *  clamped it. The reveal shows `oro`/`madera`; `rolled` is there so the UI can
+ *  tell the player their storage is costing them loot rather than hiding it. */
+export interface ChestPayout extends Loot {
+  rolled: Loot;
+}
+
 export function rollLoot(spec: ReturnType<typeof chestSpec>, rng: Rng): Loot {
   const roll = (key: string): number => {
     const range = spec.loot[key];
@@ -90,14 +97,16 @@ export function rollLoot(spec: ReturnType<typeof chestSpec>, rng: Rng): Loot {
  * (§3.22B) and the reveal *is* the moment, so it pays straight into the store,
  * clamped by the store cap like everything else.
  */
-export function openChestInPlace(state: GameState, slot: number): Loot | null {
+export function openChestInPlace(state: GameState, slot: number): ChestPayout | null {
   const cell = state.chests[slot];
   if (!cell || cell.state !== 'ready' || !cell.type) return null;
   const spec = chestSpec(cell.type);
   const loot = withRng(state, (rng) => rollLoot(spec, rng));
 
-  grantInPlace(state, { oro: loot.oro, madera: loot.madera } as Partial<Record<ResourceId, number>>);
+  // Report what reached the store, not what the dice said: a full Banco silently
+  // ate the difference and the reveal announced the roll regardless.
+  const granted = grantInPlace(state, { oro: loot.oro, madera: loot.madera });
   state.gems += loot.gemas;
   state.chests[slot] = emptySlot();
-  return loot;
+  return { ...loot, oro: granted.oro ?? 0, madera: granted.madera ?? 0, rolled: loot };
 }

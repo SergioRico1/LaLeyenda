@@ -32,10 +32,6 @@ export function townHallLevel(state: GameState): number {
   return hall ? Math.max(1, hall.level) : 1;
 }
 
-export function buildingsOfType(state: GameState, type: string): Building[] {
-  return state.buildings.filter((b) => b.type === type);
-}
-
 /* --------------------------------------------------------------------------
  * cap #1 — the producer's own internal capacity
  * ----------------------------------------------------------------------- */
@@ -190,10 +186,23 @@ export function payInPlace(state: GameState, cost: Cost): void {
   }
 }
 
-export function grantInPlace(state: GameState, gain: Cost): void {
+/**
+ * Adds resources to the store, clamped by its capacity, and reports what
+ * actually landed.
+ *
+ * Callers must use the return value rather than what they asked for. A chest
+ * reveal that rolls 1 492 oro into a bank with room for 685 destroys 807 of it,
+ * and announcing the roll rather than the deposit tells the player they received
+ * something they did not — the single worst kind of lie a reward screen can tell.
+ */
+export function grantInPlace(state: GameState, gain: Cost): Cost {
+  const granted: Cost = {};
   for (const r of RESOURCE_IDS) {
     const amount = gain[r] ?? 0;
     if (amount <= 0) continue;
-    state.store[r] = Math.min(storeCap(state, r), state.store[r] + amount);
+    const before = state.store[r];
+    state.store[r] = Math.min(storeCap(state, r), before + amount);
+    granted[r] = state.store[r] - before;
   }
+  return granted;
 }

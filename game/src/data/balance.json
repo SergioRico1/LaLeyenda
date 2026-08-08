@@ -10,14 +10,32 @@
     "invariant is a build-failing check and it walks this file."
   ],
   "version": 1,
-
   "resources": {
-    "oro":    { "label": "Oro",    "store": "banco",    "revealAtTownHall": 1, "pillRow": 0 },
-    "madera": { "label": "Madera", "store": "almacen",  "revealAtTownHall": 1, "pillRow": 1 },
-    "ron":    { "label": "Ron",    "store": "bodega",   "revealAtTownHall": 2, "pillRow": 2 },
-    "metal":  { "label": "Metal",  "store": "deposito", "revealAtTownHall": 4, "pillRow": 3 }
+    "oro": {
+      "label": "Oro",
+      "store": "banco",
+      "revealAtTownHall": 1,
+      "pillRow": 0
+    },
+    "madera": {
+      "label": "Madera",
+      "store": "almacen",
+      "revealAtTownHall": 1,
+      "pillRow": 1
+    },
+    "ron": {
+      "label": "Ron",
+      "store": "bodega",
+      "revealAtTownHall": 2,
+      "pillRow": 2
+    },
+    "metal": {
+      "label": "Metal",
+      "store": "deposito",
+      "revealAtTownHall": 4,
+      "pillRow": 3
+    }
   },
-
   "townHall": {
     "building": "ayuntamiento",
     "$doc": [
@@ -26,25 +44,105 @@
       "an upgrade whose cost is ten times any storage it can build."
     ],
     "levels": [
-      { "level": 1, "cost": {},                "time": "0",      "maxBuildingLevel": 1,
-        "unlocks": ["aserradero", "mercado", "almacen", "banco", "muelle"] },
-      { "level": 2, "cost": { "madera": 1000 },   "time": "10m",    "maxBuildingLevel": 2,
-        "unlocks": ["destileria", "bodega", "tablon"] },
-      { "level": 3, "cost": { "madera": 4000 },   "time": "1h",     "maxBuildingLevel": 3,
-        "unlocks": ["astillero", "canon_costero", "cofre_hueco_4"] },
-      { "level": 4, "cost": { "oro": 18000 },     "time": "4h",     "maxBuildingLevel": 4,
-        "unlocks": ["fundicion", "deposito", "metal", "defensas", "recoger_todo"] },
-      { "level": 5, "cost": { "oro": 60000 },     "time": "12h",    "maxBuildingLevel": 5,
-        "unlocks": ["mortero", "sloop", "amenaza"] },
-      { "level": 6, "cost": { "oro": 180000 },    "time": "1d",     "maxBuildingLevel": 6,
-        "unlocks": ["constructor_4", "temporadas"] },
-      { "level": 7, "cost": { "oro": 450000 },    "time": "2d",     "maxBuildingLevel": 7,
-        "unlocks": [] },
-      { "level": 8, "cost": { "oro": 1000000 },   "time": "3d 12h", "maxBuildingLevel": 8,
-        "unlocks": [] }
+      {
+        "level": 1,
+        "cost": {},
+        "time": "0",
+        "maxBuildingLevel": 1,
+        "unlocks": [
+          "aserradero",
+          "mercado",
+          "almacen",
+          "banco",
+          "muelle"
+        ]
+      },
+      {
+        "level": 2,
+        "cost": {
+          "madera": 1000
+        },
+        "time": "10m",
+        "maxBuildingLevel": 2,
+        "unlocks": [
+          "destileria",
+          "bodega",
+          "tablon"
+        ]
+      },
+      {
+        "level": 3,
+        "cost": {
+          "madera": 4000
+        },
+        "time": "1h",
+        "maxBuildingLevel": 3,
+        "unlocks": [
+          "astillero",
+          "canon_costero",
+          "cofre_hueco_4"
+        ]
+      },
+      {
+        "level": 4,
+        "cost": {
+          "oro": 18000
+        },
+        "time": "4h",
+        "maxBuildingLevel": 4,
+        "unlocks": [
+          "fundicion",
+          "deposito",
+          "metal",
+          "defensas",
+          "recoger_todo"
+        ]
+      },
+      {
+        "level": 5,
+        "cost": {
+          "oro": 60000
+        },
+        "time": "12h",
+        "maxBuildingLevel": 5,
+        "unlocks": [
+          "mortero",
+          "sloop",
+          "amenaza"
+        ]
+      },
+      {
+        "level": 6,
+        "cost": {
+          "oro": 180000
+        },
+        "time": "1d",
+        "maxBuildingLevel": 6,
+        "unlocks": [
+          "constructor_4",
+          "temporadas"
+        ]
+      },
+      {
+        "level": 7,
+        "cost": {
+          "oro": 450000
+        },
+        "time": "2d",
+        "maxBuildingLevel": 7,
+        "unlocks": []
+      },
+      {
+        "level": 8,
+        "cost": {
+          "oro": 1000000
+        },
+        "time": "3d 12h",
+        "maxBuildingLevel": 8,
+        "unlocks": []
+      }
     ]
   },
-
   "buildings": {
     "ayuntamiento": {
       "label": "Ayuntamiento",
@@ -52,10 +150,18 @@
       "model": "bldg_townhall",
       "footprint": 6,
       "unlockAtTownHall": 1,
-      "countByTownHall": [1, 1, 1, 1, 1, 1, 1, 1],
+      "countByTownHall": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
       "levelsFrom": "townHall"
     },
-
     "aserradero": {
       "label": "Aserradero",
       "kind": "producer",
@@ -63,20 +169,95 @@
       "model": "bldg_windmill",
       "footprint": 5,
       "unlockAtTownHall": 1,
-      "countByTownHall": [1, 2, 3, 4, 4, 5, 5, 5],
-      "maxLevelByTownHall": [2, 3, 4, 5, 6, 7, 8, 8],
+      "countByTownHall": [
+        1,
+        2,
+        3,
+        4,
+        4,
+        5,
+        5,
+        5
+      ],
+      "maxLevelByTownHall": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        8
+      ],
       "levels": [
-        { "rate": 200,  "capacity": 600,   "cost": {},                                    "time": "0"  },
-        { "rate": 320,  "capacity": 960,   "cost": { "madera": 400 },                     "time": "5m" },
-        { "rate": 500,  "capacity": 1500,  "cost": { "madera": 1200 },                    "time": "30m" },
-        { "rate": 750,  "capacity": 3000,  "cost": { "madera": 3000 },                    "time": "2h" },
-        { "rate": 1100, "capacity": 4400,  "cost": { "madera": 8000 },                    "time": "6h" },
-        { "rate": 1600, "capacity": 9600,  "cost": { "madera": 20000 },                   "time": "12h" },
-        { "rate": 2300, "capacity": 13800, "cost": { "madera": 50000 },                   "time": "1d" },
-        { "rate": 3200, "capacity": 38400, "cost": { "madera": 120000, "oro": 20000 },    "time": "2d" }
+        {
+          "rate": 200,
+          "capacity": 600,
+          "cost": {
+            "madera": 300
+          },
+          "time": "2m",
+          "$decision": "Level 1 is only free for the copy the tutorial hands you (UI_SPEC 4.2 'free (tutorial)' / '(free)'). Applying it to every copy made placement a non-decision: extra producers and stores cost nothing and took no builder time, so a player could stamp the maximum allowed count instantly and the builder — the scarce resource the whole loop hangs on — was never spent. Additional copies cost resources and builder time; the granted one is seeded already built."
+        },
+        {
+          "rate": 320,
+          "capacity": 960,
+          "cost": {
+            "madera": 400
+          },
+          "time": "5m"
+        },
+        {
+          "rate": 500,
+          "capacity": 1500,
+          "cost": {
+            "madera": 1200
+          },
+          "time": "30m"
+        },
+        {
+          "rate": 750,
+          "capacity": 3000,
+          "cost": {
+            "madera": 3000
+          },
+          "time": "2h"
+        },
+        {
+          "rate": 1100,
+          "capacity": 4400,
+          "cost": {
+            "madera": 8000
+          },
+          "time": "6h"
+        },
+        {
+          "rate": 1600,
+          "capacity": 9600,
+          "cost": {
+            "madera": 20000
+          },
+          "time": "12h"
+        },
+        {
+          "rate": 2300,
+          "capacity": 13800,
+          "cost": {
+            "madera": 50000
+          },
+          "time": "1d"
+        },
+        {
+          "rate": 3200,
+          "capacity": 38400,
+          "cost": {
+            "madera": 120000,
+            "oro": 20000
+          },
+          "time": "2d"
+        }
       ]
     },
-
     "mercado": {
       "label": "Mercado",
       "kind": "producer",
@@ -84,20 +265,94 @@
       "model": "bldg_marketplace",
       "footprint": 5,
       "unlockAtTownHall": 1,
-      "countByTownHall": [1, 2, 2, 3, 3, 4, 4, 4],
-      "maxLevelByTownHall": [2, 3, 4, 5, 6, 7, 8, 8],
+      "countByTownHall": [
+        1,
+        2,
+        2,
+        3,
+        3,
+        4,
+        4,
+        4
+      ],
+      "maxLevelByTownHall": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        8
+      ],
       "levels": [
-        { "rate": 150,  "capacity": 450,   "cost": { "madera": 250 },                     "time": "1m" },
-        { "rate": 240,  "capacity": 720,   "cost": { "madera": 750 },                     "time": "15m" },
-        { "rate": 380,  "capacity": 1140,  "cost": { "madera": 2000 },                    "time": "1h" },
-        { "rate": 560,  "capacity": 2240,  "cost": { "madera": 5000 },                    "time": "3h" },
-        { "rate": 850,  "capacity": 3400,  "cost": { "madera": 12000 },                   "time": "8h" },
-        { "rate": 1250, "capacity": 7500,  "cost": { "madera": 30000 },                   "time": "16h" },
-        { "rate": 1800, "capacity": 10800, "cost": { "madera": 70000 },                   "time": "1d 12h" },
-        { "rate": 2500, "capacity": 30000, "cost": { "madera": 150000, "oro": 30000 },    "time": "2d 12h" }
+        {
+          "rate": 150,
+          "capacity": 450,
+          "cost": {
+            "madera": 250
+          },
+          "time": "1m"
+        },
+        {
+          "rate": 240,
+          "capacity": 720,
+          "cost": {
+            "madera": 750
+          },
+          "time": "15m"
+        },
+        {
+          "rate": 380,
+          "capacity": 1140,
+          "cost": {
+            "madera": 2000
+          },
+          "time": "1h"
+        },
+        {
+          "rate": 560,
+          "capacity": 2240,
+          "cost": {
+            "madera": 5000
+          },
+          "time": "3h"
+        },
+        {
+          "rate": 850,
+          "capacity": 3400,
+          "cost": {
+            "madera": 12000
+          },
+          "time": "8h"
+        },
+        {
+          "rate": 1250,
+          "capacity": 7500,
+          "cost": {
+            "madera": 30000
+          },
+          "time": "16h"
+        },
+        {
+          "rate": 1800,
+          "capacity": 10800,
+          "cost": {
+            "madera": 70000
+          },
+          "time": "1d 12h"
+        },
+        {
+          "rate": 2500,
+          "capacity": 30000,
+          "cost": {
+            "madera": 150000,
+            "oro": 30000
+          },
+          "time": "2d 12h"
+        }
       ]
     },
-
     "destileria": {
       "label": "Destilería",
       "kind": "producer",
@@ -106,18 +361,77 @@
       "footprint": 5,
       "unlockAtTownHall": 2,
       "$decision": "count ladder — §4.2 gives the Destilería no allowed-count row",
-      "countByTownHall": [0, 1, 1, 1, 2, 2, 2, 2],
-      "maxLevelByTownHall": [0, 2, 3, 4, 5, 6, 6, 6],
+      "countByTownHall": [
+        0,
+        1,
+        1,
+        1,
+        2,
+        2,
+        2,
+        2
+      ],
+      "maxLevelByTownHall": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        6,
+        6
+      ],
       "levels": [
-        { "rate": 120,  "capacity": 480,   "cost": { "madera": 1000 },  "time": "15m" },
-        { "rate": 200,  "capacity": 800,   "cost": { "madera": 2500 },  "time": "1h" },
-        { "rate": 320,  "capacity": 1280,  "cost": { "oro": 6000 },     "time": "4h" },
-        { "rate": 480,  "capacity": 2880,  "cost": { "oro": 15000 },    "time": "10h" },
-        { "rate": 700,  "capacity": 4200,  "cost": { "oro": 35000 },    "time": "20h" },
-        { "rate": 1000, "capacity": 12000, "cost": { "oro": 80000 },    "time": "2d" }
+        {
+          "rate": 120,
+          "capacity": 480,
+          "cost": {
+            "madera": 1000
+          },
+          "time": "15m"
+        },
+        {
+          "rate": 200,
+          "capacity": 800,
+          "cost": {
+            "madera": 2500
+          },
+          "time": "1h"
+        },
+        {
+          "rate": 320,
+          "capacity": 1280,
+          "cost": {
+            "oro": 6000
+          },
+          "time": "4h"
+        },
+        {
+          "rate": 480,
+          "capacity": 2880,
+          "cost": {
+            "oro": 15000
+          },
+          "time": "10h"
+        },
+        {
+          "rate": 700,
+          "capacity": 4200,
+          "cost": {
+            "oro": 35000
+          },
+          "time": "20h"
+        },
+        {
+          "rate": 1000,
+          "capacity": 12000,
+          "cost": {
+            "oro": 80000
+          },
+          "time": "2d"
+        }
       ]
     },
-
     "fundicion": {
       "label": "Fundición",
       "kind": "producer",
@@ -126,16 +440,61 @@
       "footprint": 5,
       "unlockAtTownHall": 4,
       "$decision": "count ladder — §4.2 gives the Fundición no allowed-count row",
-      "countByTownHall": [0, 0, 0, 1, 1, 2, 2, 2],
-      "maxLevelByTownHall": [0, 0, 0, 1, 2, 3, 4, 4],
+      "countByTownHall": [
+        0,
+        0,
+        0,
+        1,
+        1,
+        2,
+        2,
+        2
+      ],
+      "maxLevelByTownHall": [
+        0,
+        0,
+        0,
+        1,
+        2,
+        3,
+        4,
+        4
+      ],
       "levels": [
-        { "rate": 40,  "capacity": 480,  "cost": { "madera": 25000 }, "time": "8h" },
-        { "rate": 65,  "capacity": 780,  "cost": { "oro": 60000 },    "time": "18h" },
-        { "rate": 100, "capacity": 1200, "cost": { "oro": 120000 },   "time": "2d" },
-        { "rate": 150, "capacity": 1800, "cost": { "oro": 250000 },   "time": "3d" }
+        {
+          "rate": 40,
+          "capacity": 480,
+          "cost": {
+            "madera": 25000
+          },
+          "time": "8h"
+        },
+        {
+          "rate": 65,
+          "capacity": 780,
+          "cost": {
+            "oro": 60000
+          },
+          "time": "18h"
+        },
+        {
+          "rate": 100,
+          "capacity": 1200,
+          "cost": {
+            "oro": 120000
+          },
+          "time": "2d"
+        },
+        {
+          "rate": 150,
+          "capacity": 1800,
+          "cost": {
+            "oro": 250000
+          },
+          "time": "3d"
+        }
       ]
     },
-
     "almacen": {
       "label": "Almacén",
       "kind": "store",
@@ -144,20 +503,86 @@
       "footprint": 5,
       "unlockAtTownHall": 1,
       "$decision": "count ladder, and levels 7–8 — §4.2's store table stops at 6, which walls the player at Ayto 7 (see the invariant test)",
-      "countByTownHall": [1, 1, 2, 2, 2, 3, 3, 3],
-      "maxLevelByTownHall": [2, 3, 4, 5, 6, 7, 8, 8],
+      "countByTownHall": [
+        1,
+        1,
+        2,
+        2,
+        2,
+        3,
+        3,
+        3
+      ],
+      "maxLevelByTownHall": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        8
+      ],
       "levels": [
-        { "capacity": 2000,    "cost": {},                 "time": "0" },
-        { "capacity": 6000,    "cost": { "madera": 1000 },  "time": "20m" },
-        { "capacity": 15000,   "cost": { "madera": 3500 },  "time": "2h" },
-        { "capacity": 40000,   "cost": { "madera": 9000 },  "time": "6h" },
-        { "capacity": 100000,  "cost": { "madera": 25000 }, "time": "16h" },
-        { "capacity": 250000,  "cost": { "oro": 60000 },    "time": "1d 12h" },
-        { "capacity": 600000,  "cost": { "oro": 150000 },   "time": "2d" },
-        { "capacity": 1400000, "cost": { "oro": 400000 },   "time": "3d" }
+        {
+          "capacity": 2000,
+          "cost": {
+            "madera": 500
+          },
+          "time": "5m",
+          "$decision": "Level 1 is only free for the copy the tutorial hands you (UI_SPEC 4.2 'free (tutorial)' / '(free)'). Applying it to every copy made placement a non-decision: extra producers and stores cost nothing and took no builder time, so a player could stamp the maximum allowed count instantly and the builder — the scarce resource the whole loop hangs on — was never spent. Additional copies cost resources and builder time; the granted one is seeded already built."
+        },
+        {
+          "capacity": 6000,
+          "cost": {
+            "madera": 1000
+          },
+          "time": "20m"
+        },
+        {
+          "capacity": 15000,
+          "cost": {
+            "madera": 3500
+          },
+          "time": "2h"
+        },
+        {
+          "capacity": 40000,
+          "cost": {
+            "madera": 9000
+          },
+          "time": "6h"
+        },
+        {
+          "capacity": 100000,
+          "cost": {
+            "madera": 25000
+          },
+          "time": "16h"
+        },
+        {
+          "capacity": 250000,
+          "cost": {
+            "oro": 60000
+          },
+          "time": "1d 12h"
+        },
+        {
+          "capacity": 600000,
+          "cost": {
+            "oro": 150000
+          },
+          "time": "2d"
+        },
+        {
+          "capacity": 1400000,
+          "cost": {
+            "oro": 400000
+          },
+          "time": "3d"
+        }
       ]
     },
-
     "banco": {
       "label": "Banco",
       "kind": "store",
@@ -166,20 +591,86 @@
       "footprint": 4,
       "unlockAtTownHall": 1,
       "$decision": "count ladder, and levels 7–8 — same reason as the Almacén",
-      "countByTownHall": [1, 1, 2, 3, 3, 3, 4, 4],
-      "maxLevelByTownHall": [2, 3, 4, 5, 6, 7, 8, 8],
+      "countByTownHall": [
+        1,
+        1,
+        2,
+        3,
+        3,
+        3,
+        4,
+        4
+      ],
+      "maxLevelByTownHall": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        8
+      ],
       "levels": [
-        { "capacity": 1500,    "cost": {},                 "time": "0" },
-        { "capacity": 5000,    "cost": { "madera": 1200 },  "time": "20m" },
-        { "capacity": 12000,   "cost": { "madera": 4000 },  "time": "2h" },
-        { "capacity": 32000,   "cost": { "madera": 10000 }, "time": "6h" },
-        { "capacity": 80000,   "cost": { "oro": 28000 },    "time": "16h" },
-        { "capacity": 200000,  "cost": { "oro": 70000 },    "time": "1d 12h" },
-        { "capacity": 500000,  "cost": { "oro": 160000 },   "time": "2d" },
-        { "capacity": 1200000, "cost": { "oro": 420000 },   "time": "3d" }
+        {
+          "capacity": 1500,
+          "cost": {
+            "madera": 800
+          },
+          "time": "10m",
+          "$decision": "Level 1 is only free for the copy the tutorial hands you (UI_SPEC 4.2 'free (tutorial)' / '(free)'). Applying it to every copy made placement a non-decision: extra producers and stores cost nothing and took no builder time, so a player could stamp the maximum allowed count instantly and the builder — the scarce resource the whole loop hangs on — was never spent. Additional copies cost resources and builder time; the granted one is seeded already built."
+        },
+        {
+          "capacity": 5000,
+          "cost": {
+            "madera": 1200
+          },
+          "time": "20m"
+        },
+        {
+          "capacity": 12000,
+          "cost": {
+            "madera": 4000
+          },
+          "time": "2h"
+        },
+        {
+          "capacity": 32000,
+          "cost": {
+            "madera": 10000
+          },
+          "time": "6h"
+        },
+        {
+          "capacity": 80000,
+          "cost": {
+            "oro": 28000
+          },
+          "time": "16h"
+        },
+        {
+          "capacity": 200000,
+          "cost": {
+            "oro": 70000
+          },
+          "time": "1d 12h"
+        },
+        {
+          "capacity": 500000,
+          "cost": {
+            "oro": 160000
+          },
+          "time": "2d"
+        },
+        {
+          "capacity": 1200000,
+          "cost": {
+            "oro": 420000
+          },
+          "time": "3d"
+        }
       ]
     },
-
     "bodega": {
       "label": "Bodega",
       "kind": "store",
@@ -188,17 +679,64 @@
       "footprint": 4,
       "unlockAtTownHall": 2,
       "$decision": "§4.2 gives the Bodega capacities but no costs or times — these mirror the Almacén ladder shifted one rung cheaper",
-      "countByTownHall": [0, 1, 1, 1, 1, 2, 2, 2],
-      "maxLevelByTownHall": [0, 2, 3, 4, 5, 5, 5, 5],
+      "countByTownHall": [
+        0,
+        1,
+        1,
+        1,
+        1,
+        2,
+        2,
+        2
+      ],
+      "maxLevelByTownHall": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        5,
+        5,
+        5
+      ],
       "levels": [
-        { "capacity": 1000,  "cost": { "madera": 500 },   "time": "10m" },
-        { "capacity": 4000,  "cost": { "madera": 2000 },  "time": "40m" },
-        { "capacity": 10000, "cost": { "oro": 6000 },     "time": "3h" },
-        { "capacity": 25000, "cost": { "oro": 18000 },    "time": "8h" },
-        { "capacity": 60000, "cost": { "oro": 45000 },    "time": "18h" }
+        {
+          "capacity": 1000,
+          "cost": {
+            "madera": 500
+          },
+          "time": "10m"
+        },
+        {
+          "capacity": 4000,
+          "cost": {
+            "madera": 2000
+          },
+          "time": "40m"
+        },
+        {
+          "capacity": 10000,
+          "cost": {
+            "oro": 6000
+          },
+          "time": "3h"
+        },
+        {
+          "capacity": 25000,
+          "cost": {
+            "oro": 18000
+          },
+          "time": "8h"
+        },
+        {
+          "capacity": 60000,
+          "cost": {
+            "oro": 45000
+          },
+          "time": "18h"
+        }
       ]
     },
-
     "deposito": {
       "label": "Depósito",
       "kind": "store",
@@ -207,15 +745,50 @@
       "footprint": 4,
       "unlockAtTownHall": 4,
       "$decision": "§4.2 gives the Depósito capacities but no costs or times",
-      "countByTownHall": [0, 0, 0, 1, 1, 1, 2, 2],
-      "maxLevelByTownHall": [0, 0, 0, 1, 2, 3, 3, 3],
+      "countByTownHall": [
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        2,
+        2
+      ],
+      "maxLevelByTownHall": [
+        0,
+        0,
+        0,
+        1,
+        2,
+        3,
+        3,
+        3
+      ],
       "levels": [
-        { "capacity": 1000, "cost": { "oro": 12000 },  "time": "4h" },
-        { "capacity": 3000, "cost": { "oro": 40000 },  "time": "12h" },
-        { "capacity": 8000, "cost": { "oro": 110000 }, "time": "1d" }
+        {
+          "capacity": 1000,
+          "cost": {
+            "oro": 12000
+          },
+          "time": "4h"
+        },
+        {
+          "capacity": 3000,
+          "cost": {
+            "oro": 40000
+          },
+          "time": "12h"
+        },
+        {
+          "capacity": 8000,
+          "cost": {
+            "oro": 110000
+          },
+          "time": "1d"
+        }
       ]
     },
-
     "muelle": {
       "label": "Muelle",
       "kind": "support",
@@ -226,13 +799,35 @@
       "$doc": "waterfront: the Muelle belongs ON the shoreline, so it is exempt from the buildable-plateau check the other buildings get.",
       "waterfront": true,
       "$decision": "cost and time — §4.10 fixes the 1m timer at beat 1:15, the cost is ours",
-      "countByTownHall": [1, 1, 1, 1, 1, 1, 1, 1],
-      "maxLevelByTownHall": [1, 1, 1, 1, 1, 1, 1, 1],
+      "countByTownHall": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "maxLevelByTownHall": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
       "levels": [
-        { "cost": { "madera": 300 }, "time": "1m" }
+        {
+          "cost": {
+            "madera": 300
+          },
+          "time": "1m"
+        }
       ]
     },
-
     "astillero": {
       "label": "Astillero",
       "kind": "support",
@@ -240,63 +835,274 @@
       "footprint": 5,
       "unlockAtTownHall": 3,
       "$decision": "the whole ladder — PLAN Fase 4 owns ship classes; these levels exist here so ron and metal have a sink and the invariant is tested against real costs",
-      "countByTownHall": [0, 0, 1, 1, 1, 1, 1, 1],
-      "maxLevelByTownHall": [0, 0, 1, 2, 3, 4, 4, 4],
+      "countByTownHall": [
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "maxLevelByTownHall": [
+        0,
+        0,
+        1,
+        2,
+        3,
+        4,
+        4,
+        4
+      ],
       "levels": [
-        { "cost": { "madera": 5000 },                              "time": "2h", "ship": "skiff" },
-        { "cost": { "oro": 20000,  "ron": 2500,  "metal": 400 },   "time": "8h", "ship": "sloop" },
-        { "cost": { "oro": 90000,  "ron": 8000,  "metal": 1200 },  "time": "1d", "ship": "galleon" },
-        { "cost": { "oro": 220000, "ron": 20000, "metal": 1600 },  "time": "2d", "ship": "frigate" }
+        {
+          "cost": {
+            "madera": 5000
+          },
+          "time": "2h",
+          "ship": "skiff"
+        },
+        {
+          "cost": {
+            "oro": 20000,
+            "ron": 2500,
+            "metal": 400
+          },
+          "time": "8h",
+          "ship": "sloop"
+        },
+        {
+          "cost": {
+            "oro": 90000,
+            "ron": 8000,
+            "metal": 1200
+          },
+          "time": "1d",
+          "ship": "galleon"
+        },
+        {
+          "cost": {
+            "oro": 220000,
+            "ron": 20000,
+            "metal": 1600
+          },
+          "time": "2d",
+          "ship": "frigate"
+        }
       ]
     }
   },
-
   "builders": {
     "$doc": "§4.3 / §9: the game starts with TWO. One idle carpenter is the whole reason the free-builder nag exists.",
     "start": 2,
     "max": 5,
     "unlock": [
-      { "n": 3, "gems": 500,  "free": "Cadena Isla Habitada (hito 20)" },
-      { "n": 4, "gems": 1200, "free": "Ayto 6 + cadena Bahía Fortificada" },
-      { "n": 5, "gems": 2500, "free": "Ayto 8 + logro" }
+      {
+        "n": 3,
+        "gems": 500,
+        "free": "Cadena Isla Habitada (hito 20)"
+      },
+      {
+        "n": 4,
+        "gems": 1200,
+        "free": "Ayto 6 + cadena Bahía Fortificada"
+      },
+      {
+        "n": 5,
+        "gems": 2500,
+        "free": "Ayto 8 + logro"
+      }
     ],
-    "tempBuilder": { "$doc": "§4.10 beat 2:25 — granted once, expires quietly", "duration": "1d" }
+    "tempBuilder": {
+      "$doc": "§4.10 beat 2:25 — granted once, expires quietly",
+      "duration": "1d"
+    }
   },
-
   "gemSpeedup": {
-    "$doc": ["§4.4. The golden rule wins over the table's first row: the last 5 minutes of ANY timer cost 1 gem, always, everywhere.", "§4.4's three formulas are discontinuous at their own boundaries (1h reads 22 then 20; 1d reads 158 then 150), which would price a LONGER wait cheaper. sim/build.ts clamps each tier to the value the previous tier reaches at its ceiling, so the ladder only ever goes up. The published anchors 22/86/318 are unchanged."],
+    "$doc": [
+      "§4.4. The golden rule wins over the table's first row: the last 5 minutes of ANY timer cost 1 gem, always, everywhere.",
+      "§4.4's three formulas are discontinuous at their own boundaries (1h reads 22 then 20; 1d reads 158 then 150), which would price a LONGER wait cheaper. sim/build.ts clamps each tier to the value the previous tier reaches at its ceiling, so the ladder only ever goes up. The published anchors 22/86/318 are unchanged."
+    ],
     "goldenRuleUnder": "5m",
     "goldenRuleCost": 1,
     "tiers": [
-      { "under": "1h", "base": 1,   "perMinuteOver": 0.35, "overMinutes": 0 },
-      { "under": "1d", "base": 20,  "perMinuteOver": 0.10, "overMinutes": 60 },
-      { "under": null, "base": 150, "perHourOver": 3.5,    "overHours": 24 }
+      {
+        "under": "1h",
+        "base": 1,
+        "perMinuteOver": 0.35,
+        "overMinutes": 0
+      },
+      {
+        "under": "1d",
+        "base": 20,
+        "perMinuteOver": 0.1,
+        "overMinutes": 60
+      },
+      {
+        "under": null,
+        "base": 150,
+        "perHourOver": 3.5,
+        "overHours": 24
+      }
     ]
   },
-
   "chests": {
     "$doc": "§4.5 — four slots from the start, only ONE unlocks at a time. That restriction is the pressure.",
     "slots": 4,
     "concurrentUnlocks": 1,
     "types": {
-      "madera":  { "label": "Cofre de Madera",  "rarity": "common", "time": "15m",
-                   "loot": { "oro": [120, 200],     "madera": [200, 320],     "gemas": [0, 0],   "fragmentos": [0, 1] } },
-      "bronce":  { "label": "Cofre de Bronce",  "rarity": "common", "time": "1h",
-                   "loot": { "oro": [400, 650],     "madera": [600, 900],     "gemas": [0, 2],   "fragmentos": [1, 2] } },
-      "plata":   { "label": "Cofre de Plata",   "rarity": "rare",   "time": "3h",
-                   "loot": { "oro": [1200, 1800],   "madera": [1800, 2600],   "gemas": [2, 4],   "fragmentos": [2, 4] } },
-      "oro":     { "label": "Cofre de Oro",     "rarity": "hot",    "time": "8h",
-                   "loot": { "oro": [4000, 6000],   "madera": [5000, 7500],   "gemas": [6, 10],  "fragmentos": [5, 9] } },
-      "capitan": { "label": "Cofre de Capitán", "rarity": "legend", "time": "12h",
-                   "loot": { "oro": [12000, 16000], "madera": [14000, 20000], "gemas": [15, 25], "fragmentos": [12, 20] } },
-      "leyenda": { "label": "Cofre de Leyenda", "rarity": "legend", "time": "24h",
-                   "loot": { "oro": [40000, 55000], "madera": [45000, 65000], "gemas": [40, 70], "fragmentos": [30, 50] },
-                   "guaranteedSkin": true }
+      "madera": {
+        "label": "Cofre de Madera",
+        "rarity": "common",
+        "time": "15m",
+        "loot": {
+          "oro": [
+            120,
+            200
+          ],
+          "madera": [
+            200,
+            320
+          ],
+          "gemas": [
+            0,
+            0
+          ],
+          "fragmentos": [
+            0,
+            1
+          ]
+        }
+      },
+      "bronce": {
+        "label": "Cofre de Bronce",
+        "rarity": "common",
+        "time": "1h",
+        "loot": {
+          "oro": [
+            400,
+            650
+          ],
+          "madera": [
+            600,
+            900
+          ],
+          "gemas": [
+            0,
+            2
+          ],
+          "fragmentos": [
+            1,
+            2
+          ]
+        }
+      },
+      "plata": {
+        "label": "Cofre de Plata",
+        "rarity": "rare",
+        "time": "3h",
+        "loot": {
+          "oro": [
+            1200,
+            1800
+          ],
+          "madera": [
+            1800,
+            2600
+          ],
+          "gemas": [
+            2,
+            4
+          ],
+          "fragmentos": [
+            2,
+            4
+          ]
+        }
+      },
+      "oro": {
+        "label": "Cofre de Oro",
+        "rarity": "hot",
+        "time": "8h",
+        "loot": {
+          "oro": [
+            4000,
+            6000
+          ],
+          "madera": [
+            5000,
+            7500
+          ],
+          "gemas": [
+            6,
+            10
+          ],
+          "fragmentos": [
+            5,
+            9
+          ]
+        }
+      },
+      "capitan": {
+        "label": "Cofre de Capitán",
+        "rarity": "legend",
+        "time": "12h",
+        "loot": {
+          "oro": [
+            12000,
+            16000
+          ],
+          "madera": [
+            14000,
+            20000
+          ],
+          "gemas": [
+            15,
+            25
+          ],
+          "fragmentos": [
+            12,
+            20
+          ]
+        }
+      },
+      "leyenda": {
+        "label": "Cofre de Leyenda",
+        "rarity": "legend",
+        "time": "24h",
+        "loot": {
+          "oro": [
+            40000,
+            55000
+          ],
+          "madera": [
+            45000,
+            65000
+          ],
+          "gemas": [
+            40,
+            70
+          ],
+          "fragmentos": [
+            30,
+            50
+          ]
+        },
+        "guaranteedSkin": true
+      }
     },
-    "freeChest": { "$doc": "Cofre Libre at the Muelle", "every": "4h", "stack": 2, "type": "bronce" },
-    "crownChest": { "at": 10, "type": "oro" }
+    "freeChest": {
+      "$doc": "Cofre Libre at the Muelle",
+      "every": "4h",
+      "stack": 2,
+      "type": "bronce"
+    },
+    "crownChest": {
+      "at": 10,
+      "type": "oro"
+    }
   },
-
   "daily": {
     "$doc": [
       "§4.6 — seven days, chained, day 7 visible from day 1.",
@@ -304,67 +1110,216 @@
     ],
     "pauseOnMiss": true,
     "stormPassesPerMonth": 1,
-    "weeklyMultiplier": [1, 1.4, 1.9, 2.5],
+    "weeklyMultiplier": [
+      1,
+      1.4,
+      1.9,
+      2.5
+    ],
     "days": [
-      { "day": 1, "resources": { "madera": 500 } },
-      { "day": 2, "resources": { "oro": 400 } },
-      { "day": 3, "gems": 10 },
-      { "day": 4, "chest": "plata" },
-      { "day": 5, "resources": { "madera": 1500, "oro": 1200 } },
-      { "day": 6, "gems": 25 },
-      { "day": 7, "chest": "capitan", "tempBuilder": "1h", "featured": true }
+      {
+        "day": 1,
+        "resources": {
+          "madera": 500
+        }
+      },
+      {
+        "day": 2,
+        "resources": {
+          "oro": 400
+        }
+      },
+      {
+        "day": 3,
+        "gems": 10
+      },
+      {
+        "day": 4,
+        "chest": "plata"
+      },
+      {
+        "day": 5,
+        "resources": {
+          "madera": 1500,
+          "oro": 1200
+        }
+      },
+      {
+        "day": 6,
+        "gems": 25
+      },
+      {
+        "day": 7,
+        "chest": "capitan",
+        "tempBuilder": "1h",
+        "featured": true
+      }
     ]
   },
-
   "quests": {
     "$doc": "§4.7 — 3 active dailies, refresh at 04:00 LOCAL (§9: not midnight; midnight punishes the 23:55 player).",
     "dailyCount": 3,
     "refreshHour": 4,
-    "reward": { "coronas": 1, "gemas": 8 },
+    "reward": {
+      "coronas": 1,
+      "gemas": 8
+    },
     "pool": [
-      { "id": "collect-madera", "text": "Recoge {target} de madera", "metric": "collected.madera", "target": 500,  "minTownHall": 1, "resources": { "madera": 300 } },
-      { "id": "collect-oro",    "text": "Recoge {target} de oro",    "metric": "collected.oro",    "target": 400,  "minTownHall": 1, "resources": { "oro": 250 } },
-      { "id": "collect-ron",    "text": "Recoge {target} de ron",    "metric": "collected.ron",    "target": 500,  "minTownHall": 2, "resources": { "ron": 200 } },
-      { "id": "taps",           "text": "Recoge producción {target} veces", "metric": "collects",  "target": 10,   "minTownHall": 1, "resources": { "madera": 200 } },
-      { "id": "upgrade",        "text": "Sube un edificio de nivel", "metric": "upgrades",         "target": 1,    "minTownHall": 1, "resources": { "oro": 300 } },
-      { "id": "chest",          "text": "Abre {target} cofre",       "metric": "chestsOpened",     "target": 1,    "minTownHall": 1, "resources": { "madera": 400 } },
-      { "id": "obstacles",      "text": "Despeja {target} obstáculos", "metric": "obstacles",      "target": 2,    "minTownHall": 1, "resources": { "oro": 200 } }
+      {
+        "id": "collect-madera",
+        "text": "Recoge {target} de madera",
+        "metric": "collected.madera",
+        "target": 500,
+        "minTownHall": 1,
+        "resources": {
+          "madera": 300
+        }
+      },
+      {
+        "id": "collect-oro",
+        "text": "Recoge {target} de oro",
+        "metric": "collected.oro",
+        "target": 400,
+        "minTownHall": 1,
+        "resources": {
+          "oro": 250
+        }
+      },
+      {
+        "id": "collect-ron",
+        "text": "Recoge {target} de ron",
+        "metric": "collected.ron",
+        "target": 500,
+        "minTownHall": 2,
+        "resources": {
+          "ron": 200
+        }
+      },
+      {
+        "id": "taps",
+        "text": "Recoge producción {target} veces",
+        "metric": "collects",
+        "target": 10,
+        "minTownHall": 1,
+        "resources": {
+          "madera": 200
+        }
+      },
+      {
+        "id": "upgrade",
+        "text": "Sube un edificio de nivel",
+        "metric": "upgrades",
+        "target": 1,
+        "minTownHall": 1,
+        "resources": {
+          "oro": 300
+        }
+      },
+      {
+        "id": "chest",
+        "text": "Abre {target} cofre",
+        "metric": "chestsOpened",
+        "target": 1,
+        "minTownHall": 1,
+        "resources": {
+          "madera": 400
+        }
+      },
+      {
+        "id": "obstacles",
+        "text": "Despeja {target} obstáculos",
+        "metric": "obstacles",
+        "target": 2,
+        "minTownHall": 1,
+        "resources": {
+          "oro": 200
+        }
+      }
     ],
     "targetScalePerTownHall": 0.35
   },
-
   "obstacles": {
     "$doc": "§4.7 — cost 0, one builder, and their real job is making the player look at their island.",
     "maxOnIsland": 12,
     "respawnEvery": "8h",
-    "small": { "time": "30s", "madera": [5, 15],  "gemChance": 0.25, "gems": [0, 3] },
-    "large": { "time": "15m", "madera": [20, 40], "gemChance": 0.25, "gems": [2, 6] }
+    "small": {
+      "time": "30s",
+      "madera": [
+        5,
+        15
+      ],
+      "gemChance": 0.25,
+      "gems": [
+        0,
+        3
+      ]
+    },
+    "large": {
+      "time": "15m",
+      "madera": [
+        20,
+        40
+      ],
+      "gemChance": 0.25,
+      "gems": [
+        2,
+        6
+      ]
+    }
   },
-
   "ranks": {
     "$doc": "§4.7 — 3 divisions each, every division is +2% permanent offline production (+42% at cap).",
     "perDivisionOfflineBonus": 0.02,
     "divisionsPerRank": 3,
     "tiers": [
-      { "id": "grumete",       "label": "Grumete",       "at": 0 },
-      { "id": "marinero",      "label": "Marinero",      "at": 400 },
-      { "id": "contramaestre", "label": "Contramaestre", "at": 800 },
-      { "id": "navegante",     "label": "Navegante",     "at": 1400 },
-      { "id": "capitan",       "label": "Capitán",       "at": 2000 },
-      { "id": "corsario",      "label": "Corsario",      "at": 2600 },
-      { "id": "leyenda",       "label": "Leyenda",       "at": 3400 }
+      {
+        "id": "grumete",
+        "label": "Grumete",
+        "at": 0
+      },
+      {
+        "id": "marinero",
+        "label": "Marinero",
+        "at": 400
+      },
+      {
+        "id": "contramaestre",
+        "label": "Contramaestre",
+        "at": 800
+      },
+      {
+        "id": "navegante",
+        "label": "Navegante",
+        "at": 1400
+      },
+      {
+        "id": "capitan",
+        "label": "Capitán",
+        "at": 2000
+      },
+      {
+        "id": "corsario",
+        "label": "Corsario",
+        "at": 2600
+      },
+      {
+        "id": "leyenda",
+        "label": "Leyenda",
+        "at": 3400
+      }
     ],
     "decayPerDay": 0.02
   },
-
   "xp": {
     "$doc": "§4.7 — sqrt(build_seconds) per completed build, +10 per obstacle. Unlocks nothing on purpose.",
     "perBuildSecondsSqrt": 1,
     "perObstacle": 10,
     "perQuest": 25,
-    "levelCurve": { "base": 100, "growth": 1.35 }
+    "levelCurve": {
+      "base": 100,
+      "growth": 1.35
+    }
   },
-
   "offline": {
     "$doc": [
       "§4.7 — the limit is the producer's own cap, never an artificial rule.",
@@ -375,7 +1330,6 @@
     "longAbsence": "72h",
     "longAbsenceGiftChest": "plata"
   },
-
   "invariant": {
     "$doc": "§4.2 STORE INVARIANT — build-failing test. Reachable capacity must clear the worst cost at that Ayuntamiento level by this margin.",
     "storageHeadroom": 0.25
