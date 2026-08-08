@@ -1,123 +1,132 @@
-# Production checklist
+# Production checklist — the whole game
 
 What "finished" means, as conditions that can be checked rather than judged.
-PLAN.md says what to build; this says when to stop. Every line is either a
-command that passes or a fact somebody can verify on a phone in under a minute.
+`PLAN.md` says what to build, `RETENTION.md` says why anyone comes back, and
+this says when to stop. Every line is a command that passes or something a
+person can verify on a phone in under a minute.
 
-Status legend: `[x]` done and verified · `[~]` partly there, gap named · `[ ]` not started.
+The bar is **an App Store release**. Not a demo, not a vertical slice: a player
+downloads it, is taught it, plays it, spends in it and comes back to it.
+
+Status: `[x]` done and verified · `[~]` partly there, gap named · `[ ]` not started.
+
+---
 
 ## 0 · Gates that must stay green
 
-These run on every change. A red gate is a blocker, not a finding.
-
 - [x] `npx tsc --noEmit` clean (strict, `noUnusedLocals`)
 - [x] `npm test` — the pure-sim suite, 125 cases
-- [x] `npm run test:roundtrip` — island → sea → island driven as a player,
-      with no shot mode and no test hooks. The screenshot harness cannot cover
-      this: every act runs under `?shot=1`, which boots one scene and never
-      switches, so the router was shipping unwatched.
+- [x] `npm run test:roundtrip` — island → sea → island driven as a player
 - [x] `npm run build` produces a bundle
-- [x] `npm run shoot -- island --mobile` captures without console errors
-- [x] `npm run shoot -- island --mobile --act <every act>` — each scripted
+- [x] `npm run shoot -- island --mobile --act <each act>` — every scripted
       interaction still reaches its feature
-- [~] `npm run audit:layers` — 9 of 10 components clean, one real finding.
-      This tool was wrong in four different ways and every one of them pointed
-      at innocent code: stale selectors (7 of 11 matched nothing); an ink test
-      that searched the clip's padding and so measured the BACKGROUND; a gloss
-      test demanding a depth the reference itself fails (Clash's own CTA steps
-      0.84, same as ours — the cited 0.47 came from columns crossing its text);
-      and a single centre column that ran through each component's artwork, so
-      a white close-cross or a label became the "face" it compared the rim
-      against. It now samples across the width and credits a layer if any
-      column shows it, because art can hide a layer but never invent one.
-      Remaining: `.pick-row__go` has no warm rim. Three components (builder
-      chip, badge, chest slot) still need a save state that shows them.
+- [~] `npm run audit:layers` — 9/10 components clean; `.pick-row__go` has no rim
 - [x] `npm run audit:sea` — sea texture against the reference, HUD excluded
+- [ ] `node tools/blind.mjs` — our frame beats the shipped game's, judged blind
 
-## 1 · Your island — PLAN.md Fase 1
+---
+
+## 1 · First run: menu, captain, tutorial
+
+None of this exists. The game currently drops a cold player straight onto an
+island with one idle tooltip. For a store release this is the first ninety
+seconds, and it decides everything else.
+
+- [ ] **Title / main menu.** Logo, Jugar, Ajustes, and the returning-player
+      state (continue, and what is waiting). Animated sea behind it rather than
+      a static plate — we already have the water and it is the best thing we own.
+- [ ] **Captain creation.** PLAN.md Fase 4 promises the modular Avatar system.
+      **Blocked on assets**: all 54 models we have are buildings, mobs, ships
+      and props. The Pirate Nation Avatar library (body, hair, hats, coats) has
+      never been fetched — `tools/assets-manifest.json` needs the entries and
+      the fetch/optimize pipeline needs a run.
+- [ ] The captain appears in the world: on the island, and at the helm at sea.
+- [ ] **Tutorial director.** RETENTION.md's session loop taught by doing —
+      collect, build, start a timer, open a chest, sail. Gated, skippable, and
+      it must never block on a timer a real player would simply wait out.
+- [ ] A named save, so the captain has an identity to put on a leaderboard.
+
+## 2 · The island — PLAN.md Fase 1
 
 - [x] Grid island, voxel terrain, sea around it
-- [x] Camera: one finger pans, two pinch, clamped to the island
-- [x] Build: picker → ghost → green/red cells → confirm, and moving what exists
+- [x] Camera: one finger pans, two pinch, clamped
+- [x] Build: picker → ghost → green/red cells → confirm
 - [x] Economy: four resources, two caps, timers, builder limit, offline catch-up
-- [x] HUD to the Clash/Kingshot bar, four-layer rule enforced by an audit
-- [x] Session hooks: collection bubbles, ¡Lleno!, daily chain, quests, chests
+- [x] Session hooks: bubbles, ¡Lleno!, daily chain, quests, chests
+- [ ] **Island creation.** Every player currently gets the same seeded island.
+      The seed should be the captain's, rolled or chosen at creation.
+- [ ] Moving a building after it is placed — PLAN.md Fase 1 promises it
 
-**Done when:** a ten-minute session places and upgrades buildings, survives a
-close and reopen, and pays out accumulated production the next day. — *met*
+## 3 · Open sea — PLAN.md Fase 2
 
-## 2 · Open sea — PLAN.md Fase 2  ← the missing half
+- [x] `sim/sea.ts`: pure deterministic voyage — kinematics, seeded world, mobs,
+      broadsides, loot, sinking (27 cases)
+- [x] Sea scene streaming sites and mobs from the same `sitesNear` the sim uses
+- [x] One-thumb steering; the stick appears under the thumb and reports a world
+      direction, not a turn rate
+- [x] Automatic broadsides; the player plays positioning
+- [x] Cargo lands in the island economy, capped, overflow reported
+- [x] Cannon, hit, kill, loot and sinking audible; smoke, flash, hurt veil
+- [ ] **The Giant Squid boss.** Spawned and tethered, but it has no fight of its
+      own — no phases, no tell, no reward moment.
+- [ ] Harvesting and boarding beats. A site is taken by sailing over it, which
+      is the placeholder, not the design.
+- [ ] Balance. A capture at ring 3 with the throttle at zero had the hull nearly
+      gone in six seconds. Nobody has played this.
 
-Without this, ¡Zarpar! is a dead button and the loop the plan is built around
-never closes. This is the single largest gap between here and a finished game.
-
-- [x] `sim/sea.ts`: pure, deterministic voyage — ship kinematics, seeded world,
-      mobs, broadsides, loot, sinking. No three.js, no clock, no `Math.random`.
-- [x] Tests: same seed ⇒ same voyage; a mob that patrols, chases and attacks;
-      loot that survives being sunk only in part; rings that get harder outward
-      (27 cases in `tools/tests/sea.test.ts`)
-- [x] Sea scene: streams sites and mobs around the ship from the same `sitesNear`
-      the sim uses, distance fog, blob shadows, wake. Measured against
-      reference/sea_combat.png: mean 88.3 vs 96.9, sd 46.6 vs 52.7,
-      detail 17.5% vs 18.1%.
-- [x] Control: `ui/stick.ts` — the stick appears under the thumb wherever it
-      presses, and reports a WORLD DIRECTION rather than a turn rate
-- [x] Automatic broadsides — the player plays positioning, not a fire button
-- [ ] Mob scale: a kelpling still reads larger than the ship. `fit` normalises
-      the largest axis, which flatters a wide creature over a masted hull.
-- [ ] PvE islands: harvestables, chests, and the Giant Squid holding a rich one
-- [x] Return home: cargo lands in the island economy through `landCargoInPlace`,
-      capped like any other income, with the overflow reported not dropped
-- [x] ¡Zarpar! actually sails, still gated on the shipyard's boat
-- [x] Voyage HUD: hull bar, hold, ring, and a compass to the harbour
-- [ ] PvE islands: harvestables and chests are placed, but a site is taken by
-      sailing over it — there is no boarding or harvesting beat yet
-- [ ] The Giant Squid is spawned and tethered, but has no fight of its own
-- [ ] Balance is UNTESTED. A capture at ring 3 with the throttle at zero had the
-      hull nearly gone in six seconds — arguably correct (keep moving) but
-      nobody has played it.
-
-**Done when:** island → sail → fight/loot → return → build works end to end and
-is worth repeating. — *the transition is proven by `npm run test:roundtrip`;
-the "worth repeating" half still needs the fight and the harvest beats.*
-
-**Done when:** island → sail → fight/loot → return → build works end to end and
-is worth repeating.
-
-## 3 · Island defence — PLAN.md Fase 3
+## 4 · Island defence — PLAN.md Fase 3
 
 - [ ] Threat meter that fills with wealth, resolved only while playing
-- [ ] Defensive buildings placed on the same grid
+- [ ] Defensive buildings on the same grid
 - [ ] Undead raid waves through the deterministic sim
 - [ ] Cheap repairs — losing costs loot, never progress
 
-## 4 · Long progression — PLAN.md Fase 4
+## 5 · Meta, economy and the store
 
-- [ ] Shipwright unlocks hull classes with shards
-- [ ] Achievements as trophies standing on the island
-- [ ] Bulletin board quests
+- [ ] **Shipyard progression.** Skiff → Sloop → Galleon → Frigate → Marauder.
+      All four hulls are already in `public/assets/models/`; nothing uses them.
+- [ ] **Gem store.** RETENTION.md §9's gems with a real purchase surface.
+      **A real release needs StoreKit.** Built here as a local ledger with the
+      shelf, the prices and the confirmation flow real, and the payment call
+      stubbed behind one named seam.
+- [ ] **Leaderboard.** **This contradicts PLAN.md's offline scope** — a real one
+      needs a server. Built here over seeded rival captains so the surface, the
+      ranking and the season reset are real and playable, with the fetch behind
+      one named seam a backend can replace.
+- [ ] Achievements as trophies standing on the island (PLAN.md Fase 4)
+- [ ] Seasons (RETENTION.md §8)
 
-## 5 · Production quality, independent of features
+## 6 · Every screen, at AAA
 
-- [ ] **Draw calls < 100.** Currently **436** against the PLAN.md budget of 100
-      (`node tools/perf.mjs`). Ships to a phone, so this is a blocker not a
-      nice-to-have.
-- [ ] Initial download < 10 MB. Currently ~870 KB JS + models — check the total.
-- [ ] 60 fps on a mid-range phone. The harness runs SwiftShader and cannot
-      answer this; it needs a real device.
-- [ ] Settings panel: export/import save reachable without the JS console.
-      Today `window.laLeyenda.export()` is the only route, which is not shipping.
-- [ ] First-run director: the game currently explains itself through one idle
-      tooltip. A player who has never seen it should be building inside a minute.
-- [x] Audio. `src/ui/sfx.ts` is a synthesised bus with a compressor, pitch
-      randomisation and an iOS-safe lazy context. The sea now has its half:
-      cannon, hit-on-mob, hit-on-hull, kill, loot and sinking, all pitched
-      below the island bank so a broadside has room under a hull groan.
+Each judged on rendered pixels against `reference/clash/` and
+`reference/kingshot/`, never on the source.
+
+- [x] Island HUD
+- [x] Build picker, upgrade sheet, build bar
+- [x] Chest / reward moment
+- [x] Voyage HUD
+- [ ] Title and menu
+- [ ] Captain creation
+- [ ] Settings — **export/import is reachable only from the JS console**, which
+      cannot ship
+- [ ] Store
+- [ ] Leaderboard
+- [ ] Season / battle pass
+- [ ] Defeat and victory screens
+
+## 7 · Ship quality, independent of features
+
+- [ ] **Draw calls < 100.** Currently **436** against PLAN.md's budget.
+- [ ] Initial download < 10 MB
+- [ ] 60 fps on a mid-range phone — needs a real device; SwiftShader cannot
+      answer it
 - [ ] PWA installable, offline boot verified on a device
-- [ ] An error a player can hit does something other than a blank canvas
+- [ ] Capacitor shell, icons, splash, App Store metadata
+- [ ] An error a player can hit shows something other than a blank canvas
+- [x] Audio: synthesised bus, island and sea both covered
 
-## 6 · Known deferred, with the reason
+## 8 · Known deferred, with the reason
 
-- The unfinished terrain-lighting work in `unfinished-terrain-lighting.patch`
-  (a background round left it half-wired; it broke `tsc`, so it was set aside).
-- No multiplayer. PLAN.md's three rules keep the door open; nothing is built.
+- `unfinished-terrain-lighting.patch` — a background round left it half-wired
+- No real multiplayer. PLAN.md's three rules keep the door open; the leaderboard
+  above is the first place that door gets used.
