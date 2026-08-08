@@ -16,13 +16,19 @@ These run on every change. A red gate is a blocker, not a finding.
 - [x] `npm run shoot -- island --mobile` captures without console errors
 - [x] `npm run shoot -- island --mobile --act <every act>` — each scripted
       interaction still reaches its feature
-- [ ] `npm run audit:layers` — **RED, and it was red before this loop started.**
-      7 of its 11 selectors match nothing: the HUD markup moved and the audit's
-      COMPONENTS list did not follow. It fails loudly rather than silently,
-      which is the tool working as designed — but it means the four-layer rule
-      is currently UNENFORCED, and that is exactly the condition an earlier
-      round identified as the thing that regenerates the same defect every time.
-      I listed this gate as green when I wrote this file. It was not.
+- [~] `npm run audit:layers` — the tool is repaired; five real findings remain.
+      It was red before this loop started with 7 of 11 selectors matching
+      nothing, AND its central test was wrong: the ink-contour check searched
+      the clip's padding rather than the component, so it was measuring the
+      BACKGROUND behind each object. Every past "missing ink contour" verdict
+      was false, and anything changed to satisfy one was chasing wrong pixels.
+      Now: 10 components measured, 4 clean, and these five to settle —
+      timer capsule (no lip: a deliberate LAYOUT_SPEC item 3 dark capsule, so
+      a spec conflict to resolve rather than a bug to fix), objective row,
+      picker row CTA and close button (no warm rim), sheet CTA (gloss ratio
+      0.83 against ≤0.62 — a flat face on the most-pressed button in the game).
+      Three more (builder chip, badge, chest slot) need a save state that shows
+      them before they can be measured at all.
 - [x] `npm run audit:sea` — sea texture against the reference, HUD excluded
 
 ## 1 · Your island — PLAN.md Fase 1

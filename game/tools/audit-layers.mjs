@@ -49,17 +49,26 @@ const ROOT = path.join(HERE, '..');
  * failed on. Everything a finger can hit is held to the full rule.
  */
 const COMPONENTS = [
-  { name: 'primary CTA', selector: '.tile--primary, .nav__slot--primary', act: null, pressable: true },
-  { name: 'icon tile', selector: '.tile:not(.tile--primary)', act: null, pressable: true },
+  // These selectors are the audit's whole contract with the HUD, and they had
+  // ALL drifted: the markup moved to a navslot/readout/timerbar vocabulary and
+  // this list stayed on tile/nav__slot/timer-bar. Seven of eleven matched
+  // nothing, which the run below turns into a hard failure — an audit that
+  // cannot find its subjects would otherwise report success for components it
+  // never measured, and the four-layer rule would be unenforced while looking
+  // green.
+  { name: 'primary CTA', selector: '.navslot--proud', act: null, pressable: true },
+  { name: 'nav slot', selector: '.navslot:not(.navslot--proud)', act: null, pressable: true },
   { name: 'resource pill', selector: '.pill', act: null, pressable: false },
+  { name: 'readout cell', selector: '.readout__cell', act: null, pressable: false },
   { name: 'builder chip', selector: '.builder-chip', act: null, pressable: true },
   { name: 'badge', selector: '.badge', act: null, pressable: false },
-  { name: 'chest slot', selector: '.tray__slot', act: null, pressable: true },
-  { name: 'timer capsule', selector: '.timer, .timer-bar', act: null, pressable: true },
-  { name: 'picker row CTA', selector: '.pick-row .btn', act: 'pickerOpen', pressable: true },
-  { name: 'sheet CTA', selector: '.sheet .btn--ok, .sheet .btn--cta', act: 'upgrade', pressable: true },
-  { name: 'close button', selector: '.btn--close, .sheet__close', act: 'pickerOpen', pressable: true },
-  { name: 'confirm button', selector: '.buildbar .btn--ok', act: 'place', pressable: true },
+  { name: 'chest slot', selector: '.slot', act: null, pressable: true },
+  { name: 'timer capsule', selector: '.timerbar', act: null, pressable: true },
+  { name: 'objective row', selector: '.objective', act: null, pressable: true },
+  { name: 'picker row CTA', selector: '.pick-row__go', act: 'pickerOpen', pressable: true },
+  { name: 'sheet CTA', selector: '.sheet.is-open .sheet__cta', act: 'upgrade', pressable: true },
+  { name: 'close button', selector: '.sheet.is-open .sheet__x', act: 'pickerOpen', pressable: true },
+  { name: 'confirm button', selector: '.buildbar__ok', act: 'place', pressable: true },
 ];
 
 const lum = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
@@ -71,21 +80,30 @@ const lum = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
  * is flat, not to police a few luminance units. A face that steps 0.62 or
  * deeper passes; Clash's own buttons sit near 0.47.
  */
-function measure(column) {
+function measure(column, edge = 0) {
   const n = column.length;
   if (n < 12) return { ok: false, why: 'too small to measure' };
 
   const L = column.map(([r, g, b]) => lum(r, g, b));
 
-  // 1. Ink contour: dark rows at both edges.
-  const inkTop = L.slice(0, 5).findIndex((v) => v < 60);
-  const inkBottom = [...L.slice(-5)].reverse().findIndex((v) => v < 60);
-  const contour = inkTop >= 0 && inkBottom >= 0;
+  // 1. Ink contour: dark rows at both edges OF THE COMPONENT.
+  //
+  // `edge` is where the component actually starts, in rows. The clip below
+  // deliberately includes padding above and beneath so the extrusion shadow is
+  // in frame, and this test used to search the first five rows of the CLIP —
+  // which are entirely inside that padding. It was therefore measuring the
+  // BACKGROUND BEHIND each component and never its border: a button on the
+  // dark sea passed, an identical button on a cream sheet failed, and neither
+  // verdict had anything to do with the button. Anything "fixed" to satisfy it
+  // was chasing the wrong pixels.
+  const band = 6;
+  const near = (from, to) => L.slice(Math.max(0, from), Math.min(n, to)).some((v) => v < 60);
+  const contour = near(edge - 2, edge + band) && near(n - edge - band, n - edge + 2);
 
   // The interior is everything between the two contours.
-  let top = 0;
+  let top = Math.max(0, edge - 2);
   while (top < n && L[top] < 60) top++;
-  let bottom = n - 1;
+  let bottom = Math.min(n - 1, n - edge + 1);
   while (bottom > top && L[bottom] < 60) bottom--;
   const interior = L.slice(top, bottom + 1);
   if (interior.length < 8) return { ok: false, why: 'no measurable interior', contour };
@@ -170,8 +188,11 @@ for (const component of COMPONENTS) {
       continue;
     }
 
-    // A little above and below, so the extrusion shadow is in frame.
+    // A little above and below, so the extrusion shadow is in frame. The
+    // component itself therefore starts `pad * scale` rows into the column, and
+    // measure() is told so — see the note on the ink contour.
     const pad = 6;
+    const scale = 2;   // the viewport's deviceScaleFactor, below
     const shot = await page.screenshot({
       clip: {
         x: Math.max(0, box.x + box.width / 2 - 1),
@@ -186,7 +207,7 @@ for (const component of COMPONENTS) {
       const i = (y * info.width) * info.channels;
       column.push([data[i], data[i + 1], data[i + 2]]);
     }
-    results.push({ ...component, ...measure(column) });
+    results.push({ ...component, ...measure(column, pad * scale) });
   } catch (err) {
     results.push({ ...component, error: String(err.message || err).slice(0, 80) });
   } finally {
