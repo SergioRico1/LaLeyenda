@@ -52,24 +52,39 @@ export interface ScatterItem {
  * drawn to a canvas, and the palettes are 256px at most after the asset
  * pipeline's resize, so this is a few hundred KB of ImageData per model.
  */
-function readPixels(texture: THREE.Texture | null): { data: Uint8ClampedArray; w: number; h: number } | null {
-  const image = texture?.image as (ImageBitmap | HTMLImageElement | HTMLCanvasElement | undefined);
-  if (!image) return null;
-  const w = (image as ImageBitmap).width;
-  const h = (image as ImageBitmap).height;
-  if (!w || !h) return null;
-  try {
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) return null;
-    ctx.drawImage(image as CanvasImageSource, 0, 0);
-    return { data: ctx.getImageData(0, 0, w, h).data, w, h };
-  } catch {
-    return null;   // a tainted or unreadable texture falls back to material.color
+interface Pixels { data: Uint8ClampedArray; w: number; h: number; flipY: boolean }
+
+const pixelCache = new WeakMap<THREE.Texture, Pixels | null>();
+
+function readPixels(texture: THREE.Texture | null): Pixels | null {
+  if (!texture) return null;
+  const cached = pixelCache.get(texture);
+  if (cached !== undefined) return cached;
+
+  const image = texture.image as (ImageBitmap | HTMLImageElement | HTMLCanvasElement | undefined);
+  const w = (image as ImageBitmap | undefined)?.width ?? 0;
+  const h = (image as ImageBitmap | undefined)?.height ?? 0;
+  let result: Pixels | null = null;
+  if (image && w && h) {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (ctx) {
+        ctx.drawImage(image as CanvasImageSource, 0, 0);
+        result = { data: ctx.getImageData(0, 0, w, h).data, w, h, flipY: texture.flipY };
+      }
+    } catch {
+      result = null;   // a tainted or unreadable texture falls back to material.color
+    }
   }
+  pixelCache.set(texture, result);
+  return result;
 }
+
+/** Wraps a UV coordinate into [0,1) the way RepeatWrapping does. */
+const wrap = (v: number): number => v - Math.floor(v);
 
 /** One model, flattened to a single vertex-coloured geometry with a unit footprint. */
 type Baked = THREE.BufferGeometry;
@@ -128,28 +143,46 @@ async function bake(model: string): Promise<Baked | null> {
         }
 
         albedo.copy(material.color ?? new THREE.Color(0xffffff));
+        let sampled = false;
         if (pixels && uv) {
           // Nearest sample: these are palette atlases where a bilinear tap
           // between two unrelated swatches invents a colour the artist never
           // used. NearestFilter is set on the live material for the same reason.
-          const u = uv.getX(v);
-          const w = 1 - uv.getY(v);
-          const px = Math.min(pixels.w - 1, Math.max(0, Math.floor(u * pixels.w)));
-          const py = Math.min(pixels.h - 1, Math.max(0, Math.floor(w * pixels.h)));
+          //
+          // glTF textures load with flipY = false, so v runs top-down and the
+          // usual 1 - v is exactly wrong. Getting this backwards samples a row
+          // of the atlas the face never referenced, which on these palettes is
+          // transparent padding — every prop came out black.
+          const u = wrap(uv.getX(v));
+          const t = pixels.flipY ? wrap(1 - uv.getY(v)) : wrap(uv.getY(v));
+          const px = Math.min(pixels.w - 1, Math.floor(u * pixels.w));
+          const py = Math.min(pixels.h - 1, Math.floor(t * pixels.h));
           const at = (py * pixels.w + px) * 4;
-          // The map is sRGB-encoded and vertex colours are consumed in the
-          // renderer's working (linear) space, exactly as island.ts converts
-          // its palette. Skipping this washes every prop out.
-          colour.setRGB(pixels.data[at] / 255, pixels.data[at + 1] / 255, pixels.data[at + 2] / 255, THREE.SRGBColorSpace);
-          colour.multiply(albedo);
-        } else {
-          colour.copy(albedo);
+          if (pixels.data[at + 3] > 8) {
+            // The map is sRGB-encoded and vertex colours are consumed in the
+            // renderer's working (linear) space, exactly as island.ts converts
+            // its palette. Skipping this washes every prop out.
+            colour.setRGB(pixels.data[at] / 255, pixels.data[at + 1] / 255, pixels.data[at + 2] / 255, THREE.SRGBColorSpace);
+            colour.multiply(albedo);
+            sampled = true;
+          }
         }
+        if (!sampled) colour.copy(albedo);
         colours.push(colour.r, colour.g, colour.b);
       }
     });
 
     if (!positions.length) return null;
+
+    // A bake that silently sampled the wrong texels renders as a black
+    // silhouette, which is easy to miss among two hundred props and impossible
+    // to miss once it is a number. Anything this dark is a bug, not art.
+    let luma = 0;
+    for (let i = 0; i < colours.length; i += 3) {
+      luma += 0.2126 * colours[i] + 0.7152 * colours[i + 1] + 0.0722 * colours[i + 2];
+    }
+    luma /= colours.length / 3;
+    if (luma < 0.02) console.warn(`[scatter] ${model} baked near-black (luma ${luma.toFixed(3)})`);
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));

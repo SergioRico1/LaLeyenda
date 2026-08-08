@@ -155,7 +155,7 @@ const fragmentShader = /* glsl */ `
     float tone = hash21(cell + 17.0) * 0.52 + hash21(streak + 4.2) * 0.48;
     tone = tone * 0.70 + swell * 0.30;
     tone = clamp(floor(tone * 6.0) / 5.0, 0.0, 1.0);
-    col = mix(mix(col, uDeep, 0.44), mix(col, uCrest, 0.42), tone);
+    col = mix(mix(col, uDeep, 0.58), mix(col, uCrest, 0.56), tone);
 
     // Foam. Density decays exponentially from the shoreline, and a low-frequency
     // mask keeps most of the open ocean clear so the chips read as surf clusters.
@@ -184,23 +184,34 @@ const fragmentShader = /* glsl */ `
     // own exponent into 0.65..0.99 across this camera's frame and would spread
     // the glitter evenly over all of it. toCam.y runs 0.35 at the top of the
     // frame to 0.88 at the bottom, which is the range that needs resolving.
-    float glintZone = smoothstep(0.34, 0.86, max(toCam.y, 0.0)) * uGlitter;
-    float glintPatch = valueNoise(vWorld.xz * 0.115 + uTime * vec2(0.012, 0.004));
-    float glint = glintZone * smoothstep(0.26, 0.62, glintPatch);
+    float glintZone = smoothstep(0.24, 0.70, max(toCam.y, 0.0)) * uGlitter;
 
-    // Chips are sampled at their own CENTRE, so a smooth field read through the
-    // chip grid comes back as blocks that agree with their neighbours. That is
-    // what makes the reference's glitter read as broken wave crests three to six
-    // cells across instead of the even static a per-cell hash gives you.
+    // Chips sit on their own elongated grid, and the density that decides whether
+    // one lights up is sampled at the chip's CENTRE — so a smooth field read
+    // through the chip grid comes back as blocks that agree with their
+    // neighbours. Two scales of it: coarse patches saying which stretches of
+    // water sparkle at all, and a crest field a few chips wide saying which cells
+    // inside a patch catch the light. Without the second one the chips spread
+    // evenly and read as static rather than as broken wave crests.
     vec2 gdrift = vWorld.xz + uTime * vec2(0.16, 0.05);
     vec2 gsize = vec2(uCell * 1.9, uCell * 1.05);
     vec2 gcell = floor(gdrift / gsize);
     vec2 gpos = (gcell + 0.5) * gsize;
-    float crest = valueNoise(gpos * 1.30) * 0.66 + hash21(gcell + 61.0) * 0.34;
-    float dimGlint = step(1.0 - glint * 0.60, crest);
-    // The bright core is drawn from the same field, so it lands INSIDE a dim
-    // plate rather than beside one — a two-tier chip, like the foam.
-    float brightGlint = step(1.0 - glint * 0.27, crest * 0.62 + hash21(gcell + 133.0) * 0.38);
+
+    float glintPatch = valueNoise(vWorld.xz * 0.095 + uTime * vec2(0.010, 0.003));
+    float crest = valueNoise(gpos * 0.85);
+    float glint = glintZone
+                * mix(0.14, 1.22, smoothstep(0.30, 0.64, glintPatch))
+                * mix(0.18, 1.75, smoothstep(0.30, 0.72, crest));
+
+    // Hit tests go against a flat hash, never against the noise itself: value
+    // noise is bell shaped, so thresholding it directly makes coverage collapse
+    // the moment the threshold moves.
+    float dimGlint = step(1.0 - min(glint * 0.95, 0.94), hash21(gcell + 61.0));
+    // The bright core is nested inside a dim plate, on a grid one quarter the
+    // area — a two-tier chip, exactly like the foam.
+    vec2 gfine = floor(gdrift / (gsize * 0.5));
+    float brightGlint = dimGlint * step(0.44, hash21(gfine + 133.0));
 
     vec3 foamDim = mix(uFoamDim, uHorizon, clamp(graze, 0.0, 0.93));
     vec3 foamBright = mix(uFoamBright, uHorizon, clamp(graze, 0.0, 0.93));
@@ -210,7 +221,12 @@ const fragmentShader = /* glsl */ `
     // Water first, then the view ramp, then everything that sits on the surface,
     // so the chips are fogged by exactly the same amount as the water is.
     col = mix(col, uHorizon, clamp(graze, 0.0, 0.93));
-    col = mix(col, uNear, pow(1.0 - graze, 3.0) * 0.55);
+    // The near-camera darkening had the right shape and not enough of it. The
+    // reference's two nearest eighths sit at mean 90-96 with 40-52% of their
+    // pixels below L=55; at 0.55 ours sat at mean 123-130 with 0.2% below 55 —
+    // a bright blue field with white chips on it instead of a navy one. Scaled
+    // by depth, so the turquoise shelf inshore is not dragged down with it.
+    col = mix(col, uNear, pow(1.0 - graze, 3.0) * 0.96 * mix(0.30, 1.0, t));
 
     col = mix(col, glintDim, dimGlint * 0.72);
     col = mix(col, glintBright, brightGlint);
@@ -250,7 +266,7 @@ const PALETTES: Record<WaterPalette, Palette> = {
     ramp: ['#35B1C5', '#2DA7C2', '#2898B6', '#1D92B7', '#0E7AA9', '#066C9D'],
     horizon: '#0A74A2',
     near: '#02205A',
-    deep: '#032F66',
+    deep: '#021F4E',
     crest: '#5CCBDD',
     glintDim: '#A6E1EA',
     glintBright: '#F4FCFF',

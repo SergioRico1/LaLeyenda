@@ -248,7 +248,7 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
     const candidates = cells
       .filter((c) => (c.zone === 'rim' || c.zone === 'beach') && c.toWater >= 1 && free(c))
       .sort((a, b) => a.toWater - b.toWater || key(a.x, a.z) - key(b.x, b.z));
-    const stands = 9;
+    const stands = 6;
     for (let s = 0; s < stands && candidates.length; s++) {
       // Spread the stands around the coast by angle rather than picking at
       // random, so they never all land on one shore.
@@ -266,13 +266,16 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
       }
       if (!best) break;
 
-      const trunks = rng.int(3, 6);
+      const trunks = rng.int(3, 5);
       const near = candidates
         .filter((c) => free(c) && Math.hypot(c.x - best!.x, c.z - best!.z) <= 2.2)
         .slice(0, trunks);
       for (const c of near) {
         const tall = rng.chance(0.45);
-        put(c, tall ? 'tree_palm_tall' : 'tree_palm', rng.range(2.6, 3.9), {
+        // Measured against the reference: a palm crown there spans roughly a
+        // twelfth of the island, not a sixth. At the old 2.6–3.9 the stands
+        // closed into a hedge around the coast and hid the island inside it.
+        put(c, tall ? 'tree_palm_tall' : 'tree_palm', rng.range(1.9, 2.7), {
           jitter: 0.42,
           scaleY: rng.range(0.88, 1.18),
         });
@@ -488,6 +491,130 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
   return plan.items;
 }
 
+/* --------------------------------------------------------------------------
+ * ground cover
+ * ----------------------------------------------------------------------- */
+
+/**
+ * The flowers, tufts and worn edges that stop a buildable plot reading as one
+ * flat rectangle of paint.
+ *
+ * WHY THIS IS NOT A PROP, AND WHY THAT MATTERS
+ *
+ * Everything in `planDecor` is an object, so it obeys the rule at the top of
+ * this file and stays off ground a building could claim. That rule leaves the
+ * empty plots themselves untouched — and empty plots are most of the island's
+ * open ground, which is exactly where the verification found "six unpainted
+ * mid-green rectangles".
+ *
+ * Both things are wanted at once: no object may stand where a building could
+ * go, AND no plot may read as bare paint. The only thing that satisfies both is
+ * cover with no volume and no silhouette. These are flat quads laid two
+ * centimetres above the surface: they cannot be collided with, cannot poke
+ * through a roof, and a building placed on the cell simply covers them the way
+ * its foundation covers the grass underneath. They are texture, not scenery —
+ * the same job island.ts's per-cell colour grain does, at a finer grain than
+ * one cell.
+ *
+ * Sampled off the reference, whose grass is dense with pale flower dots and
+ * whose plot edges wear to dirt where they meet the sand.
+ */
+export function buildGroundCover(shape: IslandShape, seed: string): THREE.Mesh {
+  const rng = new Rng(`${seed}:cover`);
+  const { size, cells } = shape;
+
+  const positions: number[] = [];
+  const colours: number[] = [];
+  const tint = new THREE.Color();
+
+  const quad = (cx: number, cy: number, cz: number, r: number, yaw: number, colour: number) => {
+    const c = Math.cos(yaw) * r;
+    const s = Math.sin(yaw) * r;
+    // Two triangles, flat on the ground, rotated about y.
+    const a = [cx - c + s, cy, cz - s - c];
+    const b = [cx + c + s, cy, cz + s - c];
+    const d = [cx + c - s, cy, cz + s + c];
+    const e = [cx - c - s, cy, cz - s + c];
+    positions.push(...a, ...b, ...d, ...a, ...d, ...e);
+    tint.setHex(colour, THREE.SRGBColorSpace);
+    for (let i = 0; i < 6; i++) colours.push(tint.r, tint.g, tint.b);
+  };
+
+  const at = (x: number, z: number) => (x < 0 || z < 0 || x >= size || z >= size ? null : cells[z * size + x]);
+
+  // Pale flower heads and a darker tuft, the two things the reference's grass is
+  // covered in. The dirt is for the worn edge where a plot meets its drop.
+  const FLOWERS = [0xf3f0e2, 0xfaf6de, 0xe8ecd2, 0xfff3c4];
+  const TUFTS = [0x7ea436, 0x86ad3c, 0x6f9530];
+  const WORN = [0xc9a86a, 0xbf9a5c];
+
+  for (let z = 0; z < size; z++) {
+    for (let x = 0; x < size; x++) {
+      const cell = cells[z * size + x];
+      if (cell.height <= 0) continue;
+      const y = cell.height * STEP + 0.02;
+      const x0 = x * CELL - (size * CELL) / 2 + CELL / 2;
+      const z0 = z * CELL - (size * CELL) / 2 + CELL / 2;
+
+      if (cell.material === 'grass') {
+        // Dense enough to read as a meadow at the island's on-screen size and
+        // never so regular that the grid shows through.
+        const dots = rng.int(5, 9);
+        for (let i = 0; i < dots; i++) {
+          const px = x0 + rng.range(-0.46, 0.46) * CELL;
+          const pz = z0 + rng.range(-0.46, 0.46) * CELL;
+          const flower = rng.chance(0.55);
+          quad(
+            px, y, pz,
+            flower ? rng.range(0.035, 0.06) : rng.range(0.07, 0.13),
+            rng.range(0, Math.PI / 2),
+            flower ? rng.pick(FLOWERS) : rng.pick(TUFTS)
+          );
+        }
+        // Where the plot steps down, its lip wears to earth.
+        const edge = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => {
+          const n = at(x + dx, z + dz);
+          return !n || n.height < cell.height;
+        });
+        if (edge) {
+          for (let i = 0; i < rng.int(2, 4); i++) {
+            quad(
+              x0 + rng.range(-0.48, 0.48) * CELL, y, z0 + rng.range(-0.48, 0.48) * CELL,
+              rng.range(0.1, 0.2), rng.range(0, Math.PI / 2), rng.pick(WORN)
+            );
+          }
+        }
+      } else {
+        // Sand: sparse pebbles and shell grit, so the plaza is not a blank sheet
+        // either. Much thinner than the grass — the reference's sand is open.
+        if (!rng.chance(0.55)) continue;
+        for (let i = 0; i < rng.int(1, 3); i++) {
+          quad(
+            x0 + rng.range(-0.45, 0.45) * CELL, y, z0 + rng.range(-0.45, 0.45) * CELL,
+            rng.range(0.05, 0.11), rng.range(0, Math.PI / 2),
+            rng.pick([0xd6c9a4, 0xcfc09a, 0xe8dfc6, 0xc4b58c])
+          );
+        }
+      }
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colours, 3));
+  // Every quad faces straight up, so the normal is a constant and does not need
+  // to be derived per vertex.
+  const normals = new Float32Array(positions.length);
+  for (let i = 1; i < normals.length; i += 3) normals[i] = 1;
+  geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+  geometry.computeBoundingSphere();
+
+  const mesh = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({ vertexColors: true }));
+  mesh.name = 'ground_cover';
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
 /**
  * The satellite islets island_hero.png sets around its island.
  *
@@ -504,50 +631,58 @@ export function planIslets(shape: IslandShape, seed: string): ScatterItem[] {
   // Placed by hand rather than scattered: three islets, off three different
   // shores, at distances that keep them clear of the island's own beach.
   const spots = [
-    { x: -half - 9.5, z: -2.5, r: 0.9 },
-    { x: 4.5, z: -half - 8.5, r: 0.7 },
-    { x: half + 8.5, z: 7.5, r: 0.8 },
+    { x: -half - 10.5, z: -1.5, r: 1.0 },
+    { x: 3.5, z: -half - 9.5, r: 0.75 },
+    { x: half + 9.5, z: 8.5, r: 0.85 },
   ];
 
+  // deco_sandmound is 32 x 3 x 32 in its own units and `fit` normalizes by the
+  // widest axis, so a mound of width w stands (3/32)·w tall. Everything on top
+  // of it has to be lifted by exactly that or it is buried in the sand.
+  const MOUND_ASPECT = 3 / 32;
+
   for (const spot of spots) {
-    const base = new THREE.Vector3(spot.x, waterline - 0.18, spot.z);
+    const width = 8.5 * spot.r;
+    const squash = 2.2;
+    const base = new THREE.Vector3(spot.x, waterline - 0.3, spot.z);
+    const top = base.y + MOUND_ASPECT * width * squash;
     items.push({
       model: 'deco_sandmound',
       position: base.clone(),
       rotationY: rng.range(0, Math.PI * 2),
-      scale: 7.5 * spot.r,
-      scaleY: 2.4,
+      scale: width,
+      scaleY: squash,
     });
     const palms = rng.int(2, 3);
     for (let i = 0; i < palms; i++) {
       const angle = rng.range(0, Math.PI * 2);
-      const reach = rng.range(0.3, 1.5) * spot.r;
+      const reach = rng.range(0.3, 1.4) * spot.r;
       items.push({
         model: rng.chance(0.5) ? 'tree_palm_tall' : 'tree_palm',
         position: new THREE.Vector3(
           base.x + Math.cos(angle) * reach,
-          base.y + 0.18,
+          top,
           base.z + Math.sin(angle) * reach
         ),
         rotationY: rng.range(0, Math.PI * 2),
-        scale: rng.range(2.4, 3.4),
+        scale: rng.range(2.0, 2.8),
         scaleY: rng.range(0.9, 1.1),
       });
     }
     items.push({
       model: rng.chance(0.5) ? 'deco_rock_lg' : 'deco_rock_sm',
       position: new THREE.Vector3(
-        base.x + rng.range(-2, 2) * spot.r,
-        base.y + 0.1,
-        base.z + rng.range(-2, 2) * spot.r
+        base.x + rng.range(-1.8, 1.8) * spot.r,
+        top,
+        base.z + rng.range(-1.8, 1.8) * spot.r
       ),
       rotationY: rng.range(0, Math.PI * 2),
-      scale: rng.range(1.8, 2.8),
+      scale: rng.range(1.4, 2.2),
     });
     if (rng.chance(0.7)) {
       items.push({
         model: rng.pick(['deco_bush', 'deco_bush_alt']),
-        position: new THREE.Vector3(base.x + rng.range(-1.6, 1.6), base.y + 0.18, base.z + rng.range(-1.6, 1.6)),
+        position: new THREE.Vector3(base.x + rng.range(-1.6, 1.6), top, base.z + rng.range(-1.6, 1.6)),
         rotationY: rng.range(0, Math.PI * 2),
         scale: rng.range(0.8, 1.2),
       });

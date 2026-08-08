@@ -7,7 +7,7 @@ import {
 } from '../render/island';
 import { createGhost, type Ghost } from '../render/ghost';
 import { buildScatter } from '../render/scatter';
-import { DECOR_MODELS, planDecor, planIslets } from './decor';
+import { DECOR_MODELS, buildGroundCover, planDecor, planIslets } from './decor';
 import { instantiate, preload } from '../render/assets';
 import { Rng } from '../core/rng';
 import { createGame, type Game } from '../core/game';
@@ -54,7 +54,6 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
   const shot = params.get('shot') === '1';
 
   const shape = generateIsland(seed, 26);
-  const rng = new Rng(`${seed}:decor`);
   const mixers: THREE.AnimationMixer[] = [];
 
   const terrain = buildIslandMesh(shape, `${seed}:grain`);
@@ -141,32 +140,27 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
   }
   await syncBuildings();
 
-  // Palms and undergrowth on any free grass, thickest around the coast.
-  const decorSlots: Array<{ x: number; z: number }> = [];
-  const occupied = game.state().buildings.map((b) => ({ ...b, footprint: buildingSpec(b.type).footprint }));
-  for (let z = 0; z < shape.size; z++) {
-    for (let x = 0; x < shape.size; x++) {
-      const cell = shape.cells[z * shape.size + x];
-      if (!cell.buildable) continue;
-      const nearBuilding = occupied.some(
-        (b) => Math.abs(b.x - x) < b.footprint * 0.8 && Math.abs(b.z - z) < b.footprint * 0.8
-      );
-      if (!nearBuilding) decorSlots.push({ x, z });
-    }
-  }
-
-  for (const slot of parts.has('decor') ? decorSlots : []) {
-    if (!rng.chance(0.09)) continue;
-    const model = rng.pick(DECOR);
-    const footprint = model.startsWith('tree') ? rng.range(3.2, 4.4) : rng.range(1.2, 1.8);
-    const inst = await instantiate(model, { fit: footprint });
-    const pos = cellToWorld(shape, slot.x, slot.z);
-    inst.object.position.x += pos.x + rng.range(-0.3, 0.3);
-    inst.object.position.z += pos.z + rng.range(-0.3, 0.3);
-    inst.object.position.y += pos.y;
-    inst.object.rotation.y = rng.range(0, Math.PI * 2);
-    stage.scene.add(inst.object);
-    if (inst.mixer) mixers.push(inst.mixer);
+  /* --- the dressing -------------------------------------------------------
+   *
+   * The composition lives in decor.ts, which asks the SIM which ground a future
+   * building could claim and plants only on what is left. It comes back as a
+   * flat list of props, and every one of them is static, so the whole island's
+   * dressing is drawn as one InstancedMesh per distinct model rather than one
+   * scene node per prop — see render/scatter.ts for why that distinction is the
+   * difference between a packed island and a draw-call budget. */
+  if (parts.has('decor')) {
+    const props = [
+      ...planDecor(shape, game.state(), seed),
+      ...planIslets(shape, seed),
+    ];
+    const scatter = await buildScatter(props);
+    stage.scene.add(scatter);
+    // Ground cover is flat and belongs to the terrain rather than the prop list
+    // — it is what lets an EMPTY buildable plot read as prepared ground without
+    // putting an object on ground a building could claim. See decor.ts.
+    const cover = buildGroundCover(shape, seed);
+    stage.scene.add(cover);
+    console.log(`[decor] ${props.length} props in ${scatter.children.length} draw calls, +1 ground cover`);
   }
 
   // The player's ship, moored off the dock.
