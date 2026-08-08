@@ -16,22 +16,18 @@ These run on every change. A red gate is a blocker, not a finding.
 - [x] `npm run shoot -- island --mobile` captures without console errors
 - [x] `npm run shoot -- island --mobile --act <every act>` — each scripted
       interaction still reaches its feature
-- [~] `npm run audit:layers` — the tool is repaired twice over; four findings
-      remain. It had THREE faults: 7 of 11 selectors matched nothing; the
-      ink-contour test searched the clip's padding instead of the component, so
-      it measured the background behind each object; and the gloss test asked
-      for a DEEP step (≤0.62) on a note claiming Clash sits near 0.47. Measured
-      off reference/clash/coc_speedup.jpg, Clash's green CTA steps 192 -> 161 —
-      a ratio of 0.84, the same as ours. The 0.47 came from columns crossing the
-      button's text and gem art. What the rule actually asks for is two planes
-      MEETING: Clash's face runs 1.0 luminance per row then falls 20.0 in one,
-      twenty times over. The test now measures that sharpness, and every button
-      we ship passes at 22x to 301x. Remaining: the timer capsule has no lip
-      (a LAYOUT_SPEC item 3 conflict to decide, not a bug), and the objective
-      row, picker row CTA and close button read as having no warm rim — worth
-      checking against the reference before acting, since two of this tool's
-      three tests were already wrong. Three more components (builder chip,
-      badge, chest slot) need a save state that shows them.
+- [~] `npm run audit:layers` — 9 of 10 components clean, one real finding.
+      This tool was wrong in four different ways and every one of them pointed
+      at innocent code: stale selectors (7 of 11 matched nothing); an ink test
+      that searched the clip's padding and so measured the BACKGROUND; a gloss
+      test demanding a depth the reference itself fails (Clash's own CTA steps
+      0.84, same as ours — the cited 0.47 came from columns crossing its text);
+      and a single centre column that ran through each component's artwork, so
+      a white close-cross or a label became the "face" it compared the rim
+      against. It now samples across the width and credits a layer if any
+      column shows it, because art can hide a layer but never invent one.
+      Remaining: `.pick-row__go` has no warm rim. Three components (builder
+      chip, badge, chest slot) still need a save state that shows them.
 - [x] `npm run audit:sea` — sea texture against the reference, HUD excluded
 
 ## 1 · Your island — PLAN.md Fase 1

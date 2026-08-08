@@ -109,10 +109,18 @@ function measure(column, edge = 0) {
   const interior = L.slice(top, bottom + 1);
   if (interior.length < 8) return { ok: false, why: 'no measurable interior', contour };
 
-  // 2. Warm rim: a bright row in the first few interior rows, above the face.
-  const face = interior.slice(3, Math.max(4, Math.floor(interior.length * 0.4)));
+  // 2. Warm rim: a bright band in the first interior rows, above the face.
+  //
+  // Sized to the rim we actually draw. Every raised surface carries
+  // `inset 0 2px 0 var(--ui-rim)`, which at the audit's 2x device scale is FOUR
+  // rows, plus one of antialiasing against the 3px ink border above it. Looking
+  // at three rows could miss it entirely and report a rim-less button that has
+  // a rim — the same class of off-by-a-few-pixels error as the contour test
+  // that was reading the background.
+  const rimBand = 5;
+  const face = interior.slice(rimBand, Math.max(rimBand + 1, Math.floor(interior.length * 0.4)));
   const faceMean = face.reduce((a, b) => a + b, 0) / face.length;
-  const rimPeak = Math.max(...interior.slice(0, 3));
+  const rimPeak = Math.max(...interior.slice(0, rimBand));
   const rim = rimPeak > faceMean + 12;
 
   // 3. Hard gloss step — measured as SHARPNESS, not depth.
@@ -208,21 +216,57 @@ for (const component of COMPONENTS) {
     // measure() is told so — see the note on the ink contour.
     const pad = 6;
     const scale = 2;   // the viewport's deviceScaleFactor, below
+
+    // MANY columns, not one.
+    //
+    // A single column through the middle runs straight through whatever the
+    // component is showing — a white close-cross, a label, an icon — and the
+    // face mean it computes is then the artwork's, not the face's. That is how
+    // .sheet__x and .pick-row__go came to be reported as having no warm rim
+    // while .sheet__cta, the same .btn with the same rim, passed: the only
+    // difference was what happened to be drawn down the centre.
+    //
+    // Artwork can HIDE a layer; it cannot invent one. So each layer is credited
+    // if any column shows it, and the sharpest step found anywhere is the step.
+    // The outer 18% is skipped because the corner radius eats the contour there.
+    const inset = box.width * 0.18;
+    const usable = Math.max(1, box.width - inset * 2);
     const shot = await page.screenshot({
       clip: {
-        x: Math.max(0, box.x + box.width / 2 - 1),
+        x: Math.max(0, box.x + inset),
         y: Math.max(0, box.y - pad),
-        width: 2,
+        width: Math.max(2, usable),
         height: box.height + pad * 2,
       },
     });
     const { data, info } = await sharp(shot).raw().toBuffer({ resolveWithObject: true });
-    const column = [];
-    for (let y = 0; y < info.height; y++) {
-      const i = (y * info.width) * info.channels;
-      column.push([data[i], data[i + 1], data[i + 2]]);
+
+    const reads = [];
+    const columns = Math.min(15, Math.max(3, Math.floor(info.width / 6)));
+    for (let c = 0; c < columns; c++) {
+      const x = Math.min(info.width - 1, Math.round(((c + 0.5) / columns) * info.width));
+      const column = [];
+      for (let y = 0; y < info.height; y++) {
+        const i = (y * info.width + x) * info.channels;
+        column.push([data[i], data[i + 1], data[i + 2]]);
+      }
+      const read = measure(column, pad * scale);
+      if (read.contour !== undefined) reads.push(read);
     }
-    results.push({ ...component, ...measure(column, pad * scale) });
+    if (!reads.length) {
+      results.push({ ...component, ok: false, why: 'no measurable column' });
+      continue;
+    }
+    const best = {
+      contour: reads.some((r) => r.contour),
+      rim: reads.some((r) => r.rim),
+      step: reads.some((r) => r.step),
+      lip: reads.some((r) => r.lip),
+      stepRatio: Math.max(...reads.map((r) => r.stepRatio ?? 0)),
+      height: Math.max(...reads.map((r) => r.height ?? 0)),
+      columns: reads.length,
+    };
+    results.push({ ...component, ...best, ok: best.contour && best.rim && best.step && best.lip });
   } catch (err) {
     results.push({ ...component, error: String(err.message || err).slice(0, 80) });
   } finally {
