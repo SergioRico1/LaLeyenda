@@ -188,6 +188,21 @@ export const DECOR_MODELS = [
   'deco_sandmound', 'deco_starfish', 'harv_cotton',
 ] as const;
 
+/**
+ * Props that do not go into the shadow map.
+ *
+ * Everything ankle-high. These models are 600–1 200 triangles each and there
+ * are two hundred of them, so the shadow pass was doubling the layer's whole
+ * vertex cost to draw smudges under shrubs that are already in the shade of
+ * whatever they are banked against. The things whose shadows actually read —
+ * palms, rocks, driftwood, totems, the posts — keep theirs.
+ */
+const NO_SHADOW = new Set([
+  'deco_bush', 'deco_bush_alt', 'deco_fern', 'deco_plant', 'deco_hedge',
+  'deco_crate', 'deco_crate_red', 'deco_barrel', 'deco_starfish', 'harv_cotton',
+  'deco_sandmound',
+]);
+
 interface Plan {
   items: ScatterItem[];
   /** Cells already spoken for, so two passes never stack props on one spot. */
@@ -295,7 +310,7 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
         if (!rng.chance(0.7)) continue;
         const at = cellToWorld(shape, c.x, c.z);
         plan.items.push({
-          model: rng.pick(['deco_bush', 'deco_bush_alt', 'deco_fern', 'deco_plant']),
+          model: rng.pick(['deco_hedge', 'deco_hedge', 'deco_plant', 'deco_fern', 'deco_bush']),
           position: new THREE.Vector3(
             at.x + rng.range(-0.45, 0.45) * CELL,
             at.y,
@@ -325,7 +340,7 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
       } else if (r < 0.34) {
         put(c, 'deco_starfish', rng.range(0.5, 0.8), { jitter: 0.4 });
       } else if (r < 0.42) {
-        put(c, rng.pick(['deco_bush', 'deco_bush_alt']), rng.range(0.7, 1.0), { jitter: 0.35 });
+        put(c, rng.pick(['deco_hedge', 'deco_hedge', 'deco_bush_alt']), rng.range(0.7, 1.0), { jitter: 0.35 });
       }
     }
   }
@@ -340,12 +355,15 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
     for (const c of apron) {
       const r = rng.next();
       if (r < 0.34) {
-        // A bank of three or four, not one — the reference plants them in runs.
+        // A bank of three, not one — the reference plants them in runs. Kept to
+        // three rather than five: these shrubs are ~1 200 triangles apiece and
+        // the fourth and fifth of a clump are almost entirely hidden by the
+        // first three at this camera angle.
         const at = cellToWorld(shape, c.x, c.z);
-        const n = rng.int(3, 5);
+        const n = rng.int(2, 3);
         for (let i = 0; i < n; i++) {
           plan.items.push({
-            model: rng.pick(['deco_bush', 'deco_bush_alt', 'deco_hedge', 'deco_plant', 'deco_fern']),
+            model: rng.pick(['deco_hedge', 'deco_hedge', 'deco_plant', 'deco_bush', 'deco_fern']),
             position: new THREE.Vector3(
               at.x + rng.range(-0.46, 0.46) * CELL,
               at.y,
@@ -445,7 +463,7 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
         const at = cellToWorld(shape, c.x, c.z);
         for (let i = 0; i < rng.int(2, 4); i++) {
           plan.items.push({
-            model: rng.pick(['deco_bush', 'deco_bush_alt', 'deco_hedge', 'harv_cotton']),
+            model: rng.pick(['deco_hedge', 'deco_hedge', 'harv_cotton', 'deco_bush_alt']),
             position: new THREE.Vector3(
               at.x + rng.range(-0.45, 0.45) * CELL, at.y, at.z + rng.range(-0.45, 0.45) * CELL
             ),
@@ -510,7 +528,9 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
     }
   }
 
-  return plan.items;
+  // Applied once here rather than at each push site, so a pass added later
+  // cannot forget it.
+  return plan.items.map((item) => ({ ...item, castShadow: !NO_SHADOW.has(item.model) }));
 }
 
 /* --------------------------------------------------------------------------
@@ -720,12 +740,12 @@ export function planIslets(shape: IslandShape, seed: string): ScatterItem[] {
     });
     if (rng.chance(0.7)) {
       items.push({
-        model: rng.pick(['deco_bush', 'deco_bush_alt']),
+        model: rng.pick(['deco_hedge', 'deco_hedge', 'deco_bush_alt']),
         position: new THREE.Vector3(base.x + rng.range(-1.6, 1.6), top, base.z + rng.range(-1.6, 1.6)),
         rotationY: rng.range(0, Math.PI * 2),
         scale: rng.range(0.8, 1.2),
       });
     }
   }
-  return items;
+  return items.map((item) => ({ ...item, castShadow: !NO_SHADOW.has(item.model) }));
 }

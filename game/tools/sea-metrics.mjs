@@ -5,14 +5,20 @@
  *
  *   node tools/sea-metrics.mjs reference/island_hero.png shots/sea_before.png
  *
- * Segmentation: a strong-blue seed mask, morphologically closed so foam chips and
- * sun glitter (which are white, not blue) count as sea rather than punching holes
- * in it. The close is masked off warm pixels so it cannot eat into the sand.
+ * Segmentation: seed sea from strong blue and land from anything warm or green,
+ * then hand every leftover pixel — foam, sun glitter, whitecaps, all of which are
+ * white rather than blue — to whichever seed dominates its neighbourhood. A
+ * one-sided fill would quietly punish whichever image has the BIGGER bright
+ * chips, which is exactly the quantity being compared.
  *
  * Reported per image:
  *   sea      share of the frame that is water
  *   stddev   luminance standard deviation across the sea
  *   detail   share of sea pixels whose Sobel gradient exceeds --grad (default 14)
+ *
+ * --bands adds the same figures per eighth of the frame, far edge to near one.
+ * That is the row that matters: the reference runs sd 20 at the top to sd 74 at
+ * the bottom, and a whole-frame average can hide a sea that is flat at both ends.
  *
  * Gradients are scale sensitive, so every image is measured at the same width
  * (--w, default 430 — the phone frame we actually ship). The 1600px reference is
@@ -45,24 +51,25 @@ async function measure(file) {
     .toBuffer({ resolveWithObject: true });
 
   const n = w * h;
-  const seed = new Uint8Array(n);   // unambiguously blue water
-  const warm = new Uint8Array(n);   // sand, wood, grass, skin — never water
+  const wet = new Uint8Array(n);    // unambiguously blue water
+  const dry = new Uint8Array(n);    // sand, wood, grass, foliage — never water
   const L = new Float32Array(n);
 
   for (let i = 0; i < n; i++) {
     const r = data[i * 3], g = data[i * 3 + 1], b = data[i * 3 + 2];
     L[i] = lum(r, g, b);
-    if (b > r + 25 && b > 45) seed[i] = 1;
-    if (r > b + 18 || (g > r + 18 && g > b + 18)) warm[i] = 1;
+    if (b > r + 25 && b > 45) wet[i] = 1;
+    else if (r > b + 18 || (g > r + 18 && g > b + 18)) dry[i] = 1;
   }
 
-  // Morphological close on the seed, done as a separable box mean: a pixel that
-  // is not blue but sits inside a blue neighbourhood is foam, not land.
-  const R = Math.max(2, Math.round(w / 160));
-  const blur = boxMean(seed, w, h, R);
+  // Everything still unclaimed is white or near-white — foam, glitter, a gull —
+  // and goes to whichever seed wins its neighbourhood.
+  const R = Math.max(3, Math.round(w / 40));
+  const nearWet = boxMean(wet, w, h, R);
+  const nearDry = boxMean(dry, w, h, R);
   const sea = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
-    sea[i] = seed[i] || (blur[i] > 0.55 && !warm[i]) ? 1 : 0;
+    sea[i] = wet[i] || (!dry[i] && nearWet[i] > nearDry[i]) ? 1 : 0;
   }
 
   // Statistics over the sea only, and gradients only where the whole 3x3 stencil
@@ -96,6 +103,26 @@ async function measure(file) {
   }
 
   const mean = sum / count;
+
+  // Per-eighth, far edge to near one.
+  const bands = [];
+  const bh = Math.ceil(h / 8);
+  for (let y0 = 0; y0 < h; y0 += bh) {
+    let s = 0, s2 = 0, c = 0, bright = 0, dark = 0;
+    for (let y = y0; y < Math.min(h, y0 + bh); y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        if (!sea[i]) continue;
+        s += L[i]; s2 += L[i] * L[i]; c++;
+        if (L[i] > 200) bright++;
+        if (L[i] < 55) dark++;
+      }
+    }
+    if (c < 1500) { bands.push(null); continue; }
+    const m = s / c;
+    bands.push({ mean: m, sd: Math.sqrt(s2 / c - m * m), bright: (100 * bright) / c, dark: (100 * dark) / c });
+  }
+
   return {
     file,
     size: `${w}x${h}`,
@@ -103,6 +130,7 @@ async function measure(file) {
     mean,
     stddev: Math.sqrt(sum2 / count - mean * mean),
     detail: (100 * detail) / gradCount,
+    bands,
   };
 }
 
@@ -142,4 +170,15 @@ for (const r of rows) {
     `${pad(r.file, 34)} ${pad(r.size, 10)} ${pad(r.seaShare.toFixed(1), 8)} ` +
     `${pad(r.mean.toFixed(1), 8)} ${pad(r.stddev.toFixed(1), 8)} ${r.detail.toFixed(1)}`
   );
+}
+
+if (argv.includes('--bands')) {
+  for (const r of rows) {
+    console.log(`\n${r.file}   far -> near, by eighth`);
+    const cell = (b, get) => pad(b ? get(b) : '—', 7);
+    console.log('  sd      ' + r.bands.map((b) => cell(b, (x) => x.sd.toFixed(0))).join(''));
+    console.log('  mean    ' + r.bands.map((b) => cell(b, (x) => x.mean.toFixed(0))).join(''));
+    console.log('  L>200   ' + r.bands.map((b) => cell(b, (x) => x.bright.toFixed(0) + '%')).join(''));
+    console.log('  L<55    ' + r.bands.map((b) => cell(b, (x) => x.dark.toFixed(0) + '%')).join(''));
+  }
 }

@@ -69,6 +69,23 @@ try {
   const stats = await page.evaluate(() => window.laLeyenda.stats());
   const budget = 100;
   for (const [k, v] of Object.entries(stats)) console.log(`  ${k.padEnd(11)} ${v}`);
+
+  // Frame cost. This runs on SwiftShader, a CPU rasteriser, so the absolute
+  // milliseconds mean nothing about a phone — only the RATIO between two runs
+  // is signal. Compare `--parts terrain,buildings,ship` against the full scene
+  // to price a layer.
+  const ms = await page.evaluate(() => {
+    const canvas = document.querySelector('canvas');
+    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+    const px = new Uint8Array(4);
+    const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    window.__step(8); sync();                 // warm the pipeline
+    const t0 = performance.now();
+    window.__step(30); sync();                // readPixels blocks on the GPU
+    return (performance.now() - t0) / 30;
+  });
+  console.log(`  ${'ms/frame'.padEnd(11)} ${ms.toFixed(1)}  (SwiftShader — ratios only)`);
+
   console.log(`\ndraw calls ${stats.calls} / ${budget} — ${stats.calls <= budget ? 'OK' : 'OVER BUDGET'}`);
   if (stats.calls > budget) exitCode = 1;
 } catch (e) {

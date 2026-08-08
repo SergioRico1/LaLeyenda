@@ -43,6 +43,17 @@ export interface ScatterItem {
   scaleY?: number;
   /** Multiplies the baked albedo, for per-instance variation. */
   tint?: THREE.Color;
+  /**
+   * Whether this prop is drawn into the shadow map. Defaults to true.
+   *
+   * Read from the FIRST item of each model, because instancing gives a model
+   * one mesh and a mesh one castShadow flag — it is a property of the model,
+   * not of the placement. It is worth having: these are VoxEdit exports at
+   * roughly 1 200 triangles for a shrub, and the shadow pass draws every one of
+   * them a second time. Turning it off for the ankle-high props costs a shadow
+   * nobody can find and buys back most of the layer's vertex cost.
+   */
+  castShadow?: boolean;
 }
 
 /**
@@ -54,11 +65,25 @@ export interface ScatterItem {
  */
 interface Pixels { data: Uint8ClampedArray; w: number; h: number; flipY: boolean }
 
-const pixelCache = new WeakMap<THREE.Texture, Pixels | null>();
+/**
+ * ONE scratch canvas for every texture ever read, reused and resized.
+ *
+ * This started as a `document.createElement('canvas')` per texture, which is a
+ * couple of hundred of them across the decoration set — one per voxel part, and
+ * a bush alone has 26. Each is GPU-backed and none was ever released, and the
+ * cost did not show up as an error: the island rendered on its own and rendered
+ * with the HUD, but the two together silently lost the WebGL context and the
+ * capture came back as a single flat blue. A blank frame with no stack is
+ * exactly what running the browser out of canvas memory looks like.
+ */
+let scratch: HTMLCanvasElement | null = null;
 
-function readPixels(texture: THREE.Texture | null): Pixels | null {
+function readPixels(
+  texture: THREE.Texture | null,
+  cache: Map<THREE.Texture, Pixels | null>
+): Pixels | null {
   if (!texture) return null;
-  const cached = pixelCache.get(texture);
+  const cached = cache.get(texture);
   if (cached !== undefined) return cached;
 
   const image = texture.image as (ImageBitmap | HTMLImageElement | HTMLCanvasElement | undefined);
@@ -67,11 +92,12 @@ function readPixels(texture: THREE.Texture | null): Pixels | null {
   let result: Pixels | null = null;
   if (image && w && h) {
     try {
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      scratch ??= document.createElement('canvas');
+      scratch.width = w;
+      scratch.height = h;
+      const ctx = scratch.getContext('2d', { willReadFrequently: true });
       if (ctx) {
+        ctx.clearRect(0, 0, w, h);
         ctx.drawImage(image as CanvasImageSource, 0, 0);
         result = { data: ctx.getImageData(0, 0, w, h).data, w, h, flipY: texture.flipY };
       }
@@ -79,7 +105,7 @@ function readPixels(texture: THREE.Texture | null): Pixels | null {
       result = null;   // a tainted or unreadable texture falls back to material.color
     }
   }
-  pixelCache.set(texture, result);
+  cache.set(texture, result);
   return result;
 }
 
@@ -103,6 +129,11 @@ async function bake(model: string): Promise<Baked | null> {
     const source = await instantiate(model, { fit: 1 });
     source.object.updateWorldMatrix(false, true);
 
+    // Scoped to this one model: its parts share a handful of palette textures,
+    // so caching pays, but holding every decoded atlas for the life of the page
+    // would be tens of megabytes of ImageData nothing reads again.
+    const pixelCache = new Map<THREE.Texture, Pixels | null>();
+
     const positions: number[] = [];
     const normals: number[] = [];
     const colours: number[] = [];
@@ -121,7 +152,7 @@ async function bake(model: string): Promise<Baked | null> {
       if (!position) return;
 
       const material = (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) as THREE.MeshStandardMaterial;
-      const pixels = readPixels(material.map ?? null);
+      const pixels = readPixels(material.map ?? null, pixelCache);
       const uv = geometry.getAttribute('uv');
       const sourceNormal = geometry.getAttribute('normal');
       const index = geometry.getIndex();
@@ -229,7 +260,7 @@ export async function buildScatter(items: readonly ScatterItem[]): Promise<THREE
     const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
     const mesh = new THREE.InstancedMesh(geometry, material, list.length);
     mesh.name = `scatter_${model}`;
-    mesh.castShadow = true;
+    mesh.castShadow = list[0].castShadow !== false;
     mesh.receiveShadow = true;
     // The island is always fully in frame, and a per-instance bounding volume
     // would be the only way to cull usefully — not worth the per-frame cost.
