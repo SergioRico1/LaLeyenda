@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "test": "node tools/test.mjs",
     "preview": "vite preview",
     "assets:fetch": "node tools/fetch-assets.mjs",
     "assets:optimize": "node tools/optimize.mjs",

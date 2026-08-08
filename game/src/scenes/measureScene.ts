@@ -31,7 +31,10 @@ export async function createMeasureScene(
   // Silhouette only: unlit white so any covered pixel is unambiguous.
   stage.scene.remove(stage.sun);
 
-  const inst = await instantiate(id, fit !== undefined ? { fit, clip } : {});
+  // The clip must be honoured whether or not a fit was asked for: calibration
+  // measures each clip at scale 1, and these clips move parts far enough apart
+  // to change the model's extent several times over.
+  const inst = await instantiate(id, { ...(fit !== undefined ? { fit } : {}), ...(clip ? { clip } : {}) });
   inst.object.traverse((child) => {
     const mesh = child as THREE.Mesh;
     if (mesh.isMesh) {

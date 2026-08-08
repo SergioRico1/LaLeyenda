@@ -1,45 +1,43 @@
 import * as THREE from 'three';
 import { Stage } from '../render/stage';
 import { Water } from '../render/water';
-import { generateIsland, buildIslandMesh, buildShoreSDF, cellToWorld, STEP, CELL } from '../render/island';
+import { generateIsland, buildIslandMesh, buildShoreSDF, cellToWorld, STEP, CELL, type IslandShape } from '../render/island';
 import { instantiate, preload } from '../render/assets';
 import { Rng } from '../core/rng';
-import { createHud } from '../ui/hud';
-import { MOCK_HUD, MOCK_WORLD } from '../ui/mockState';
+import { createGame, type Game } from '../core/game';
+import {
+  BALANCE, buildingSpec, claimDaily, claimFreeChest, claimQuest, collect, collectAll, openChest,
+  placeable, questComplete, startChest, startUpgrade, upgradePlan, type GameState,
+} from '../sim';
+import { createHud, type Hud } from '../ui/hud';
+import { buildingIdOf, toHudState, toWorldItems } from '../ui/present';
 
-/** The home island: the builder scene, seen from the Clash-of-Clans style camera. */
+/** The home island: the builder scene, seen from the Clash-of-Clans style camera.
+ *
+ *  The island layout is **data, not scene** (PLAN.md's third multiplayer rule):
+ *  everything below is built from `game.state().buildings`, so attacking someone
+ *  else's island would one day be loading their JSON instead of yours. */
 
-interface Placement {
-  model: string;
-  x: number;
-  z: number;
-  footprint: number;
-  clip?: string;
-}
+const DECOR = ['tree_palm', 'tree_palm_tall', 'deco_bush', 'deco_fern'] as const;
 
-const BUILDINGS: Placement[] = [
-  { model: 'bldg_townhall', x: 13, z: 11, footprint: 6, clip: 'idle' },
-  { model: 'bldg_marketplace', x: 18, z: 9, footprint: 5, clip: 'idle' },
-  { model: 'bldg_foundry', x: 19, z: 14, footprint: 5, clip: 'idle' },
-  { model: 'bldg_distillery', x: 8, z: 14, footprint: 5 },
-  { model: 'bldg_shipwright', x: 9, z: 18, footprint: 5 },
-  { model: 'bldg_docks', x: 22, z: 18, footprint: 7, clip: 'idle' },
-  { model: 'bldg_bank', x: 14, z: 17, footprint: 4 },
-  { model: 'bldg_tikibar', x: 16, z: 20, footprint: 4 },
-  { model: 'bldg_windmill', x: 8, z: 9, footprint: 5, clip: 'idle' },
-  { model: 'bldg_workshop', x: 13, z: 7, footprint: 5, clip: 'idle' },
-];
-
+/** Every model the island can need, so preload() gets one pass. */
 export const ISLAND_MODELS = [
-  ...BUILDINGS.map((b) => b.model),
-  'tree_palm', 'tree_palm_tall', 'deco_bush', 'deco_fern', 'ship_skiff', 'chest_bandit',
+  ...new Set(Object.values(BALANCE.buildings).map((b) => b.model)),
+  ...DECOR, 'ship_skiff', 'chest_bandit',
 ];
 
 export interface IslandScene {
   update(dt: number, elapsed: number): void;
 }
 
+/** A screenshot must be byte-identical between runs, so under `?shot=1` the
+ *  sim clock is frozen here instead of reading the wall clock. */
+const SHOT_EPOCH = Date.UTC(2026, 0, 5, 12, 0, 0);
+
 export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Promise<IslandScene> {
+  const params = new URLSearchParams(location.search);
+  const shot = params.get('shot') === '1';
+
   const shape = generateIsland(seed, 26);
   const rng = new Rng(`${seed}:decor`);
   const mixers: THREE.AnimationMixer[] = [];
@@ -62,41 +60,72 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
   water.mesh.position.y = STEP * 0.82; // waterline just below the beach top
   stage.scene.add(water.mesh);
 
+  /* --- the simulation ---------------------------------------------------- */
+
+  let sceneElapsed = 0;
+  const game: Game = await createGame({
+    seed,
+    persist: !shot,
+    fresh: params.get('save') === 'new',
+    clock: shot ? () => SHOT_EPOCH + sceneElapsed * 1000 : undefined,
+  });
+
   // ?parts=terrain,buildings,decor,ship narrows what gets built, so a problem
   // can be isolated to one category without editing code.
-  const partsParam = new URLSearchParams(location.search).get('parts');
+  const partsParam = params.get('parts');
   const parts = new Set((partsParam ?? 'terrain,buildings,decor,ship').split(','));
   const bare = !parts.has('buildings') && !parts.has('decor') && !parts.has('ship');
 
   if (!bare) await preload(ISLAND_MODELS);
 
-  const place = async (p: Placement) => {
-    const inst = await instantiate(p.model, { fit: p.footprint * CELL, clip: p.clip });
-    const pos = cellToWorld(shape, p.x, p.z);
+  /* --- buildings, placed from the save ----------------------------------- */
+
+  const bldgRng = new Rng(`${seed}:bldg`);
+  /** Grid cell → world position, per building id. World-anchored HUD hangs off
+   *  the GRID, not off a model's bounding box, so it stays correct however the
+   *  model itself ends up normalized. */
+  const anchorFor = new Map<number, THREE.Vector3>();
+
+  const placeBuilding = async (b: GameState['buildings'][number]) => {
+    const spec = buildingSpec(b.type);
+    const cell = spec.waterfront ? { x: b.x, z: b.z } : snapToBuildable(shape, b.x, b.z, b.type);
+    const inst = await instantiate(spec.model, { fit: spec.footprint * CELL, clip: 'idle' });
+    const pos = cellToWorld(shape, cell.x, cell.z);
     inst.object.position.x += pos.x;
     inst.object.position.z += pos.z;
     inst.object.position.y += pos.y;
-    inst.object.rotation.y = rng.pick([0, Math.PI / 2, Math.PI, -Math.PI / 2]);
+    inst.object.rotation.y = bldgRng.pick([0, Math.PI / 2, Math.PI, -Math.PI / 2]);
     stage.scene.add(inst.object);
     if (inst.mixer) mixers.push(inst.mixer);
-    const box = new THREE.Box3().setFromObject(inst.object);
-    const size = box.getSize(new THREE.Vector3());
+    anchorFor.set(b.id, new THREE.Vector3(pos.x, pos.y, pos.z));
+
+    const size = new THREE.Box3().setFromObject(inst.object).getSize(new THREE.Vector3());
     console.log(
-      `[place] ${p.model.padEnd(18)} size ${size.x.toFixed(1)}x${size.y.toFixed(1)}x${size.z.toFixed(1)}` +
-      ` at ${inst.object.position.x.toFixed(1)},${inst.object.position.y.toFixed(1)},${inst.object.position.z.toFixed(1)}`
+      `[place] ${spec.model.padEnd(18)} size ${size.x.toFixed(1)}x${size.y.toFixed(1)}x${size.z.toFixed(1)}` +
+      ` at ${inst.object.position.x.toFixed(1)},${inst.object.position.y.toFixed(1)},${inst.object.position.z.toFixed(1)}` +
+      ` (${b.type} Nv${b.level}, footprint ${spec.footprint})`
     );
-    return inst;
   };
 
-  if (parts.has('buildings')) for (const b of BUILDINGS) await place(b);
+  const placed = new Set<number>();
+  async function syncBuildings(): Promise<void> {
+    if (!parts.has('buildings')) return;
+    for (const b of game.state().buildings) {
+      if (placed.has(b.id)) continue;
+      placed.add(b.id);
+      await placeBuilding(b);
+    }
+  }
+  await syncBuildings();
 
   // Palms and undergrowth on any free grass, thickest around the coast.
   const decorSlots: Array<{ x: number; z: number }> = [];
+  const occupied = game.state().buildings.map((b) => ({ ...b, footprint: buildingSpec(b.type).footprint }));
   for (let z = 0; z < shape.size; z++) {
     for (let x = 0; x < shape.size; x++) {
       const cell = shape.cells[z * shape.size + x];
       if (!cell.buildable) continue;
-      const nearBuilding = BUILDINGS.some(
+      const nearBuilding = occupied.some(
         (b) => Math.abs(b.x - x) < b.footprint * 0.8 && Math.abs(b.z - z) < b.footprint * 0.8
       );
       if (!nearBuilding) decorSlots.push({ x, z });
@@ -105,7 +134,7 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
 
   for (const slot of parts.has('decor') ? decorSlots : []) {
     if (!rng.chance(0.09)) continue;
-    const model = rng.pick(['tree_palm', 'tree_palm_tall', 'deco_bush', 'deco_fern'] as const);
+    const model = rng.pick(DECOR);
     const footprint = model.startsWith('tree') ? rng.range(3.2, 4.4) : rng.range(1.2, 1.8);
     const inst = await instantiate(model, { fit: footprint });
     const pos = cellToWorld(shape, slot.x, slot.z);
@@ -129,7 +158,7 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
   // Camera: high angled view looking down at the island, like the reference.
   // `?cam=x,y,z` overrides it so shots can be framed without editing code.
   const target = new THREE.Vector3(0, 0, 0);
-  const camParam = new URLSearchParams(location.search).get('cam');
+  const camParam = params.get('cam');
   const camPos = camParam
     ? (camParam.split(',').map(Number) as [number, number, number])
     : ([26, 29, 32] as [number, number, number]);
@@ -146,46 +175,129 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
     let worst = { name: '', span: 0 };
     for (const child of stage.scene.children) {
       const b = new THREE.Box3().setFromObject(child);
-      const s = b.getSize(new THREE.Vector3());
-      const span = Math.max(s.x, s.y, s.z);
+      const size = b.getSize(new THREE.Vector3());
+      const span = Math.max(size.x, size.y, size.z);
       if (Number.isFinite(span) && span > worst.span) worst = { name: child.name || child.type, span };
     }
     console.log(`[scene] largest object: ${worst.name} span ${worst.span.toFixed(1)}`);
   }
 
-  // --- HUD -----------------------------------------------------------------
+  /* --- HUD --------------------------------------------------------------- */
+  // Declared before createHud, which syncs on the way in.
+  let anchors = toWorldItems(game.state(), game.now());
+
   // `?hud=0` drops the overlay entirely, so the world can be judged on its own
   // pixels without chrome in the frame.
-  const hudEnabled = new URLSearchParams(location.search).get('hud') !== '0';
+  const hudEnabled = params.get('hud') !== '0';
   const uiRoot = document.getElementById('ui');
-  // Icons are baked through stage.renderer inside createHud, and this whole
-  // function is awaited before the first frame — so the HUD is fully populated
-  // in frame 1, which is what §7 asks of a cold start.
-  const hud = hudEnabled && uiRoot ? await createHud(uiRoot, stage.renderer, MOCK_HUD) : null;
 
-  // World-anchored UI hangs off the island GRID rather than off a model's
-  // bounding box: the cell is where the building is placed, and it stays
-  // correct regardless of how the model itself ends up normalized.
-  const anchors: Array<{ id: string; position: THREE.Vector3 }> = [];
-  if (hud) {
-    for (const mock of MOCK_WORLD) {
-      const building = BUILDINGS.find((b) => b.model === mock.building);
-      if (!building) continue;
-      const pos = cellToWorld(shape, building.x, building.z);
-      anchors.push({
-        id: mock.item.id,
-        position: new THREE.Vector3(pos.x, pos.y + mock.lift, pos.z),
-      });
-      hud.addWorldItem(mock.item);
+  let hud: Hud | null = null;
+  if (hudEnabled && uiRoot) {
+    hud = await createHud(uiRoot, stage.renderer, toHudState(game.state(), game.now()), {
+      // The one interaction the whole loop hangs off: a tap on a ready bubble
+      // moves the producer's stock into the store (§4.2), and the number flies.
+      onCollect(worldItemId) {
+        const id = buildingIdOf(worldItemId);
+        if (id === null) return 0;
+        return game.dispatch((s) => collect(s, id)).amount;
+      },
+      onCollectAll() {
+        game.dispatch((s) => collectAll(s));
+      },
+      onOpen: route,
+    });
+    syncHud();
+  }
+
+  /** Re-derived on every sim step and projected each frame from the cache: the
+   *  anchors only move when the state does. */
+  function syncHud(): void {
+    if (!hud) return;
+    anchors = toWorldItems(game.state(), game.now());
+    hud.setState(toHudState(game.state(), game.now()));
+    hud.setWorldItems(anchors.map((a) => a.item));
+  }
+
+  game.onChange(() => { if (hud) hud.setState(toHudState(game.state(), game.now())); });
+
+  /**
+   * Placeholder routes. The panels are the next slice; until they exist each
+   * destination performs the one action it would offer, so every badge is
+   * actually clearable and the §4.8 resolver can be exercised end to end.
+   */
+  function route(what: string): void {
+    const now = game.now();
+    const state = game.state();
+
+    switch (what) {
+      case 'Cofres': {
+        const ready = state.chests.findIndex((c) => c.state === 'ready');
+        if (ready >= 0) {
+          const loot = game.dispatch((s) => openChest(s, ready)).loot;
+          console.log('[route] cofre abierto', loot);
+          return;
+        }
+        if (state.freeChestsBanked > 0) { game.dispatch((s) => claimFreeChest(s)); return; }
+        const waiting = state.chests.findIndex((c) => c.state === 'waiting');
+        if (waiting >= 0) game.dispatch((s) => startChest(s, waiting, now));
+        return;
+      }
+      case 'Diario de a Bordo': {
+        const quest = state.quests.daily.findIndex(questComplete);
+        if (quest >= 0) { game.dispatch((s) => claimQuest(s, quest)); return; }
+        game.dispatch((s) => claimDaily(s, now));
+        return;
+      }
+      case 'Construir': {
+        console.log('[route] construibles:', placeable(state, now));
+        return;
+      }
+      case 'Mejorar almacén':
+      case 'Terminar Ya': {
+        // Upgrade the first thing that can be upgraded and paid for — enough to
+        // prove the builder limit and the timers from the island itself.
+        for (const b of state.buildings) {
+          const plan = upgradePlan(b);
+          if (!plan) continue;
+          const result = game.dispatch((s) => startUpgrade(s, b.id, now));
+          if (result.ok) { console.log(`[route] mejorando ${b.type} → Nv${plan.toLevel}`); return; }
+        }
+        return;
+      }
+      default:
+        console.log(`[hud] open: ${what}`);
     }
   }
 
+  // PLAN.md promises the player a manual backup. Until Ajustes has a panel this
+  // is the route to it, and it is a real one.
+  (window as unknown as Record<string, unknown>).laLeyenda = {
+    state: () => game.state(),
+    export: () => game.exportSave(),
+    import: (file: Blob) => game.importSave(file),
+    save: () => game.saveNow(),
+    reset: () => game.reset(),
+  };
+
+  /* --- frame ------------------------------------------------------------- */
+
   const ndc = new THREE.Vector3();
+  // The sim is integrated a few times a second, not every frame: nothing in the
+  // economy moves fast enough to need 60Hz, and each tick clones the state.
+  const SIM_STEP = 0.25;
+  let nextSimAt = 0;
 
   return {
     update(dt, elapsed) {
+      sceneElapsed = elapsed;
       water.update(elapsed, stage.camera);
       for (const m of mixers) m.update(dt);
+
+      if (elapsed >= nextSimAt) {
+        nextSimAt = elapsed + SIM_STEP;
+        if (game.tick()) void syncBuildings();
+        syncHud();
+      }
 
       if (!hud) return;
       // Re-project every world-anchored element on the next frame (§2.3).
@@ -196,9 +308,11 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
       const width = window.innerWidth;
       const height = window.innerHeight;
       for (const anchor of anchors) {
-        ndc.copy(anchor.position).project(stage.camera);
+        const base = anchorFor.get(anchor.buildingId);
+        if (!base) continue;
+        ndc.set(base.x, base.y + anchor.lift, base.z).project(stage.camera);
         hud.place(
-          anchor.id,
+          anchor.item.id,
           (ndc.x * 0.5 + 0.5) * width,
           (-ndc.y * 0.5 + 0.5) * height,
           ndc.z < 1
@@ -207,4 +321,28 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
       hud.tick(elapsed);
     },
   };
+}
+
+/**
+ * The save stores a grid cell; the terrain is generated per seed. If a seed
+ * change ever moves the coastline under a stored building, snap it to the
+ * nearest buildable cell rather than dropping it in the sea.
+ */
+function snapToBuildable(shape: IslandShape, x: number, z: number, type: string): { x: number; z: number } {
+  const at = (cx: number, cz: number) =>
+    cx >= 0 && cz >= 0 && cx < shape.size && cz < shape.size && shape.cells[cz * shape.size + cx].buildable;
+  if (at(x, z)) return { x, z };
+
+  for (let r = 1; r < shape.size; r++) {
+    for (let dz = -r; dz <= r; dz++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+        if (at(x + dx, z + dz)) {
+          console.warn(`[island] ${type} at ${x},${z} is not buildable — snapped to ${x + dx},${z + dz}`);
+          return { x: x + dx, z: z + dz };
+        }
+      }
+    }
+  }
+  return { x, z };
 }

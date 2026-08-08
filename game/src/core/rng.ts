@@ -8,6 +8,17 @@ export class Rng {
     if (this.state === 0) this.state = 0x9e3779b9;
   }
 
+  /** The serializable cursor. A save stores this so a reload continues the
+   *  same stream instead of replaying rolls the player already saw. */
+  get cursor(): number {
+    return this.state;
+  }
+
+  set cursor(value: number) {
+    this.state = value >>> 0;
+    if (this.state === 0) this.state = 0x9e3779b9;
+  }
+
   static hash(str: string): number {
     let h = 2166136261 >>> 0;
     for (let i = 0; i < str.length; i++) {

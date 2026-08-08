@@ -33,6 +33,10 @@ export interface ResourceState {
   pressing?: boolean;
 }
 
+/** §4.8's next-action resolver, resolved in the sim and handed to the HUD so
+ *  there is exactly one implementation of it. */
+export type HudCue = 'construir' | 'cofres' | 'diario' | 'pills' | 'zarpar' | 'none';
+
 export interface HudState {
   level: number;
   xp: number;
@@ -50,6 +54,18 @@ export interface HudState {
   /** ¡Zarpar! before the Muelle exists. Never a dead tap — it names the key. */
   sailLocked: boolean;
   leftHanded: boolean;
+  /** Which affordance the HUD should be nagging about right now (§4.8). */
+  cue?: HudCue;
+}
+
+/** Everything the HUD hands back out. The sim is dispatched to through these;
+ *  hud.ts itself never knows a simulation exists. */
+export interface HudHooks {
+  /** Collect one producer. Returns the amount that actually reached the store
+   *  — 0 means refused (a full Almacén), and the bubble stays put. */
+  onCollect?(worldItemId: string): number;
+  onCollectAll?(): void;
+  onOpen?(what: string): void;
 }
 
 export type WorldItemSpec =
@@ -62,6 +78,9 @@ export interface Hud {
   setState(patch: Partial<HudState>): void;
   state(): Readonly<HudState>;
   addWorldItem(spec: WorldItemSpec): void;
+  /** Reconciles the whole world-anchored layer against the sim in one call:
+   *  adds what is new, updates what changed, removes what is gone. */
+  setWorldItems(specs: WorldItemSpec[]): void;
   /** Called once per frame with the projected screen position of the anchor.
    *  Clamped to the viewport minus 16px so nothing renders half off-screen. */
   place(id: string, x: number, y: number, visible: boolean): void;
@@ -85,12 +104,17 @@ interface WorldItem {
   ax: number;
   ay: number;
   size: { w: number; h: number } | null;
+  /** Scene time (s) when this item's remaining-ms was last set by the sim, so
+   *  tick() can run the clock down smoothly between sim ticks without drifting
+   *  every time the sim hands it a fresh figure. */
+  setAt: number;
 }
 
 export async function createHud(
   root: HTMLElement,
   renderer: THREE.WebGLRenderer,
-  initial: HudState
+  initial: HudState,
+  hooks: HudHooks = {}
 ): Promise<Hud> {
   // Baked before the first frame: the harness captures two frames after boot
   // and would otherwise catch empty pills (§7 "a collect bubble is visible in
@@ -138,17 +162,33 @@ export async function createHud(
   const chips = el('div', 'zone-a-chips', builderChip.el, statusChip.el);
   const zoneALeft = el('div', 'zone-a-left', levelRow);
 
+  // §4.1 staged reveal: three rows early, five at Ayuntamiento 4. The stack is
+  // rebuilt only when the SET of resources changes, so a new pill can slide in
+  // mid-session without the others being torn down and re-created every frame.
   const pills = new Map<ResourceId, Pill>();
   const zoneARight = el('div', 'zone-a-right');
-  for (const res of state.resources) {
-    const pill = createPill({ fill: RESOURCE_FILL[res.id], icon: icons[res.id] });
-    pills.set(res.id, pill);
-    zoneARight.append(pill.el);
-  }
   // §3.3 — the gem pill differs in exactly three ways: no fill bar, a `+` on
   // the end OPPOSITE the icon, and a light rim top AND bottom.
   const gemPill = createPill({ icon: icons.gema, onPlus: () => open('Gemas') });
-  zoneARight.append(gemPill.el);
+  let pillOrder = '';
+
+  function syncPills(): void {
+    const wanted = state.resources.map((r) => r.id);
+    const key = wanted.join(',');
+    if (key === pillOrder) return;
+    pillOrder = key;
+    for (const id of wanted) {
+      if (pills.has(id)) continue;
+      pills.set(id, createPill({ fill: RESOURCE_FILL[id], icon: icons[id] }));
+    }
+    for (const [id, pill] of [...pills]) {
+      if (wanted.includes(id)) continue;
+      pill.el.remove();
+      pills.delete(id);
+    }
+    zoneARight.append(...wanted.map((id) => pills.get(id)!.el), gemPill.el);
+  }
+  syncPills();
 
   /* --- ZONE C ----------------------------------------------------------- */
   const sail = createTile({
@@ -191,6 +231,7 @@ export async function createHud(
   collectAll.type = 'button';
   collectAll.hidden = true;
   collectAll.addEventListener('click', () => {
+    if (hooks.onCollectAll) { hooks.onCollectAll(); return; }
     for (const item of [...world.values()]) if (item.bubble) collect(item);
   });
 
@@ -204,13 +245,17 @@ export async function createHud(
   /* --- world-anchored layer --------------------------------------------- */
   const world = new Map<string, WorldItem>();
   let viewport = { w: window.innerWidth, h: window.innerHeight };
+  /** Scene time in seconds, as of the last tick(). */
+  let elapsedNow = 0;
+  /** Scene time at which the current HudState's timers were measured. */
+  let stateSetAt = 0;
 
   function addWorldItem(spec: WorldItemSpec): void {
     const wrap = el('div', 'world-item');
     const anchor = el('div', 'world-item__anchor');
     wrap.append(anchor);
 
-    const item: WorldItem = { spec, wrap, inner: anchor, ax: 0.5, ay: 1, size: null };
+    const item: WorldItem = { spec, wrap, inner: anchor, ax: 0.5, ay: 1, size: null, setAt: elapsedNow };
 
     if (spec.kind === 'bubble') {
       const bubble = createBubble({
@@ -242,6 +287,38 @@ export async function createHud(
     zoneB.append(wrap);
   }
 
+  /**
+   * Reconciles the layer against the sim. Bubbles are updated in place rather
+   * than rebuilt: their amount changes on every frame that production runs,
+   * and re-creating the element would restart the bob and defeat the
+   * phase-offset that stops a row of bubbles pulsing in unison (§3.9).
+   */
+  function setWorldItems(specs: WorldItemSpec[]): void {
+    const seen = new Set<string>();
+
+    for (const spec of specs) {
+      seen.add(spec.id);
+      const item = world.get(spec.id);
+      if (!item) { addWorldItem(spec); continue; }
+
+      if (spec.kind === 'timer' && item.bar) {
+        item.spec = spec;
+        item.setAt = elapsedNow;
+        item.bar.set(spec.remainingMs, spec.totalMs);
+      } else if (spec.kind === 'bubble' && item.bubble) {
+        item.spec = spec;
+        item.bubble.el.setAttribute('aria-label', `Recoger ${spec.amount}`);
+      }
+    }
+
+    for (const [id, item] of [...world]) {
+      if (seen.has(id)) continue;
+      world.delete(id);
+      item.wrap.remove();
+    }
+    syncCollectAll();
+  }
+
   function place(id: string, x: number, y: number, visible: boolean): void {
     const item = world.get(id);
     if (!item) return;
@@ -263,8 +340,14 @@ export async function createHud(
     item.wrap.style.transform = `translate3d(${cx.toFixed(1)}px, ${cy.toFixed(1)}px, 0)`;
   }
 
-  /* --- collection: the value FLIES to its pill (§5.4) --------------------- */
+  /* --- collection: the value FLIES to its pill (§5.4) ---------------------
+   * The sim is told immediately, so the state is never a lie. The PILL is not:
+   * the collected amount is held back from the displayed figure until the
+   * number finishes its arc, otherwise the counter jumps a beat before the
+   * value visibly arrives, and §5.4's whole point is that the destination
+   * reacts on arrival. */
   let flights = 0;
+  const inFlight = new Map<ResourceId, number>();
 
   function collect(item: WorldItem): void {
     const spec = item.spec;
@@ -272,6 +355,22 @@ export async function createHud(
     const rect = item.bubble.el.getBoundingClientRect();
     const from = { x: rect.left + rect.width / 2, y: rect.top + rect.height * 0.4 };
     const pill = pills.get(spec.resource);
+    const flying = !!pill && !FROZEN && flights < 8;
+
+    if (flying) inFlight.set(spec.resource, (inFlight.get(spec.resource) ?? 0) + spec.amount);
+
+    // The sim is the authority on how much actually moved: a full Almacén
+    // takes what fits and refuses the rest (§4.2), and that is a different
+    // message from `¡Lleno!`.
+    const moved = hooks.onCollect ? hooks.onCollect(spec.id) : spec.amount;
+
+    if (moved <= 0) {
+      if (flying) inFlight.delete(spec.resource);
+      // Nothing left the building, so the bubble stays and says so.
+      navigator.vibrate?.([12, 40, 12]);
+      render();
+      return;
+    }
 
     world.delete(spec.id);
     void item.bubble.burst().then(() => item.wrap.remove());
@@ -279,18 +378,19 @@ export async function createHud(
     navigator.vibrate?.(8);
 
     const land = () => {
-      const res = state.resources.find((r) => r.id === spec.resource);
-      if (res && pill) {
-        res.value = Math.min(res.cap, res.value + spec.amount);
-        pill.hit();
-        pill.set(res.value, res.cap);
+      if (flying) {
+        const left = (inFlight.get(spec.resource) ?? 0) - spec.amount;
+        if (left > 0) inFlight.set(spec.resource, left);
+        else inFlight.delete(spec.resource);
       }
+      pill?.hit();
+      render();
     };
 
     // Cap simultaneous flights at 8; beyond that the value lands directly.
-    if (!pill || FROZEN || flights >= 8) { land(); syncCollectAll(); return; }
+    if (!flying) { land(); syncCollectAll(); return; }
     flights++;
-    flyNumber(from, pill.target(), spec.amount, () => { flights--; land(); });
+    flyNumber(from, pill!.target(), moved, () => { flights--; land(); });
     syncCollectAll();
   }
 
@@ -350,21 +450,9 @@ export async function createHud(
     collectAll.hidden = pending < 4;
   }
 
-  /* --- the next-action resolver (§4.8) -----------------------------------
-   * Evaluate in order, surface the FIRST hit. If it ever returns nothing the
-   * loop is broken and that is a bug — so it logs. */
-  function resolveNextAction(): string {
-    if (state.builders.free > 0) return 'construir';
-    if (state.badges.cofres > 0) return 'cofres';
-    if (state.badges.diario > 0) return 'diario';
-    if (state.resources.some((r) => r.pressing)) return 'pills';
-    if (state.resources.every((r) => r.value < r.cap * 0.2)) return 'zarpar';
-    console.warn('[hud] next-action resolver returned nothing — the loop is broken');
-    return 'none';
-  }
-
   /* --- render ------------------------------------------------------------ */
   function render(): void {
+    syncPills();
     levelBadge.firstElementChild!.textContent = String(state.level);
     xp.style.setProperty('--pct', String(Math.max(0, Math.min(1, state.xp / state.xpMax))));
 
@@ -374,7 +462,8 @@ export async function createHud(
     for (const res of state.resources) {
       const pill = pills.get(res.id);
       if (!pill) continue;
-      pill.set(res.value, res.cap);
+      // Value still arcing towards this pill is withheld until it lands (§5.4).
+      pill.set(Math.max(0, res.value - (inFlight.get(res.id) ?? 0)), res.cap);
       pill.setPressing(Boolean(res.pressing));
     }
     gemPill.set(state.gems);
@@ -386,7 +475,9 @@ export async function createHud(
     sail.setLocked(state.sailLocked);
     tray.set(state.chestSlots);
 
-    const next = resolveNextAction();
+    // §4.8 is resolved in the sim and handed over in `cue`, so there is exactly
+    // one implementation of the priority list rather than two that drift.
+    const next = state.cue ?? 'none';
     build.setCued(next === 'construir');
     chests.setCued(next === 'cofres');
     log.setCued(next === 'diario');
@@ -396,9 +487,10 @@ export async function createHud(
   }
 
   function open(what: string): void {
-    // Panels are the next slice; until then, name the destination so a tap is
-    // never silent and the routes stay verifiable.
-    console.log(`[hud] open: ${what}`);
+    // Panels are the next slice; until then the owner decides what a route
+    // does, and a tap is never silent.
+    if (hooks.onOpen) hooks.onOpen(what);
+    else console.log(`[hud] open: ${what}`);
   }
 
   window.addEventListener('resize', () => {
@@ -414,25 +506,29 @@ export async function createHud(
     state: () => state,
     setState(patch) {
       Object.assign(state, patch);
+      stateSetAt = elapsedNow;
       render();
     },
     addWorldItem,
+    setWorldItems,
     place,
+    /**
+     * Runs every visible clock down between sim ticks. Each figure is measured
+     * from the scene time at which the sim last supplied it, so re-syncing from
+     * the sim mid-countdown corrects the display instead of double-counting it.
+     */
     tick(elapsed) {
-      const ms = elapsed * 1000;
+      elapsedNow = elapsed;
       for (const item of world.values()) {
         if (item.spec.kind !== 'timer' || !item.bar) continue;
-        item.bar.set(Math.max(0, item.spec.remainingMs - ms), item.spec.totalMs);
+        const since = (elapsed - item.setAt) * 1000;
+        item.bar.set(Math.max(0, item.spec.remainingMs - since), item.spec.totalMs);
       }
-      if (state.chestTimerMs != null) {
-        chests.setTimer(Math.max(0, state.chestTimerMs - ms));
-      }
-      const slots = state.chestSlots.map((s) =>
-        s.state === 'unlocking'
-          ? { ...s, remainingMs: Math.max(0, s.remainingMs - ms) }
-          : s
-      );
-      tray.set(slots);
+      const since = (elapsed - stateSetAt) * 1000;
+      if (state.chestTimerMs != null) chests.setTimer(Math.max(0, state.chestTimerMs - since));
+      tray.set(state.chestSlots.map((s) =>
+        s.state === 'unlocking' ? { ...s, remainingMs: Math.max(0, s.remainingMs - since) } : s
+      ));
     },
   };
 }

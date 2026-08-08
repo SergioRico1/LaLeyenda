@@ -74,7 +74,8 @@
       -57.195,
       -1.984,
       -40.054
-    ]
+    ],
+    "widestClip": "action"
   },
   "bldg_marketplace": {
     "kb": 443,
@@ -91,7 +92,8 @@
       -37.766,
       -3.077,
       -39.419
-    ]
+    ],
+    "widestClip": "idle"
   },
   "bldg_shipwright": {
     "kb": 291,
@@ -122,7 +124,8 @@
       -48.777,
       -0.356,
       -31.281
-    ]
+    ],
+    "widestClip": "idle"
   },
   "bldg_tikibar": {
     "kb": 526,
@@ -342,7 +345,8 @@
       -40.894,
       -21.667,
       -55.186
-    ]
+    ],
+    "widestClip": "idle"
   },
   "mob_blowfish": {
     "kb": 649,
@@ -360,7 +364,8 @@
       -35.477,
       -33.646,
       -40.283
-    ]
+    ],
+    "widestClip": "idle"
   },
   "mob_jellyfish": {
     "kb": 859,
@@ -378,7 +383,8 @@
       -46.387,
       -52.185,
       -55.847
-    ]
+    ],
+    "widestClip": "idle"
   },
   "mob_kelpling": {
     "kb": 469,
@@ -396,7 +402,8 @@
       -65.104,
       -36.214,
       -39.342
-    ]
+    ],
+    "widestClip": "Idle"
   },
   "mob_sealion": {
     "kb": 451,
@@ -414,7 +421,8 @@
       -21.744,
       -31.815,
       -64.392
-    ]
+    ],
+    "widestClip": "idle"
   },
   "mob_shark": {
     "kb": 102,
@@ -432,7 +440,8 @@
       -18.412,
       -7.731,
       -52.897
-    ]
+    ],
+    "widestClip": "idle"
   },
   "mob_squid": {
     "kb": 570,
@@ -450,7 +459,8 @@
       -43.64,
       -46.717,
       -63.553
-    ]
+    ],
+    "widestClip": "idle"
   },
   "mob_trilobite": {
     "kb": 494,
@@ -468,7 +478,8 @@
       -28.839,
       -36.85,
       -70.953
-    ]
+    ],
+    "widestClip": "idle"
   },
   "ship_frigate": {
     "kb": 297,
@@ -549,7 +560,8 @@
       -4.297,
       -0.625,
       -12.891
-    ]
+    ],
+    "widestClip": "More Movement"
   },
   "tree_palm_tall": {
     "kb": 70,
@@ -566,6 +578,7 @@
       -4.272,
       -0.61,
       -12.656
-    ]
+    ],
+    "widestClip": "More Movement"
   }
 }
