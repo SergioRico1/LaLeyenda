@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { instantiate } from './assets';
+import { BALANCE } from '../sim/balance';
 import { CELL, STEP, cellToWorld, isBuildable, type IslandShape } from './island';
 
 /**
@@ -169,6 +170,8 @@ export function createGhost(shape: IslandShape): Ghost {
     cellPool.forEach((mesh, i) => { mesh.visible = i < count; });
   }
 
+    const plotHalfFor = (footprint: number) => (footprint * BALANCE.placement.plotFactor) / 2;
+
   const api: Ghost = {
     object: root,
     get valid() { return valid; },
@@ -176,7 +179,12 @@ export function createGhost(shape: IslandShape): Ghost {
 
     async setModel(modelId, footprint) {
       const mine = ++modelToken;
-      half = footprint / 2;
+      // The pad must match the plot the sim actually reserves, which is
+      // narrower than the model fitted onto it (BALANCE.placement.plotFactor).
+      // Showing footprint/2 drew a 5x5 pad for a 3x3 plot and judged the player
+      // against it, refusing roughly half the ground the sim would accept — the
+      // feature worked and felt broken, which is worse than not working.
+      half = plotHalfFor(footprint);
       if (model) {
         // The clones below are per-ghost, so they are ours to free; the
         // geometry and textures belong to the shared cached model and are not.
