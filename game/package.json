@@ -13,7 +13,8 @@
     "assets": "npm run assets:fetch && npm run assets:optimize",
     "shoot": "node tools/shoot.mjs",
     "assets:ui": "node tools/ui-assets.mjs",
-    "audit:layers": "node tools/audit-layers.mjs"
+    "audit:layers": "node tools/audit-layers.mjs",
+    "audit:sea": "npm run shoot -- island --mobile --hud 0 --out shots/sea.png && node tools/sea-metrics.mjs reference/island_hero.png shots/sea.png --bands"
   },
   "dependencies": {
     "three": "^0.171.0"

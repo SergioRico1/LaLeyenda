@@ -176,12 +176,21 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
   }
 
   // The player's ship, moored off the dock.
+  //
+  // Kept so the update loop can float it. A swell nothing sits on is a texture
+  // that happens to move; a hull rising and tilting with it is what tells the
+  // player the sea is a surface. It is also the cheapest possible check that
+  // the shader and the CPU agree about where the water is — if they drift, the
+  // boat visibly saws through it.
+  let ship: THREE.Object3D | null = null;
+  const shipY = STEP * 0.85;
   if (parts.has('ship')) {
-    const ship = await instantiate('ship_skiff', { fit: 5, clip: 'Idle' });
-    ship.object.position.set(-17, STEP * 0.85, 9);
-    ship.object.rotation.y = -0.5;
-    stage.scene.add(ship.object);
-    if (ship.mixer) mixers.push(ship.mixer);
+    const skiff = await instantiate('ship_skiff', { fit: 5, clip: 'Idle' });
+    skiff.object.position.set(-17, shipY, 9);
+    skiff.object.rotation.y = -0.5;
+    stage.scene.add(skiff.object);
+    if (skiff.mixer) mixers.push(skiff.mixer);
+    ship = skiff.object;
   }
 
   // Camera: high angled view looking down at the island, like the reference.
@@ -756,6 +765,16 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
       sceneElapsed = elapsed;
       water.update(elapsed, stage.camera);
       for (const m of mixers) m.update(dt);
+
+      if (ship) {
+        const sea = water.surfaceAt(ship.position.x, ship.position.z, elapsed);
+        ship.position.y = shipY + sea.height;
+        // Pitch and roll off the surface slope. The gain is well above 1:1 —
+        // the swell is deliberately shallow, and a hull that tilted by the true
+        // surface angle would move about two degrees and read as rigid.
+        ship.rotation.x = -sea.dz * 2.4;
+        ship.rotation.z = sea.dx * 2.4;
+      }
 
       stepSquash(elapsed);
       rig.update(dt);

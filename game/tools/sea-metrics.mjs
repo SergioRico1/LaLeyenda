@@ -3,7 +3,22 @@
  * Measures the texture of the water in a frame, so "the sea is flat" is a number
  * and not an opinion.
  *
+ *   npm run audit:sea                    <- use this
  *   node tools/sea-metrics.mjs reference/island_hero.png shots/sea_before.png
+ *
+ * THE FRAME MUST NOT HAVE THE HUD IN IT. Shoot with --hud 0, which is what the
+ * audit:sea script does and the reason it exists.
+ *
+ * This is not a style note. The segmentation below hands ambiguous pixels to
+ * whichever seed dominates their neighbourhood, and a dark HUD capsule sitting
+ * on open water is surrounded by water, so its gloss step and its white numerals
+ * get counted as sea. In a portrait frame the top bar lands entirely inside the
+ * far eighth, and it held that band at sd 43 through four rounds of shader work
+ * while the sea behind it actually measured 18 — against a reference of 19. The
+ * conclusion drawn from it (that the far water was too noisy and the ramp was
+ * broken) was wrong, and two commit messages carry it.
+ *
+ * The tool cannot detect chrome and should not try to guess. Shoot without it.
  *
  * Segmentation: seed sea from strong blue and land from anything warm or green,
  * then hand every leftover pixel — foam, sun glitter, whitecaps, all of which are
