@@ -122,9 +122,21 @@ try {
   const err = await page.evaluate(() => window.__error);
   if (err) throw new Error(`scene failed:\n${err}`);
 
+  // A model whose normalization got overwritten renders at native size and
+  // swallows the frame. That has happened four times; failing the capture is
+  // how it stops being discovered by a player instead of by the build.
+  const oversized = await page.evaluate(() => window.__oversized);
+  if (oversized) throw new Error(`oversized object in scene: ${oversized}`);
+
   if (act) {
     if (!ACTS[act]) throw new Error(`unknown --act ${act} (have: ${Object.keys(ACTS).join(', ')})`);
     await ACTS[act](page);
+
+    // The interaction is exactly where a model's normalization gets clobbered —
+    // an upgrade celebration once reset the scale it was animating and put a
+    // building the size of the island on screen. Re-check after the taps.
+    const after = await page.evaluate(() => window.__checkSizes?.());
+    if (after) throw new Error(`oversized object after --act ${act}: ${after}`);
   }
 
   fs.mkdirSync(SHOTS, { recursive: true });

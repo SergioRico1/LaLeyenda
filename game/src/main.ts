@@ -10,6 +10,16 @@ declare global {
     __error?: string;
     /** Shot mode only — see the note where it is assigned. */
     __step?: (frames?: number) => void;
+    /** Set when something in the scene is impossibly large; the harness fails
+     *  the capture on it. See the OVERSIZED check. */
+    __oversized?: string;
+    /** Re-runs that check. The harness calls it after an act, because the bug
+     *  it guards against arrived through an interaction. */
+    __checkSizes?: () => string | undefined;
+    /** Shot mode only — where the camera ended up. A drag act needs to assert
+     *  the island actually moved, and "the picture changed" is not that: a
+     *  running timer changes the picture too. */
+    __camera?: () => [number, number, number];
   }
 }
 
@@ -75,6 +85,35 @@ async function boot() {
         if (Number.isFinite(span) && span > worst.span) worst = { name: child.name || child.type, span };
       }
       console.log(`[frame] largest non-water object at capture: ${worst.name} span ${worst.span.toFixed(1)}`);
+
+      // A placed building is never more than a few cells across, and each one
+      // knows its own footprint. Anything several times that means something
+      // wrote over the model's normalization — the failure that has come back
+      // four times, most recently when the upgrade celebration reset the scale
+      // it was animating to 1 and restored the Ayuntamiento's native 126 units.
+      //
+      // Checked per building rather than against the whole scene: the terrain,
+      // the water and the single InstancedMesh holding every decoration all
+      // legitimately span the island.
+      //
+      // Exposed rather than run once, because the failure it exists to catch
+      // arrived through an INTERACTION — the harness re-runs it after each act.
+      window.__checkSizes = () => {
+        const bad: string[] = [];
+        stage.scene.traverse((node) => {
+          const footprint = node.userData?.footprint as number | undefined;
+          if (!footprint) return;
+          const size = new THREE_.Box3().setFromObject(node).getSize(new THREE_.Vector3());
+          const span = Math.max(size.x, size.z);
+          if (Number.isFinite(span) && span > footprint * 3) {
+            bad.push(`${node.name} spans ${span.toFixed(1)} for a footprint of ${footprint}`);
+          }
+        });
+        window.__oversized = bad.length ? bad.join('; ') : undefined;
+        if (bad.length) console.error(`[frame] OVERSIZED: ${window.__oversized}`);
+        return window.__oversized;
+      };
+      window.__checkSizes();
     }
 
     stage.render();
@@ -95,6 +134,8 @@ async function boot() {
         stage.render();
       }
     };
+
+    window.__camera = () => stage.camera.position.toArray() as [number, number, number];
 
     // Two frames: the first can land before textures finish uploading.
     requestAnimationFrame(() => {

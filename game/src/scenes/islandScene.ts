@@ -6,6 +6,7 @@ import {
   type IslandShape,
 } from '../render/island';
 import { createGhost, type Ghost } from '../render/ghost';
+import { createCameraRig, type CameraRig } from '../render/cameraRig';
 import { buildScatter } from '../render/scatter';
 import { DECOR_MODELS, buildGroundCover, planDecor, planIslets } from './decor';
 import { instantiate, preload } from '../render/assets';
@@ -111,20 +112,31 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
     const cell = spec.waterfront ? { x: b.x, z: b.z } : snapToBuildable(shape, b.x, b.z, b.type);
     const inst = await instantiate(spec.model, { fit: spec.footprint * CELL, clip: 'idle' });
     const pos = cellToWorld(shape, cell.x, cell.z);
-    inst.object.position.x += pos.x;
-    inst.object.position.z += pos.z;
-    inst.object.position.y += pos.y;
-    inst.object.rotation.y = bldgRng.pick([0, Math.PI / 2, Math.PI, -Math.PI / 2]);
-    inst.object.userData.buildingId = b.id;
-    stage.scene.add(inst.object);
-    pickable.push(inst.object);
+
+    // The model's own node carries its normalization — a scale of about 0.08 on
+    // the Ayuntamiento — so nothing else may write to it. The celebration
+    // squash used to, and reset it to 1 when it finished, which restored the
+    // model's native 126 units and put a building the size of the island in the
+    // corner of the screen. Placement and animation get their own node, so the
+    // two never share a transform.
+    const anim = new THREE.Group();
+    anim.name = `bldg_${b.id}`;
+    anim.position.set(pos.x, pos.y, pos.z);
+    anim.rotation.y = bldgRng.pick([0, Math.PI / 2, Math.PI, -Math.PI / 2]);
+    anim.userData.buildingId = b.id;
+    // What the oversize guard in main.ts measures this node against.
+    anim.userData.footprint = spec.footprint * CELL;
+    anim.add(inst.object);
+
+    stage.scene.add(anim);
+    pickable.push(anim);
     if (inst.mixer) mixers.push(inst.mixer);
     anchorFor.set(b.id, new THREE.Vector3(pos.x, pos.y, pos.z));
 
-    const size = new THREE.Box3().setFromObject(inst.object).getSize(new THREE.Vector3());
+    const size = new THREE.Box3().setFromObject(anim).getSize(new THREE.Vector3());
     console.log(
       `[place] ${spec.model.padEnd(18)} size ${size.x.toFixed(1)}x${size.y.toFixed(1)}x${size.z.toFixed(1)}` +
-      ` at ${inst.object.position.x.toFixed(1)},${inst.object.position.y.toFixed(1)},${inst.object.position.z.toFixed(1)}` +
+      ` at ${anim.position.x.toFixed(1)},${anim.position.y.toFixed(1)},${anim.position.z.toFixed(1)}` +
       ` (${b.type} Nv${b.level}, footprint ${spec.footprint})`
     );
   };
@@ -183,6 +195,28 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
   stage.camera.lookAt(target);
   stage.sun.target.position.copy(target);
   stage.sun.target.updateMatrixWorld();
+
+  // One finger pans, two pinch. A phone shows a fraction of the island, so
+  // without this half of what the player owns is unreachable.
+  //
+  // Built in shot mode too. It takes `target` and so reproduces the framing
+  // above exactly, which means an untouched capture is unchanged — and a
+  // capture the harness DRAGS is the only way this gesture gets reviewed at
+  // all. Leaving it out of shot mode would make it the one part of the game no
+  // test can see, which is how it came to be missing in the first place.
+  const rig: CameraRig = createCameraRig({
+    camera: stage.camera,
+    element: stage.renderer.domElement,
+    target,
+    // The plateau the buildings stand on, so the ground stays pinned to the
+    // thumb rather than sliding by the plateau's height over the camera's.
+    panPlaneY: STEP * 2,
+    // Far enough to see the whole coast from the middle, not so far that the
+    // island can leave the frame entirely.
+    bounds: (shape.size * CELL) / 2,
+    minDistance: 18,
+    maxDistance: 72,
+  });
 
   {
     const terrainBox = new THREE.Box3().setFromObject(terrain);
@@ -451,6 +485,8 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
   async function beginPlacement(type: string): Promise<void> {
     const spec = buildingSpec(type);
     placing = { type, footprint: spec.footprint };
+    // While a ghost is on the grid the finger belongs to it, not to the camera.
+    rig.setEnabled(false);
     // Start under the middle of the island rather than at 0,0, so the first
     // frame of the ghost is somewhere plausible even before a finger moves.
     moveGhost(Math.floor(shape.size / 2), Math.floor(shape.size / 2));
@@ -463,6 +499,7 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
 
   function endPlacement(): void {
     placing = null;
+    rig.setEnabled(true);
     ghost.show(false);
     uiRoot?.classList.remove('is-placing');
     bar?.hide();
@@ -586,8 +623,10 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
     const start = down;
     down = null;
     if (!start || placing) return;
-    // A tap, not a drag: the island is pannable in a later slice and a swipe
-    // must never be read as "open this building".
+    // A tap, not a drag: a swipe that panned the island must never also be read
+    // as "open this building". The rig uses the same 10px threshold, so the two
+    // agree on where a tap stops being a tap.
+    if (rig.panning) return;
     if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10) return;
     const id = buildingUnder(event);
     if (id !== null) openSheetFor(id);
@@ -719,6 +758,7 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
       for (const m of mixers) m.update(dt);
 
       stepSquash(elapsed);
+      rig.update(dt);
 
       if (elapsed >= nextSimAt) {
         nextSimAt = elapsed + SIM_STEP;

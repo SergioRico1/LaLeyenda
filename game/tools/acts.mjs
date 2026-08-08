@@ -103,10 +103,101 @@ async function dropGhostSomewhereValid(page) {
   throw new Error('act: swept the island and every cell refused the ghost');
 }
 
+/** Where the camera is right now, as a vector we can subtract. */
+const cameraAt = (page) => page.evaluate(() => window.__camera?.() ?? [0, 0, 0]);
+const apart = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+
 export const ACTS = {
   /** §3.15 — the picker, open, with its costs and its greyed reasons. */
   async picker(page) {
     await openPicker(page);
+  },
+
+  /**
+   * Dragging the island around — the thing a phone cannot do without.
+   *
+   * This shipped broken: there was no camera control at all, and the comment
+   * left in its place said the island was "pannable in a later slice". A player
+   * found it before any test did, which is the argument for this act existing.
+   *
+   * Three things have to hold, and only the first is the feature:
+   *   - the camera actually moves, by roughly the distance dragged;
+   *   - the drag does not also count as a tap, so no sheet opens behind it;
+   *   - the ✗ never leaves the island — the focus is clamped, so a fling into
+   *     open water still leaves something to look at.
+   */
+  async pan(page) {
+    const canvas = await page.locator('#scene').boundingBox();
+    const cx = canvas.x + canvas.width / 2;
+    const cy = canvas.y + canvas.height / 2;
+    const before = await cameraAt(page);
+
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    // In steps, like a thumb: one jump would clear PAN_SLOP and land in the
+    // same place, and would not prove the island tracks the finger on the way.
+    for (let i = 1; i <= 12; i++) {
+      await page.mouse.move(cx - (canvas.width * 0.3 * i) / 12, cy - (canvas.height * 0.12 * i) / 12);
+      await step(page, 1);
+    }
+    // Held still for a beat before letting go, which is how a player parks the
+    // view rather than throwing it — and it decays the momentum, so the frame
+    // this captures is the frame the drag ended on.
+    for (let i = 0; i < 4; i++) await page.mouse.move(cx - canvas.width * 0.3, cy - canvas.height * 0.12);
+    await page.mouse.up();
+    await step(page, 3);
+
+    const after = await cameraAt(page);
+    const moved = apart(before, after);
+    if (moved < 1) {
+      throw new Error(`act: pan — dragged across the screen and the camera moved ${moved.toFixed(2)} units`);
+    }
+    if (await page.locator('.sheet.is-open').count()) {
+      throw new Error('act: pan — the drag opened a building sheet; a swipe is being read as a tap');
+    }
+  },
+
+  /**
+   * Pinch to zoom, driven as two real touch points through CDP — Playwright's
+   * mouse only has one, and a gesture that needs two fingers cannot be faked
+   * with one and still exercise the code that reads the gap between them.
+   */
+  async pinch(page) {
+    const canvas = await page.locator('#scene').boundingBox();
+    const cx = canvas.x + canvas.width / 2;
+    const cy = canvas.y + canvas.height / 2;
+    const before = await cameraAt(page);
+
+    const cdp = await page.context().newCDPSession(page);
+    const touch = (type, spread) =>
+      cdp.send('Input.dispatchTouchEvent', {
+        type,
+        touchPoints:
+          type === 'touchEnd'
+            ? []
+            : [
+                { x: cx - spread, y: cy, id: 1 },
+                { x: cx + spread, y: cy, id: 2 },
+              ],
+      });
+
+    await touch('touchStart', 40);
+    for (let i = 1; i <= 8; i++) {
+      await touch('touchMove', 40 + i * 14);
+      await step(page, 1);
+    }
+    await touch('touchEnd');
+    await step(page, 2);
+
+    const after = await cameraAt(page);
+    // Fingers spreading pulls the camera in, so it must end up nearer the
+    // island's middle than it started, not merely somewhere else.
+    const reach = (v) => Math.hypot(v[0], v[1], v[2]);
+    if (reach(after) >= reach(before) - 1) {
+      throw new Error(
+        `act: pinch — spread two fingers and the camera went from ${reach(before).toFixed(1)} to ${reach(after).toFixed(1)} units out`
+      );
+    }
   },
 
   /**
