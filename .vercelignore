@@ -1,0 +1,6 @@
+node_modules
+game/node_modules
+game/dist
+game/tools/uipack
+game/tools/raw
+game/shots

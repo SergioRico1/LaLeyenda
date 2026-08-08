@@ -133,11 +133,9 @@ const fragmentShader = /* glsl */ `
     vec3 col = rampColour(t);
 
     // How grazing is this pixel? 0 = looking straight down, 1 = edge-on.
-    // Both the tone spread and the glitter hang off this, so it is computed
-    // before either of them.
+    // Hoisted above the tone and the glitter, which both key off the view angle.
     vec3 toCam = normalize(uCameraPos - vWorld);
     float graze = pow(1.0 - max(toCam.y, 0.0), 2.2);
-    float steep = 1.0 - graze;
 
     // The second, larger structure the reference has and a depth ramp cannot
     // give you: broad fields of lighter and darker water, tens of metres across,
@@ -155,7 +153,13 @@ const fragmentShader = /* glsl */ `
     float tone = hash21(cell + 17.0) * 0.52 + hash21(streak + 4.2) * 0.48;
     tone = tone * 0.70 + swell * 0.30;
     tone = clamp(floor(tone * 6.0) / 5.0, 0.0, 1.0);
-    col = mix(mix(col, uDeep, 0.58), mix(col, uCrest, 0.56), tone);
+    // The low end of the spread deepens with distance from land. In the
+    // reference the near-shore shelf is cyan (#0070A0) but the open water it sits
+    // in is navy (#001858..#102050) — a hue swing the depth ramp cannot cover,
+    // because the shore SDF saturates a few metres out and everything beyond it
+    // is one colour. Scaling by t puts the navy where the water is deep and
+    // leaves the turquoise shelf alone.
+    col = mix(mix(col, uDeep, 0.40 + 0.30 * t), mix(col, uCrest, 0.56), tone);
 
     // Foam. Density decays exponentially from the shoreline, and a low-frequency
     // mask keeps most of the open ocean clear so the chips read as surf clusters.
@@ -198,7 +202,12 @@ const fragmentShader = /* glsl */ `
     vec2 gcell = floor(gdrift / gsize);
     vec2 gpos = (gcell + 0.5) * gsize;
 
-    float glintPatch = valueNoise(vWorld.xz * 0.095 + uTime * vec2(0.010, 0.003));
+    // The swell is folded into the patch mask rather than sampled again: the
+    // same broad field that shades the water is the one whose crests catch the
+    // light, and it costs nothing to reuse. Without it the glitter follows only
+    // the view angle and lays itself out in horizontal bands across the screen.
+    float glintPatch = valueNoise(vWorld.xz * 0.095 + uTime * vec2(0.010, 0.003)) * 0.62
+                     + swell * 0.38;
     float crest = valueNoise(gpos * 0.85);
     float glint = glintZone
                 * mix(0.14, 1.22, smoothstep(0.30, 0.64, glintPatch))
@@ -266,7 +275,7 @@ const PALETTES: Record<WaterPalette, Palette> = {
     ramp: ['#35B1C5', '#2DA7C2', '#2898B6', '#1D92B7', '#0E7AA9', '#066C9D'],
     horizon: '#0A74A2',
     near: '#02205A',
-    deep: '#021F4E',
+    deep: '#001439',
     crest: '#5CCBDD',
     glintDim: '#A6E1EA',
     glintBright: '#F4FCFF',

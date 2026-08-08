@@ -160,10 +160,14 @@ export function decorCells(shape: IslandShape, state: GameState): DecorCell[] {
         toBuilding = Math.min(toBuilding, Math.max(Math.abs(b.x - x), Math.abs(b.z - z)));
       }
 
+      // The thresholds are tight on purpose. `apron` has to mean "hard against
+      // a wall", because at <= 3 it swallowed every free cell on the plateau and
+      // left `path` empty — the corridor between the buildings then got a
+      // garden's dressing instead of a path's, and not one fence was ever laid.
       let zone: Zone;
       if (!cell.buildable) zone = 'beach';
-      else if (toWater[z * size + x] <= 2) zone = 'rim';
-      else if (toBuilding <= 3) zone = 'apron';
+      else if (toWater[z * size + x] <= 1) zone = 'rim';
+      else if (toBuilding <= 2) zone = 'apron';
       else zone = 'path';
 
       out.push({ x, z, zone, toBuilding, toWater: toWater[z * size + x] });
@@ -180,8 +184,8 @@ export function decorCells(shape: IslandShape, state: GameState): DecorCell[] {
 export const DECOR_MODELS = [
   'tree_palm', 'tree_palm_tall', 'deco_bush', 'deco_bush_alt', 'deco_fern', 'deco_plant',
   'deco_hedge', 'deco_crate', 'deco_crate_red', 'deco_barrel', 'deco_fence', 'deco_fence_post',
-  'deco_lamp', 'deco_totem', 'deco_rock_lg', 'deco_rock_sm', 'deco_driftwood', 'deco_sandmound',
-  'deco_starfish', 'harv_cotton', 'harv_oak',
+  'deco_totem', 'deco_rock_lg', 'deco_rock_sm', 'deco_driftwood',
+  'deco_sandmound', 'deco_starfish', 'harv_cotton',
 ] as const;
 
 interface Plan {
@@ -209,8 +213,13 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
   // The plaza: the reference leaves a big open sand court rather than filling
   // every cell, so the ground in front of the town hall is held clear and every
   // pass below skips it.
+  //
+  // Kept small, because the reserved mask already does most of this job — the
+  // open middle of the island is open precisely because it is where buildings
+  // go. At 4.5 this was mostly re-excluding ground no prop could have used, and
+  // the part it did reach was the one quadrant that then read as empty.
   const hall = state.buildings.find((b) => buildingSpec(b.type).kind === 'townhall');
-  const plaza = hall ? { x: hall.x, z: hall.z + 5, r: 4.5 } : null;
+  const plaza = hall ? { x: hall.x, z: hall.z + 5, r: 3 } : null;
   const inPlaza = (c: DecorCell) =>
     plaza !== null && Math.hypot(c.x - plaza.x, c.z - plaza.z) < plaza.r;
 
@@ -275,7 +284,7 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
         // Measured against the reference: a palm crown there spans roughly a
         // twelfth of the island, not a sixth. At the old 2.6–3.9 the stands
         // closed into a hedge around the coast and hid the island inside it.
-        put(c, tall ? 'tree_palm_tall' : 'tree_palm', rng.range(1.9, 2.7), {
+        put(c, tall ? 'tree_palm_tall' : 'tree_palm', rng.range(1.6, 2.3), {
           jitter: 0.42,
           scaleY: rng.range(0.88, 1.18),
         });
@@ -365,10 +374,14 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
           });
         }
         plan.used.add(key(c.x, c.z));
-      } else if (r < 0.56) {
-        put(c, 'deco_lamp', rng.range(0.55, 0.7), { jitter: 0.15 });
-      } else if (r < 0.62) {
-        put(c, rng.pick(['harv_oak', 'deco_totem']), rng.range(1.1, 1.6), { jitter: 0.2 });
+      } else if (r < 0.54) {
+        // A plain wooden post, which is what the reference stands along its
+        // plot corners. The pirate lamp went here first and was a mistake: it
+        // is a grey-white lantern on a thin pole, and four of them in a row
+        // read as mushrooms rather than as street furniture.
+        put(c, 'deco_fence_post', rng.range(0.3, 0.42), { jitter: 0.25 });
+      } else if (r < 0.6) {
+        put(c, 'deco_totem', rng.range(1.0, 1.4), { jitter: 0.2 });
       }
     }
   }
@@ -414,7 +427,7 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
           plan.used.add(key(c.x, c.z));
         }
       } else if (r < 0.54) {
-        put(c, 'deco_lamp', rng.range(0.55, 0.72), { jitter: 0.2 });
+        put(c, 'deco_fence_post', rng.range(0.3, 0.44), { jitter: 0.2 });
       } else if (r < 0.68) {
         const at = cellToWorld(shape, c.x, c.z);
         for (let i = 0; i < rng.int(2, 3); i++) {
@@ -477,15 +490,24 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
     const approach = cells
       .filter((c) => c.zone !== 'beach' && Math.hypot(c.x - hall.x, c.z - (hall.z + 3)) < 3)
       .sort((a, b) => Math.hypot(a.x - hall.x, a.z - hall.z) - Math.hypot(b.x - hall.x, b.z - hall.z));
-    let lamps = 0;
+    // Palms, because that is what the reference frames ITS hall with, and
+    // because the two candidates tried first both failed at this scale: the
+    // pirate lamp is a grey lantern that reads as a mushroom, and the flag is
+    // four units of bare pole with its banner above the top of the frame.
+    let framed = 0;
     for (const c of approach) {
-      if (lamps >= 2) break;
+      if (framed >= 2) break;
       if (plan.used.has(key(c.x, c.z))) continue;
-      put(c, 'deco_lamp', 0.8, { jitter: 0.1 });
-      lamps++;
+      put(c, framed === 0 ? 'tree_palm_tall' : 'tree_palm', rng.range(2.1, 2.5), {
+        jitter: 0.12,
+        scaleY: rng.range(0.95, 1.1),
+      });
+      framed++;
     }
-    const totem = approach.find((c) => !plan.used.has(key(c.x, c.z)));
-    if (totem) put(totem, 'deco_totem', 1.5, { jitter: 0.1 });
+    for (const c of approach) {
+      if (plan.used.has(key(c.x, c.z))) continue;
+      put(c, 'deco_fence_post', rng.range(0.34, 0.44), { jitter: 0.2 });
+    }
   }
 
   return plan.items;
@@ -535,7 +557,10 @@ export function buildGroundCover(shape: IslandShape, seed: string): THREE.Mesh {
     const b = [cx + c + s, cy, cz + s - c];
     const d = [cx + c - s, cy, cz + s + c];
     const e = [cx - c - s, cy, cz - s + c];
-    positions.push(...a, ...b, ...d, ...a, ...d, ...e);
+    // Wound so the geometric normal is +y. The other order makes every quad
+    // face the sea floor, which back-face culling then removes — the cover is
+    // there, costs its triangles, and draws nothing.
+    positions.push(...a, ...d, ...b, ...a, ...e, ...d);
     tint.setHex(colour, THREE.SRGBColorSpace);
     for (let i = 0; i < 6; i++) colours.push(tint.r, tint.g, tint.b);
   };
@@ -545,8 +570,12 @@ export function buildGroundCover(shape: IslandShape, seed: string): THREE.Mesh {
   // Pale flower heads and a darker tuft, the two things the reference's grass is
   // covered in. The dirt is for the worn edge where a plot meets its drop.
   const FLOWERS = [0xf3f0e2, 0xfaf6de, 0xe8ecd2, 0xfff3c4];
-  const TUFTS = [0x7ea436, 0x86ad3c, 0x6f9530];
+  const TUFTS = [0x7ea436, 0x86ad3c, 0x6f9530, 0xa3c65a, 0x8fbb44];
   const WORN = [0xc9a86a, 0xbf9a5c];
+  // Within a few percent of island.ts's own sand albedo (0xe2d8bc), so this
+  // grains the beach instead of littering it.
+  const SAND = [0xdccfae, 0xe8e0c8, 0xd8cba8, 0xeae3cd, 0xd2c4a2];
+  const SHELL = [0xf6efe0, 0xe6d2c4, 0xfbf6ea];
 
   for (let z = 0; z < size; z++) {
     for (let x = 0; x < size; x++) {
@@ -558,15 +587,17 @@ export function buildGroundCover(shape: IslandShape, seed: string): THREE.Mesh {
 
       if (cell.material === 'grass') {
         // Dense enough to read as a meadow at the island's on-screen size and
-        // never so regular that the grid shows through.
-        const dots = rng.int(5, 9);
+        // never so regular that the grid shows through. The tufts carry most of
+        // the work — they are near the grass's own value, so they dither the
+        // surface rather than spotting it, and the brighter flowers are rarer.
+        const dots = rng.int(14, 22);
         for (let i = 0; i < dots; i++) {
-          const px = x0 + rng.range(-0.46, 0.46) * CELL;
-          const pz = z0 + rng.range(-0.46, 0.46) * CELL;
-          const flower = rng.chance(0.55);
+          const px = x0 + rng.range(-0.47, 0.47) * CELL;
+          const pz = z0 + rng.range(-0.47, 0.47) * CELL;
+          const flower = rng.chance(0.28);
           quad(
             px, y, pz,
-            flower ? rng.range(0.035, 0.06) : rng.range(0.07, 0.13),
+            flower ? rng.range(0.028, 0.045) : rng.range(0.05, 0.11),
             rng.range(0, Math.PI / 2),
             flower ? rng.pick(FLOWERS) : rng.pick(TUFTS)
           );
@@ -585,14 +616,22 @@ export function buildGroundCover(shape: IslandShape, seed: string): THREE.Mesh {
           }
         }
       } else {
-        // Sand: sparse pebbles and shell grit, so the plaza is not a blank sheet
-        // either. Much thinner than the grass — the reference's sand is open.
-        if (!rng.chance(0.55)) continue;
-        for (let i = 0; i < rng.int(1, 3); i++) {
+        // Sand: drift and shell grit, close enough in value to the sand itself
+        // that it dithers rather than spots. The reference's beach is open, but
+        // it is not a blank fill — it carries a fine grain at this scale, and a
+        // high-contrast pebble here read as litter rather than sand.
+        for (let i = 0; i < rng.int(5, 10); i++) {
           quad(
-            x0 + rng.range(-0.45, 0.45) * CELL, y, z0 + rng.range(-0.45, 0.45) * CELL,
-            rng.range(0.05, 0.11), rng.range(0, Math.PI / 2),
-            rng.pick([0xd6c9a4, 0xcfc09a, 0xe8dfc6, 0xc4b58c])
+            x0 + rng.range(-0.47, 0.47) * CELL, y, z0 + rng.range(-0.47, 0.47) * CELL,
+            rng.range(0.06, 0.15), rng.range(0, Math.PI / 2),
+            rng.pick(SAND)
+          );
+        }
+        if (rng.chance(0.18)) {
+          quad(
+            x0 + rng.range(-0.4, 0.4) * CELL, y, z0 + rng.range(-0.4, 0.4) * CELL,
+            rng.range(0.04, 0.07), rng.range(0, Math.PI / 2),
+            rng.pick(SHELL)
           );
         }
       }

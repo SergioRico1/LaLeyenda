@@ -1,0 +1,4 @@
+
+# Vercel CLI: project link and the OIDC token it writes. Never committed.
+.vercel/
+.env.local

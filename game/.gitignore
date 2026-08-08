@@ -8,3 +8,5 @@ shots/
 # Dropped in locally by the developer, processed into public/assets/ui/.
 tools/uipack/
 public/assets/ui/
+.vercel
+.env*

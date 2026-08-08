@@ -6,6 +6,7 @@ import './session.test';
 import './retention.test';
 import './save.test';
 import './tokens.test';
+import './decor.test';
 import { runCases } from './harness';
 
 export function run(): number {

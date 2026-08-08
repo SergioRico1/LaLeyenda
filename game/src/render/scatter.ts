@@ -182,6 +182,7 @@ async function bake(model: string): Promise<Baked | null> {
       luma += 0.2126 * colours[i] + 0.7152 * colours[i + 1] + 0.0722 * colours[i + 2];
     }
     luma /= colours.length / 3;
+    console.log(`[scatter] ${model.padEnd(16)} verts ${String(positions.length / 3).padStart(6)} luma ${luma.toFixed(3)}`);
     if (luma < 0.02) console.warn(`[scatter] ${model} baked near-black (luma ${luma.toFixed(3)})`);
 
     const geometry = new THREE.BufferGeometry();
