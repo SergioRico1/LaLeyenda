@@ -29,6 +29,15 @@ export const COPY = {
   'banner.victory': '¡Botín!',
   'banner.returned': 'La Isla Resistió',
   'guide.idleBuilder': 'Carpintero sin trabajo',
+
+  /* §3.5 — every refusal and every unbuilt route answers out loud. A tap that
+   * changes nothing and says nothing is the one thing the spec forbids twice. */
+  'toast.chestReady': '¡Cofre listo!',
+  'toast.questDone': '¡Misión completada!',
+  'toast.builderGone': 'Se acabó el carpintero de guardia',
+  'toast.levelUp': '¡Nivel',
+  'toast.soon': 'Muy pronto',
+  'toast.sailLocked': 'Construye el Astillero',
   'panel.builders': 'Constructores',
   'panel.ranks': 'Rangos de Capitán',
   'panel.log': 'Diario de a Bordo',

@@ -1,6 +1,6 @@
 import type * as THREE from 'three';
 import { bakeIcons, type IconSet } from './icons';
-import { el } from './components/dom';
+import { el, punch, pressable } from './components/dom';
 import { createPill, type Pill } from './components/pill';
 import { createTile } from './components/button';
 import { createBuilderChip } from './components/builderChip';
@@ -12,6 +12,8 @@ import { n } from './format';
 import { COPY } from './copy';
 import { FROZEN } from './env';
 import { detectPack } from './pack';
+import { createToasts, refuse } from './toast';
+import { sfx } from './sfx';
 
 /**
  * hud.ts — assembles the §2 layout and exposes the small surface the sim
@@ -68,17 +70,36 @@ export interface HudHooks {
   onCollect?(worldItemId: string): number;
   onCollectAll?(): void;
   onOpen?(what: string, detail?: string): void;
+  /** §3.11 — the ✓ bubble over a finished building was tapped. */
+  onInaugurate?(worldItemId: string): void;
 }
 
 export type WorldItemSpec =
   | { id: string; kind: 'bubble'; resource: ResourceId; amount: number; phase?: number }
   | { id: string; kind: 'timer'; remainingMs: number; totalMs: number }
-  | { id: string; kind: 'full'; resource?: ResourceId };
+  | { id: string; kind: 'full'; resource?: ResourceId }
+  /** §3.11 — a finished building waiting to be inaugurated. The tap is what
+   *  releases the XP, which is the whole point of the beat. */
+  | { id: string; kind: 'done' };
 
 export interface Hud {
   readonly root: HTMLElement;
   setState(patch: Partial<HudState>): void;
   state(): Readonly<HudState>;
+  /**
+   * §3.11 — while a finished building waits to be inaugurated, the XP it earned
+   * is HELD BACK from the bar. The sim has already granted it (moving the grant
+   * into the tap would mean an economy that lies about its own state), but the
+   * player must not see the reward before they claim it, or the ✓ bubble is a
+   * chore rather than a payoff. Releasing replays the whole arrival: the number
+   * flies to the capsule, the bar fills, the badge pops on a rollover.
+   */
+  holdXp(): void;
+  releaseXp(from?: { x: number; y: number }): void;
+  /** Where a reward should fly to when it has no pill of its own. */
+  xpTarget(): { x: number; y: number };
+  /** §5.3 — the gem counter punches like every other counter. */
+  gemTarget(): { x: number; y: number };
   addWorldItem(spec: WorldItemSpec): void;
   /** Reconciles the whole world-anchored layer against the sim in one call:
    *  adds what is new, updates what changed, removes what is gone. */
@@ -88,6 +109,30 @@ export interface Hud {
   place(id: string, x: number, y: number, visible: boolean): void;
   /** Drives every running clock from the scene's simulated time. */
   tick(elapsed: number): void;
+  /** §3.5 — the one place a refusal or an unbuilt route says so out loud. */
+  say(text: string, opts?: { tone?: 'info' | 'refuse' }): void;
+  /** Screen position of a world-anchored item, for effects that hang off it. */
+  screenPos(id: string): { x: number; y: number } | null;
+}
+
+/** A green ✓ drawn as a prop, not typed as a dingbat (§6): constant-weight
+ *  stroke, its own contour underneath, optically centred on its ink. */
+function checkMark(): SVGSVGElement {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 32 32');
+  svg.setAttribute('class', 'ok-bubble__mark');
+  for (const [width, colour] of [[11, '#17130E'], [6.5, '#FFFFFF']] as const) {
+    const mark = document.createElementNS(NS, 'path');
+    mark.setAttribute('d', 'M5 17.5 L12.5 25 L27 7');
+    mark.setAttribute('fill', 'none');
+    mark.setAttribute('stroke', colour);
+    mark.setAttribute('stroke-width', String(width));
+    mark.setAttribute('stroke-linecap', 'round');
+    mark.setAttribute('stroke-linejoin', 'round');
+    svg.append(mark);
+  }
+  return svg;
 }
 
 const RESOURCE_FILL: Record<ResourceId, string> = {
@@ -146,6 +191,11 @@ export async function createHud(
 
   const state: HudState = structuredClone(initial);
 
+  /** Bottom of the Zone A chrome, cached — see spread(). Declared here rather
+   *  than beside the world layer because syncPills() invalidates it and runs
+   *  before that block is evaluated. */
+  let ceilingCache: number | null = null;
+
   /* --- ZONE B (built first so the HUD paints over it) -------------------- */
   const zoneB = el('div', 'zone-b');
 
@@ -184,10 +234,21 @@ export async function createHud(
     const wanted = state.resources.map((r) => r.id);
     const key = wanted.join(',');
     if (key === pillOrder) return;
+    // The FIRST build of the stack is a layout, not a reveal. Every one after
+    // it is §4.1's staged reveal — the moment a brand-new currency enters the
+    // player's game — and it used to happen as a silent layout shift.
+    const staged = pillOrder !== '';
     pillOrder = key;
+    ceilingCache = null;   // the stack just got taller or shorter
     for (const id of wanted) {
       if (pills.has(id)) continue;
-      pills.set(id, createPill({ fill: RESOURCE_FILL[id], icon: icons[id] }));
+      const pill = createPill({ fill: RESOURCE_FILL[id], icon: icons[id] });
+      if (staged && !FROZEN) {
+        pill.el.classList.add('is-revealing');
+        pill.el.addEventListener('animationend', () => pill.el.classList.remove('is-revealing'), { once: true });
+        sfx('pop');
+      }
+      pills.set(id, pill);
     }
     for (const [id, pill] of [...pills]) {
       if (wanted.includes(id)) continue;
@@ -200,9 +261,14 @@ export async function createHud(
 
   /* --- ZONE C ----------------------------------------------------------- */
   const sail = createTile({
-    kind: 'cta', family: 'orange', icon: icons.zarpar,
+    kind: 'cta', family: 'orange', icon: icons.zarpar, lock: icons.candado,
     caption: COPY['cta.sail'], label: COPY['cta.sail'],
-    onTap: () => (state.sailLocked ? open('Construye el Muelle') : open('Zarpar')),
+    onTap: () => {
+      // §3.5 — a locked CTA names the key. It also SHAKES, so the answer and
+      // the object it is about are visibly the same event.
+      if (state.sailLocked) { refuse(sail.el); open('Construye el Muelle'); return; }
+      open('Zarpar');
+    },
   });
   const build = createTile({
     kind: 'sub', family: 'orange', icon: icons.construir,
@@ -230,7 +296,7 @@ export async function createHud(
     el('div', 'cluster-row', log.el, settings.el)
   );
 
-  const tray = createTray(icons.cofres, () => open('Cofres'));
+  const tray = createTray({ chest: icons.cofres, lock: icons.candado }, () => open('Cofres'));
 
   // §3.9 — offered only at 4+ pending bubbles. Below that, never: a shortcut
   // that appears for two bubbles teaches the player to stop tapping the island.
@@ -243,10 +309,16 @@ export async function createHud(
     for (const item of [...world.values()]) if (item.bubble) collect(item);
   });
 
+  // §3.5's "never a dead tap", and §3.4's escalation from the Zone A nag to the
+  // tile that can act on it. Both layers had a z-index token and no users.
+  const toasts = createToasts();
+  const guide = el('div', 'layer-guide-host');
+
   const hud = el(
     'div', 'hud',
     zoneALeft, chips, zoneARight,
-    zoneCPrimary, zoneCUtility, tray.el, collectAll
+    zoneCPrimary, zoneCUtility, tray.el, collectAll,
+    toasts.el, guide
   );
   root.append(zoneB, hud);
 
@@ -283,6 +355,19 @@ export async function createHud(
       bar.set(spec.remainingMs, spec.totalMs);
       item.bar = bar;
       anchor.append(bar.el);
+    } else if (spec.kind === 'done') {
+      // §3.11 — "a green ✓ bubble appears that must be tapped to inaugurate the
+      // building (that tap grants XP)". The loop must never leave a gap where
+      // the building shows nothing, so this is the object that stands in
+      // between the timer bar disappearing and the finished model being just
+      // another rooftop.
+      const mark = el('div', 'ok-bubble ok-bubble__bob', checkMark());
+      mark.setAttribute('role', 'button');
+      mark.setAttribute('aria-label', 'Inaugurar');
+      pressable(mark, () => inaugurate(item));
+      item.ay = 1;
+      anchor.style.setProperty('--ay', '-100%');
+      anchor.append(mark);
     } else {
       // §10.11 — `¡Lleno!` keeps the informational dashed border but opens the
       // storage upgrade sheet in one tap. A scolding becomes a conversion.
@@ -383,13 +468,21 @@ export async function createHud(
     if (boxes.length === 0) return;
 
     // Measured rather than assumed: the staged reveal (§4.1) changes how tall
-    // the pill stack is, and landscape moves the chips to the centre. Every
-    // read happens before the first write, so this costs one layout, not one
-    // per element.
-    const ceiling = Math.max(
-      zoneARight.getBoundingClientRect().bottom,
-      chips.getBoundingClientRect().bottom
-    ) + 8;
+    // the pill stack is, and landscape moves the chips to the centre.
+    //
+    // But it is measured ONCE and cached, not every frame. Reading a rect after
+    // that frame's transform writes forces a synchronous layout, and this pass
+    // runs 60 times a second — §5's performance rule is that the world-anchored
+    // layer costs one transform write per element per frame and nothing else.
+    // The stack's height only changes on a staged reveal or a resize, and both
+    // invalidate the cache explicitly.
+    if (ceilingCache === null) {
+      ceilingCache = Math.max(
+        zoneARight.getBoundingClientRect().bottom,
+        chips.getBoundingClientRect().bottom
+      ) + 8;
+    }
+    const ceiling = ceilingCache;
 
     for (const box of boxes) box.t = Math.max(box.t, ceiling);
     boxes.sort((a, b) => a.t - b.t);
@@ -406,9 +499,15 @@ export async function createHud(
       }
     }
 
+    // The resolved y is approached, not assigned. A bubble appearing over one
+    // building used to make its neighbour's timer bar TELEPORT to a new row on
+    // the next frame; Clash's world labels glide out of each other's way. The
+    // lerp is fast enough (≈8 frames to settle) that it never reads as lag.
     for (const box of boxes) {
-      const y = box.t + box.h * box.item.ay;
-      if (Math.abs(y - box.item.at!.y) < 0.5) continue;
+      const want = box.t + box.h * box.item.ay;
+      const now = box.item.at!.y;
+      const y = FROZEN || Math.abs(want - now) > 240 ? want : now + (want - now) * 0.28;
+      if (Math.abs(y - now) < 0.2) continue;
       box.item.at!.y = y;
       box.item.wrap.style.transform =
         `translate3d(${box.item.at!.x.toFixed(1)}px, ${y.toFixed(1)}px, 0)`;
@@ -447,9 +546,12 @@ export async function createHud(
 
     if (moved <= 0) {
       if (flying) inFlight.delete(spec.resource);
-      // Nothing left the building, so the bubble stays and says so.
+      // Nothing left the building, so the bubble stays and SAYS SO. This used
+      // to be a bare vibrate() — which is a no-op on iOS, i.e. a completely
+      // silent tap on the game's core verb.
       world.set(spec.id, item);
-      navigator.vibrate?.([12, 40, 12]);
+      refuse(item.bubble.el);
+      toasts.say(COPY['chip.storageMax'], { tone: 'refuse' });
       render();
       return;
     }
@@ -457,6 +559,7 @@ export async function createHud(
     void item.bubble.burst().then(() => item.wrap.remove());
     sparks(from, RESOURCE_FILL[spec.resource]);
     navigator.vibrate?.(8);
+    sfx('coin');
 
     const land = () => {
       if (flying) {
@@ -465,38 +568,51 @@ export async function createHud(
         else inFlight.delete(spec.resource);
       }
       pill?.hit();
+      // §5.4: the destination REACTS on arrival. Without a sound on the landing
+      // the flight is a silent arc that ends in a colour change.
+      if (flying) sfx('land');
       render();
     };
 
     // Cap simultaneous flights at 8; beyond that the value lands directly.
     if (!flying) { land(); syncCollectAll(); return; }
     flights++;
-    flyNumber(from, pill!.target(), moved, () => { flights--; land(); });
+    flyNumber(from, pill!.target(), `+${n(moved)}`, () => { flights--; land(); });
     syncCollectAll();
   }
 
   function flyNumber(
     from: { x: number; y: number },
     to: { x: number; y: number },
-    amount: number,
-    done: () => void
+    label: string,
+    done: () => void,
+    extraClass = ''
   ): void {
-    const node = el('div', 'num flyer');
-    node.textContent = `+${n(amount)}`;
-    hud.append(node);
+    const node = el('div', `num flyer${extraClass ? ` ${extraClass}` : ''}`);
+    node.textContent = label;
     // Quadratic bezier with the control point lifted, so the value visibly
     // ARCS to its destination rather than sliding.
     const cx = from.x + (to.x - from.x) * 0.35;
     const cy = Math.min(from.y, to.y) - 90;
+    const at = (e: number) => {
+      const u = 1 - e;
+      const x = u * u * from.x + 2 * u * e * cx + e * e * to.x;
+      const y = u * u * from.y + 2 * u * e * cy + e * e * to.y;
+      return `translate3d(${x}px, ${y}px, 0) translate(-50%,-50%) scale(${(1 - 0.4 * e).toFixed(3)})`;
+    };
+    // The starting transform is written BEFORE the node is in the document.
+    // Assigning it inside the first rAF meant the element's first paint was at
+    // the coordinate origin — every collect flashed "+210" in the screen's
+    // top-left corner for a frame before jumping onto the arc, and that frame
+    // lengthens on exactly the busy frames a collect happens on.
+    node.style.transform = at(0);
+    hud.append(node);
+
     const start = performance.now();
     const step = (now: number) => {
       const k = Math.min(1, (now - start) / 450);
       const e = 1 - Math.pow(1 - k, 2);          // ease-out, never linear
-      const u = 1 - e;
-      const x = u * u * from.x + 2 * u * e * cx + e * e * to.x;
-      const y = u * u * from.y + 2 * u * e * cy + e * e * to.y;
-      node.style.transform =
-        `translate3d(${x}px, ${y}px, 0) translate(-50%,-50%) scale(${(1 - 0.4 * e).toFixed(3)})`;
+      node.style.transform = at(e);
       if (k < 1) requestAnimationFrame(step);
       else { node.remove(); done(); }
     };
@@ -508,15 +624,18 @@ export async function createHud(
     for (let i = 0; i < 6; i++) {
       const p = el('div', 'spark');
       p.style.setProperty('--fill', colour);
-      hud.append(p);
       const angle = (i / 6) * Math.PI * 2 + 0.4;
       const dist = 26 + (i % 3) * 8;
+      const place = (e: number) =>
+        `translate3d(${at.x + Math.cos(angle) * dist * e}px, ${at.y + Math.sin(angle) * dist * e + e * e * 26}px, 0)`;
+      // Same rule as the flyer: placed before it is appended, never after.
+      p.style.transform = place(0);
+      hud.append(p);
       const start = performance.now();
       const step = (now: number) => {
         const k = Math.min(1, (now - start) / 320);
         const e = 1 - Math.pow(1 - k, 2);
-        p.style.transform =
-          `translate3d(${at.x + Math.cos(angle) * dist * e}px, ${at.y + Math.sin(angle) * dist * e + e * e * 26}px, 0)`;
+        p.style.transform = place(e);
         p.style.opacity = String(1 - k);
         if (k < 1) requestAnimationFrame(step);
         else p.remove();
@@ -525,17 +644,108 @@ export async function createHud(
     }
   }
 
+  /* --- §3.11 inauguration -------------------------------------------------
+   * The ✓ over a finished building. Tapping it bursts the bubble, releases the
+   * XP the sim already granted, and flies it to the capsule — so the reward
+   * lands on the player's gesture rather than four frames after a timer they
+   * were not watching. */
+  function inaugurate(item: WorldItem): void {
+    if (item.spec.kind !== 'done') return;
+    const id = item.spec.id;
+    world.delete(id);
+    const mark = item.inner.firstElementChild as HTMLElement | null;
+    const rect = (mark ?? item.inner).getBoundingClientRect();
+    sfx('build');
+    navigator.vibrate?.([10, 30, 18]);
+    if (mark && !FROZEN) {
+      mark.classList.add('is-bursting');
+      window.setTimeout(() => item.wrap.remove(), 190);
+    } else {
+      item.wrap.remove();
+    }
+    sparks({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }, 'var(--ui-timer-a)');
+    releaseXp({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+    hooks.onInaugurate?.(id);
+  }
+
   function syncCollectAll(): void {
     let pending = 0;
     for (const item of world.values()) if (item.bubble) pending++;
     collectAll.hidden = pending < 4;
   }
 
+  /* --- §3.11 the held XP --------------------------------------------------
+   * While a ✓ bubble is waiting to be tapped, the bar shows what the player
+   * had BEFORE the job finished. Freezing the snapshot rather than tracking an
+   * amount means the rollover works for free: a level-up that happens inside
+   * the held window is simply part of what the release reveals. */
+  type XpView = { level: number; xp: number; xpMax: number };
+  let xpHold: XpView | null = null;
+  let shownLevel = state.level;
+  /** What the bar is painting now, and what it painted before the last change.
+   *  The event that says "a job finished" arrives AFTER the state carrying its
+   *  XP has already been pushed and rendered, so holding the current value
+   *  would hold the reward the player is not supposed to have seen yet. What
+   *  has to be restored is the figure from before that change. */
+  let painted: XpView | null = null;
+  let previous: XpView | null = null;
+
+  function holdXp(): void {
+    if (xpHold) return;                 // a second finish joins the first hold
+    xpHold = previous ?? painted ?? { level: state.level, xp: state.xp, xpMax: state.xpMax };
+    render();
+  }
+
+  function releaseXp(from?: { x: number; y: number }): void {
+    const held = xpHold;
+    xpHold = null;
+    render();
+    if (!held || FROZEN) return;
+    const gained = Math.round(
+      (state.level - held.level) * held.xpMax + state.xp - held.xp
+    );
+    if (gained > 0 && from) {
+      flyNumber(from, xpTarget(), `+${n(gained)} XP`, () => punch(xp), 'flyer--xp');
+    }
+  }
+
+  function xpTarget(): { x: number; y: number } {
+    const r = xp.getBoundingClientRect();
+    return { x: r.left + r.width * 0.7, y: r.top + r.height / 2 };
+  }
+
   /* --- render ------------------------------------------------------------ */
   function render(): void {
     syncPills();
-    levelBadge.firstElementChild!.textContent = String(state.level);
-    xp.style.setProperty('--pct', String(Math.max(0, Math.min(1, state.xp / state.xpMax))));
+    const view: XpView = xpHold ?? { level: state.level, xp: state.xp, xpMax: state.xpMax };
+    if (!xpHold && (!painted || painted.xp !== view.xp || painted.level !== view.level)) {
+      previous = painted;
+      painted = { ...view };
+    }
+    levelBadge.firstElementChild!.textContent = String(view.level);
+    // A rollover must never run the bar BACKWARDS through the middle: it fills
+    // to 100%, the transition is suppressed for the reset, then it grows again.
+    if (view.level !== shownLevel) {
+      if (view.level > shownLevel && !FROZEN) {
+        sfx('levelup');
+        punch(levelBadge);
+        levelBadge.classList.remove('is-levelling');
+        void levelBadge.offsetWidth;
+        levelBadge.classList.add('is-levelling');
+        xp.style.setProperty('--pct', '1');
+        xp.classList.add('is-rolling');
+        window.setTimeout(() => {
+          xp.style.setProperty('--pct', '0');
+          void xp.offsetWidth;
+          xp.classList.remove('is-rolling');
+          xp.style.setProperty('--pct', String(Math.max(0, Math.min(1, view.xp / view.xpMax))));
+        }, 260);
+      }
+      shownLevel = view.level;
+      if (FROZEN) xp.style.setProperty('--pct', String(Math.max(0, Math.min(1, view.xp / view.xpMax))));
+    } else {
+      xp.style.setProperty('--pct', String(Math.max(0, Math.min(1, view.xp / view.xpMax))));
+    }
 
     builderChip.set(state.builders.free, state.builders.total);
     statusChip.set(state.status);
@@ -552,6 +762,9 @@ export async function createHud(
     chests.badge.set(state.badges.cofres);
     log.badge.set(state.badges.diario);
     build.badge.set(state.badges.construir);
+    // §5.6's permitted idle loop. The tray carries it in landscape; in portrait
+    // the tray is collapsed into this tile (§10.8), so the tile carries it.
+    chests.setReady(state.chestSlots.some((s) => s.state === 'ready'));
     chests.setTimer(state.chestTimerMs);
     sail.setLocked(state.sailLocked);
     tray.set(state.chestSlots);
@@ -568,14 +781,54 @@ export async function createHud(
   }
 
   function open(what: string, detail?: string): void {
+    lastTouch = elapsedNow;
+    dismissGuide();
     // Panels are the next slice; until then the owner decides what a route
     // does, and a tap is never silent.
     if (hooks.onOpen) hooks.onOpen(what, detail);
     else console.log(`[hud] open: ${what}${detail ? ` (${detail})` : ''}`);
   }
 
+  /* --- §3.4 the idle-builder tooltip --------------------------------------
+   * The nag half of the free-builder signal worked — the carpenter tilts ±8°
+   * with a gold halo every 2.5s. The BRIDGE half did not exist: the copy string
+   * had no reader anywhere in src/, so a player who never looks at Zone A never
+   * learns that a chip out of thumb reach is about a tile in it. §3.4 is
+   * explicit that the escalation is what stops the tilt becoming wallpaper.
+   */
+  let lastTouch = 0;
+  let tip: HTMLElement | null = null;
+
+  function dismissGuide(): void {
+    if (!tip) return;
+    const node = tip;
+    tip = null;
+    if (FROZEN) { node.remove(); return; }
+    node.classList.add('is-leaving');
+    window.setTimeout(() => node.remove(), 160);
+  }
+
+  function showGuide(): void {
+    if (tip || FROZEN) return;
+    const target = build.el.getBoundingClientRect();
+    const host = hud.getBoundingClientRect();
+    tip = el('div', 'guide-tip',
+      el('span', 't', COPY['guide.idleBuilder']),
+      el('i', 'guide-tip__arrow'));
+    // Sits directly above the tile it points at, inside the viewport — the
+    // arrow is what connects it to Construir, so the two must line up.
+    tip.style.left = `${Math.min(host.width - 222, Math.max(8, target.left - host.left - 12))}px`;
+    tip.style.bottom = `${host.bottom - target.top + 14}px`;
+    guide.append(tip);
+    sfx('pop');
+  }
+
+  /** Any tap anywhere restarts the idle clock and dismisses an open tooltip. */
+  root.addEventListener('pointerdown', () => { lastTouch = elapsedNow; dismissGuide(); }, true);
+
   window.addEventListener('resize', () => {
     viewport = { w: window.innerWidth, h: window.innerHeight };
+    ceilingCache = null;
     for (const item of world.values()) item.size = null;
   });
 
@@ -590,6 +843,15 @@ export async function createHud(
       stateSetAt = elapsedNow;
       render();
     },
+    holdXp,
+    releaseXp,
+    xpTarget,
+    gemTarget: () => gemPill.target(),
+    say: (text, opts) => toasts.say(text, opts),
+    screenPos(id) {
+      const item = world.get(id);
+      return item?.at ? { ...item.at } : null;
+    },
     addWorldItem,
     setWorldItems,
     place,
@@ -601,6 +863,12 @@ export async function createHud(
     tick(elapsed) {
       elapsedNow = elapsed;
       spread();
+
+      // §3.4 — 30s idle with a free builder escalates the Zone A nag into a
+      // tooltip pointing at the tile that can spend him.
+      if (state.builders.free > 0 && !tip && elapsed - lastTouch > 30) showGuide();
+      else if (state.builders.free <= 0 && tip) dismissGuide();
+
       for (const item of world.values()) {
         if (item.spec.kind !== 'timer' || !item.bar) continue;
         const since = (elapsed - item.setAt) * 1000;

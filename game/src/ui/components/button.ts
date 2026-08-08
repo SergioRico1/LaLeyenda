@@ -12,6 +12,9 @@ export interface TileOptions {
   family?: TileFamily;
   /** Baked voxel icon. */
   icon?: string;
+  /** Baked padlock, for a tile that can be locked (§3.5). A locked primary
+   *  keeps its own hue and gains this prop — it is never drained (§6.10). */
+  lock?: string;
   /** Baked into the tile — a CTA is never a text pill (§6.13). */
   caption?: string;
   label: string;            // accessible name
@@ -27,6 +30,8 @@ export interface Tile {
   setLocked(locked: boolean): void;
   /** The next-action resolver's attention cue (§4.8). */
   setCued(cued: boolean): void;
+  /** §5.6 — a ready chest bobs. Portrait's tray lives inside this tile. */
+  setReady(ready: boolean): void;
 }
 
 const KIND_CLASS: Record<TileKind, string> = {
@@ -49,6 +54,7 @@ export function createTile(opts: TileOptions): Tile {
   const art = iconImg(opts.icon, 'tile__art');
   root.append(art);
   if (opts.caption) root.append(el('span', 't t-caption tile__cap', opts.caption));
+  if (opts.lock) root.append(iconImg(opts.lock, 'tile__lock'));
 
   const timer = el('span', 'num tile__timer');
   const badge = createBadge(0);
@@ -73,6 +79,9 @@ export function createTile(opts: TileOptions): Tile {
     },
     setCued(cued) {
       root.classList.toggle('is-cued', cued);
+    },
+    setReady(ready) {
+      root.classList.toggle('is-ready', ready);
     },
   };
 }

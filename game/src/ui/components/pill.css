@@ -19,15 +19,38 @@
   border:var(--ui-ink-w) solid var(--ui-ink);
   border-radius:var(--ui-r-pill);
   flex:0 0 auto;
+  /* Layer 4. The header of this file used to say a HUD pill takes no shadow
+   * because it "sits ON the world" — but nothing in the reference sits on the
+   * world without casting, and a capsule with no extrusion is a printed shape.
+   * It is the SHORT rung of the ladder (2px), not the tile's 6px. */
+  box-shadow:var(--ui-drop-xs);
   /* Never tappable — which is exactly why it may live out of thumb reach. */
   pointer-events:none;
 }
 
+/* The track is a TUBE, and layer 2 belongs to the tube — not to the liquid in
+ * it. Shipped, only the filled fraction carried a step, which on a HUD holding
+ * a 17%-full gold pill and two empty ones meant about an eighth of the pill
+ * area had any modelling at all: a column scan through the gold pill found the
+ * same rgb(92,158,190) held for 25 consecutive rows, no ramp, no break.
+ *
+ * The reference's empty gold track, scanned top to bottom, runs L≈128 → 104
+ * with the break just under halfway. So: the wash, then the step over it, then
+ * the lip inside the bottom. The empty half of a Clash bar is as carved as the
+ * full half. */
 .pill__track{
   position:absolute; inset:0;
   border-radius:var(--ui-r-pill);
   overflow:hidden;
   background:var(--ui-track-empty);
+}
+.pill__track::after{
+  content:'';
+  position:absolute; inset:0;
+  background:var(--ui-track-gloss);
+  /* layer 4 — the dark lip inside the bottom of the tube */
+  box-shadow:inset 0 -2px 0 var(--ui-lip);
+  pointer-events:none;
 }
 .pill__fill{
   position:absolute; right:0; top:0; bottom:0;
@@ -47,16 +70,26 @@
   border-radius:999px;
   pointer-events:none;
 }
+/* The centring is the `translate` PROPERTY, not a `transform`, so §5.3's punch
+ * can own `transform`/`scale` without cancelling the layout. When both lived on
+ * `transform`, every count-up dropped the numeral 12px for its whole 120ms and
+ * snapped it back — four times a second while production ticks. */
 .pill__num{
   position:absolute; right:46px; top:50%;
-  transform:translateY(-50%);
+  translate:0 -50%;
   transform-origin:100% 50%;
   font-size:20px;
   white-space:nowrap;
   pointer-events:none;
 }
+/* The icon OVERHANGS the capsule (§6.6), and §1.7's edge rule is about DRAWN
+ * extent — so the overhang is measured from the ink, not from the PNG's box.
+ * `--ink-x1` is where this prop's ink ends inside its own canvas (icons.ts,
+ * alignInk); subtracting the leftover margin puts every pill's drawn right
+ * edge on the same pixel instead of on a 6px ragged line. */
 .pill__icon{
-  position:absolute; right:-18px; top:50%;
+  position:absolute; top:50%;
+  right:calc(-18px - (1 - var(--ink-x1,1)) * var(--ui-pill-icon));
   width:var(--ui-pill-icon); height:var(--ui-pill-icon);
   transform:translateY(-50%);
   pointer-events:none;
@@ -65,13 +98,15 @@
 
 @media (orientation:landscape){
   .pill__num{ font-size:22px; right:50px; }
-  .pill__icon{ right:-20px; }
+  .pill__icon{ right:calc(-20px - (1 - var(--ink-x1,1)) * var(--ui-pill-icon)); }
 }
 
-/* Counters punch when they change (§5.3). A silently mutated counter is a bug. */
-.pill__num.is-punching{ animation:ui-punch 120ms ease-out; }
+/* Counters punch when they change (§5.3) — the shared `.is-punching` rule in
+ * base.css does it, so there is one implementation for every numeral. */
 /* The pill flashes white when a collected value lands on it (§3.9). */
 .pill.is-hit .pill__track{ box-shadow:inset 0 0 0 999px rgba(255,255,255,.30); }
+/* The flash has to LEAVE on a curve, or the arrival is a 120ms strobe. */
+.pill__track{ transition:box-shadow .16s ease-out; }
 
 /* §3.1 states: at cap the fill lifts 6% and, while TWO OR MORE producers of
  * that resource are capped, the pill pulses amber every 3s. One full producer
@@ -109,7 +144,8 @@
   pointer-events:auto;
   transition:transform .06s ease-out, box-shadow .06s ease-out;
 }
-.plus:active{
+.plus:active,
+.plus.is-pressed{
   transform:translateY(calc(-50% + 3px));
   box-shadow:inset 0 2px 0 rgba(255,255,255,.35), 0 1px 0 rgba(0,0,0,.3);
 }

@@ -18,6 +18,11 @@
 
 @import './panels/panels.css';
 
+/* §5 — the payoff layer and the answer to a refused tap. Both mount into
+   --z-celebrate / --z-toast, which had tokens and no users. */
+@import './celebrate.css';
+@import './toast.css';
+
 /* Optional third-party artwork; every rule inside is scoped to html.has-uipack
    and the HUD is correct without it. See pack.css. */
 @import './pack.css';

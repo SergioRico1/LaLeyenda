@@ -108,6 +108,62 @@ export const ACTS = {
     await openPicker(page);
   },
 
+  /**
+   * §3.11 — the inauguration bubble.
+   *
+   * Finishing a building used to produce nothing at all: the timer bar was
+   * deleted from the DOM and the new model popped in. Now the bar is replaced
+   * by a green ✓ that has to be claimed, and this is the act that photographs
+   * it. Run with `--motion 1` to see the flash and the dust that land with it.
+   */
+  async finished(page) {
+    await raiseTownHall(page);
+    await need(page, '.ok-bubble', 'the inauguration ✓ bubble');
+    await step(page, 2);
+  },
+
+  /**
+   * §3.11 — claiming it: the burst, the dust ring, the XP flying to the
+   * capsule, and the level badge popping if it rolled over.
+   */
+  async inaugurate(page) {
+    await raiseTownHall(page);
+    // `force` because the ✓ is bobbing — §5.6 lets a claimable thing keep
+    // asking, and Playwright's stability check would wait for it forever.
+    await (await need(page, '.ok-bubble', 'the inauguration ✓ bubble')).click({ force: true });
+    // Caught mid-flight on purpose — §5.4's arc is the thing being reviewed.
+    await page.waitForTimeout(150);
+    await step(page, 2);
+  },
+
+  /**
+   * §3.22B — the reward moment. `--save demo` boots the fixture whose tray has
+   * a chest ready, which is the only cold-boot route to a chest that opens.
+   */
+  async chest(page) {
+    await (await need(page, 'button[aria-label="Cofres"]', 'the Cofres tile')).click();
+    await need(page, '.reward__grid .reward__tile', 'the reward grid');
+    await page.waitForTimeout(1200);   // let the tiles deal, 220ms apart
+    await step(page, 2);
+  },
+
+  /**
+   * §3.5 — a locked CTA names the key instead of dead-tapping. Tapping
+   * ¡Zarpar! before the Astillero exists shakes the tile and says why.
+   */
+  async refused(page) {
+    await (await need(page, 'button[aria-label="¡Zarpar!"]', 'the ¡Zarpar! tile')).click();
+    await need(page, '.toast', 'the refusal toast');
+    await step(page, 2);
+  },
+
+  /** §3.4 — the 30s idle-builder tooltip, pointing down at Construir. */
+  async guide(page) {
+    await page.waitForSelector('.guide-tip', { timeout: 8000, state: 'visible' })
+      .catch(() => { throw new Error('act: guide — the idle-builder tooltip never appeared'); });
+    await step(page, 2);
+  },
+
   /** §3.15 — the picker once the hall is Nv2 and rows are actually takeable. */
   async pickerOpen(page) {
     await raiseTownHall(page);

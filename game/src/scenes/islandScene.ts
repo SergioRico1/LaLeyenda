@@ -19,10 +19,13 @@ import { bakeIcons, bakeModelIcons, type IconSet } from '../ui/icons';
 import {
   buildingIdOf, suggestedUpgrade, toBuildOptions, toHudState, toUpgradeView, toWorldItems,
 } from '../ui/present';
+import { createCelebrate, type RewardItem } from '../ui/celebrate';
+import { sfx } from '../ui/sfx';
+import type { SimEvent } from '../sim';
 import { createBuildPicker } from '../ui/panels/buildPicker';
 import { createUpgradeSheet } from '../ui/panels/upgradeSheet';
 import { createBuildBar } from '../ui/panels/buildBar';
-import type { RefusalKey } from '../ui/copy';
+import { COPY, refusalText, type RefusalKey } from '../ui/copy';
 
 /** The home island: the builder scene, seen from the Clash-of-Clans style camera.
  *
@@ -206,6 +209,16 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
   // Declared before createHud, which syncs on the way in.
   let anchors = toWorldItems(game.state(), game.now());
 
+  /**
+   * §3.11 — buildings that have finished and are waiting to be inaugurated.
+   *
+   * The sim has no concept of this: as far as it is concerned the job is done
+   * and the XP is banked. It is a purely presentational beat, so it is owned
+   * here and merged into the anchor list on the way to the HUD — which is what
+   * keeps `toWorldItems` a pure function of sim state.
+   */
+  const awaiting = new Map<number, number>();   // buildingId → lift
+
   // `?hud=0` drops the overlay entirely, so the world can be judged on its own
   // pixels without chrome in the frame.
   const hudEnabled = params.get('hud') !== '0';
@@ -224,6 +237,16 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
       onCollectAll() {
         game.dispatch((s) => collectAll(s));
       },
+      onInaugurate(worldItemId) {
+        const id = buildingIdOf(worldItemId);
+        if (id === null) return;
+        awaiting.delete(id);
+        // §3.11's dust ring leaves the ground as the scaffolding comes off.
+        const at = hud?.screenPos(worldItemId) ?? lastAt.get(id);
+        if (at) { celebrate.flash(at.x, at.y, 170); celebrate.dust(at.x, at.y + 26, 210); }
+        squash(id);
+        syncHud();
+      },
       onOpen: route,
     });
     syncHud();
@@ -234,6 +257,9 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
   function syncHud(): void {
     if (!hud) return;
     anchors = toWorldItems(game.state(), game.now());
+    for (const [buildingId, lift] of awaiting) {
+      anchors.push({ buildingId, lift, item: { id: `done-${buildingId}`, kind: 'done' } });
+    }
     hud.setState(toHudState(game.state(), game.now()));
     hud.setWorldItems(anchors.map((a) => a.item));
   }
@@ -243,6 +269,136 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
   // bubble that survives its own collect, is a quarter second of the HUD
   // telling the player something untrue.
   game.onChange(() => syncHud());
+
+  /* --- the payoff layer (§3.11, §3.22, §5) --------------------------------
+   *
+   * Every event the sim emits used to be discarded here — `if (game.tick())`
+   * threw away the SimEvent[] and every action result's events went unread.
+   * Finishing a building, levelling up, a chest going ready and a chest being
+   * opened all produced exactly nothing: no flash, no squash, no dust, no
+   * reward moment, and not one element had ever been mounted at --z-celebrate.
+   *
+   * This is the one place they fan out. Everything downstream of it is a
+   * presentational decision; nothing here changes what the sim did.
+   */
+  const celebrate = createCelebrate();
+  uiRoot?.append(celebrate.el);
+
+  /**
+   * Where each building's world-anchored label was last drawn.
+   *
+   * A completion effect has to land ON the building, and by the time the event
+   * is read the timer bar it hung off has already been reconciled out of the
+   * DOM — so asking the HUD for its position then returns nothing. The
+   * projection pass writes here every frame instead, which costs one Map set
+   * per visible label and is always one frame fresh.
+   */
+  const lastAt = new Map<number, { x: number; y: number }>();
+
+  /** §3.11's squash-and-stretch, on the actual model. */
+  const squashing = new Map<number, number>();   // buildingId → scene time it started
+
+  function squash(buildingId: number): void {
+    if (shot) return;                    // a capture must stay byte-identical
+    squashing.set(buildingId, sceneElapsed);
+  }
+
+  function objectFor(buildingId: number): THREE.Object3D | null {
+    for (const node of pickable) if (node.userData.buildingId === buildingId) return node;
+    return null;
+  }
+
+  /** Drives every running squash from the SCENE clock, never the wall clock, so
+   *  shot mode stays deterministic. */
+  function stepSquash(elapsed: number): void {
+    for (const [id, startedAt] of [...squashing]) {
+      const k = (elapsed - startedAt) / 0.4;         // §5: 400ms
+      const node = objectFor(id);
+      if (!node) { squashing.delete(id); continue; }
+      if (k >= 1) {
+        node.scale.setScalar(1);
+        squashing.delete(id);
+        continue;
+      }
+      // .9 → 1.08 → 1 on cubic-bezier(.3,1.6,.4,1), approximated with the
+      // overshoot the curve is there to produce. Volume is conserved: the
+      // building squats and spreads, then springs.
+      const s = 1 + (Math.sin(k * Math.PI * 1.5) * 0.14) * (1 - k) - (k < 0.14 ? 0.1 * (1 - k / 0.14) : 0);
+      node.scale.set(1 / Math.sqrt(s), s, 1 / Math.sqrt(s));
+    }
+  }
+
+  /**
+   * One switch over `SimEvent['type']`. Adding a beat means adding a case.
+   */
+  function celebrateEvents(events: SimEvent[]): void {
+    let touched = false;
+    for (const event of events) {
+      switch (event.type) {
+        case 'work-finished': {
+          // The building is done — but the loop must never leave a gap where it
+          // shows nothing (§3.11), so the timer bar is replaced by a ✓ the
+          // player has to claim, and the XP is withheld until they do.
+          const spec = buildingSpec(event.building);
+          awaiting.set(event.buildingId, spec.footprint * 1.3);
+          hud?.holdXp();
+          const at = lastAt.get(event.buildingId);
+          if (at) { celebrate.flash(at.x, at.y, 200); celebrate.dust(at.x, at.y + 30, 230); }
+          sfx('pop');
+          navigator.vibrate?.(12);
+          touched = true;
+          break;
+        }
+        case 'level-up':
+          // Held with the XP: the badge pops when the ✓ is claimed, so the two
+          // halves of the same reward do not arrive a minute apart.
+          break;
+        case 'chest-ready':
+          sfx('pop');
+          hud?.say(COPY['toast.chestReady']);
+          break;
+        case 'chest-opened':
+          void showChestReward(event.loot);
+          break;
+        case 'quest-complete':
+          sfx('levelup');
+          hud?.say(COPY['toast.questDone']);
+          break;
+        case 'daily-claimed':
+          sfx('levelup');
+          break;
+        case 'builder-expired':
+          hud?.say(COPY['toast.builderGone']);
+          break;
+        default:
+          break;
+      }
+    }
+    // A ✓ bubble is HUD-owned, so the layer has to be re-reconciled after the
+    // fan-out — `game.onChange` already fired, before `awaiting` was written.
+    if (touched) syncHud();
+  }
+
+  /** §3.22B — the chest reveal, over a scrim, with the tiles dealt one at a
+   *  time. This used to be `console.log('[route] cofre abierto', loot)`. */
+  async function showChestReward(loot: Record<string, number>): Promise<void> {
+    const named: Array<[string, string, string | undefined]> = [
+      ['oro', 'Oro', iconSet.oro],
+      ['madera', 'Madera', iconSet.madera],
+      ['gemas', 'Gemas', iconSet.gema],
+      ['fragmentos', 'Fragmentos', iconSet.rango],
+    ];
+    const items: RewardItem[] = named
+      .filter(([key]) => (loot[key] ?? 0) > 0)
+      .map(([key, label, icon]) => ({ icon, amount: loot[key] ?? 0, label }));
+    if (items.length === 0) return;
+    await celebrate.reward({
+      title: COPY['banner.victory'],
+      label: COPY['label.gotIt'],
+      items,
+      cta: COPY['cta.returnHome'],
+    });
+  }
 
   /* --- §3.15 build mode + §3.16 the upgrade sheet ------------------------- */
 
@@ -271,12 +427,14 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
     onUpgrade: (id) => {
       const result = game.dispatch((s) => startUpgrade(s, id, game.now()));
       if (result.ok) { sheet!.close(); void syncBuildings(); }
-      else refreshSheet();
+      else { refused(result.refusal); refreshSheet(); }
     },
     onFinishNow: (id) => {
       const result = game.dispatch((s) => finishNow(s, id, game.now()));
-      if (result.ok) { sheet!.close(); void syncBuildings(); }
-      else refreshSheet();
+      // finishNow runs the tick itself, so this is where a gem-bought
+      // completion earns exactly the same celebration as a waited-out one.
+      if (result.ok) { sheet!.close(); void syncBuildings(); celebrateEvents(result.events); }
+      else { refused(result.refusal); refreshSheet(); }
     },
   }) : null;
 
@@ -452,19 +610,29 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
       case 'Cofres': {
         const ready = state.chests.findIndex((c) => c.state === 'ready');
         if (ready >= 0) {
-          const loot = game.dispatch((s) => openChest(s, ready)).loot;
-          console.log('[route] cofre abierto', loot);
+          // §3.22B — the reward moment, not a console line.
+          celebrateEvents(game.dispatch((s) => openChest(s, ready)).events);
           return;
         }
         if (state.freeChestsBanked > 0) { game.dispatch((s) => claimFreeChest(s)); return; }
         const waiting = state.chests.findIndex((c) => c.state === 'waiting');
-        if (waiting >= 0) game.dispatch((s) => startChest(s, waiting, now));
+        if (waiting >= 0) {
+          const result = game.dispatch((s) => startChest(s, waiting, now));
+          if (!result.ok) refused(result.refusal);
+          return;
+        }
+        hud?.say(COPY['chip.oneChest']);
         return;
       }
       case 'Diario de a Bordo': {
         const quest = state.quests.daily.findIndex(questComplete);
-        if (quest >= 0) { game.dispatch((s) => claimQuest(s, quest)); return; }
-        game.dispatch((s) => claimDaily(s, now));
+        if (quest >= 0) {
+          celebrateEvents(game.dispatch((s) => claimQuest(s, quest)).events);
+          return;
+        }
+        const result = game.dispatch((s) => claimDaily(s, now));
+        if (result.ok) celebrateEvents(result.events);
+        else refused(result.refusal);
         return;
       }
       case 'Construir': {
@@ -501,9 +669,20 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
         if (store) openSheetFor(store.id);
         return;
       }
+      /* §3.5 — the destinations that do not exist yet still ANSWER. A tap that
+       * changes nothing and says nothing is the one thing the spec forbids
+       * twice, and `console.log` is not an answer on a phone. */
+      case 'Construye el Muelle':
+        hud?.say(COPY['toast.sailLocked'], { tone: 'refuse' });
+        return;
       default:
-        console.log(`[hud] open: ${what}`);
+        hud?.say(`${what} · ${COPY['toast.soon']}`);
     }
+  }
+
+  /** One place a sim refusal becomes a sentence (§3.5). */
+  function refused(refusal: Refusal | undefined): void {
+    hud?.say(refusalText((refusal ?? 'unknown-building') as RefusalKey), { tone: 'refuse' });
   }
 
   // PLAN.md promises the player a manual backup. Until Ajustes has a panel this
@@ -530,9 +709,14 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
       water.update(elapsed, stage.camera);
       for (const m of mixers) m.update(dt);
 
+      stepSquash(elapsed);
+
       if (elapsed >= nextSimAt) {
         nextSimAt = elapsed + SIM_STEP;
-        if (game.tick()) void syncBuildings();
+        // The events were being thrown away here. They are the whole reward
+        // channel: work-finished, chest-ready, level-up, builder-expired.
+        const stepped = game.tick();
+        if (stepped) { void syncBuildings(); celebrateEvents(stepped.events); }
         syncHud();
         // A sheet left open while a timer finishes must not keep offering an
         // upgrade that already started, or a gem price that has moved.
@@ -555,12 +739,10 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
         const base = anchorFor.get(anchor.buildingId);
         if (!base) continue;
         ndc.set(base.x, base.y + anchor.lift, base.z).project(stage.camera);
-        hud.place(
-          anchor.item.id,
-          (ndc.x * 0.5 + 0.5) * width,
-          (-ndc.y * 0.5 + 0.5) * height,
-          ndc.z < 1
-        );
+        const sx = (ndc.x * 0.5 + 0.5) * width;
+        const sy = (-ndc.y * 0.5 + 0.5) * height;
+        hud.place(anchor.item.id, sx, sy, ndc.z < 1);
+        if (ndc.z < 1) lastAt.set(anchor.buildingId, { x: sx, y: sy });
       }
 
       // §10.2 — in landscape the ✗/✓ pair follows the ghost in world space.

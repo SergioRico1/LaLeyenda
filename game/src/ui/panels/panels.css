@@ -44,14 +44,31 @@
     inset 0 0 0 1px rgba(255,255,255,.55),   /* light rim inside the frame */
     0 -10px 44px rgba(0,0,0,.55);
 
-  transform:translateY(100%);
-  transition:transform .22s cubic-bezier(.2,1.1,.4,1);
+  /* §5's tier-1 entrance is a scale with a real overshoot. Bottom-hinging the
+   * sheet is a documented deviation (§3.15's thumb rule) but the PHYSICALITY is
+   * not optional: a pure translate has no weight on arrival — it reads as a
+   * drawer being pulled, not as an object landing. The scale is what gives it
+   * mass, and the origin is the bottom edge it is hinged on so the panel never
+   * detaches from the screen edge while it grows.
+   *
+   * The old curve, cubic-bezier(.2,1.1,.4,1) over 382px, rebounded past its
+   * resting point by 1.46px — 0.24%, which is invisible. */
+  transform-origin:50% 100%;
+  transform:translateY(100%) scale(.94);
+  transition:transform .22s cubic-bezier(.2,1.3,.4,1);
 }
-.sheet.is-open .sheet__panel{ transform:translateY(0); }
-html.shot .sheet__panel{ transition:none; }
+.sheet.is-open .sheet__panel{ transform:translateY(0) scale(1); }
+/* Out is not "in" played backwards: §5 gives the exit 140ms EASE-IN, so the
+ * panel accelerates off the bottom edge instead of decelerating and lingering
+ * over the last 25px. */
+.sheet:not(.is-open) .sheet__panel{ transition:transform .14s ease-in; }
+html.shot:not(.motion) .sheet__panel{ transition:none; }
 
-/* A short grab bar reads as "this came from the bottom edge and goes back". */
+/* A short grab bar reads as "this came from the bottom edge and goes back".
+ * `flex:0 0 auto` because it is a flex item in a column parent: without it the
+ * 5px bar was being shrunk to 2.3px and read as a rendering fault. */
 .sheet__grab{
+  flex:0 0 auto;
   width:44px; height:5px; margin:8px auto 0;
   border-radius:999px;
   background:rgba(23,19,14,.22);
@@ -121,7 +138,15 @@ html.shot .sheet__panel{ transition:none; }
   background:linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.03));
   box-shadow:inset 0 1px 0 rgba(255,255,255,.14);
 }
-.pick-row:active{ background:rgba(255,255,255,.16); }
+.pick-row{ transition:transform .06s ease-out, background .06s ease-out, filter .06s ease-out; }
+/* A background tint with no travel is not a press (§5 law 2, §3.0: "any shape
+ * at any size"). A catalogue row is the tap that spends a builder. */
+.pick-row:active,
+.pick-row.is-pressed{
+  background:rgba(255,255,255,.16);
+  transform:translateY(3px);
+  filter:brightness(.95);
+}
 .pick-row__art{
   flex:0 0 auto; width:56px; height:56px;
   display:grid; place-items:center;
@@ -147,12 +172,8 @@ html.shot .sheet__panel{ transition:none; }
 .pick-row.is-blocked .cost-row{ opacity:.65; }
 .pick-row.is-blocked .pick-row__why{ filter:saturate(3) brightness(1.2); }
 
-@keyframes ui-refuse{
-  0%,100%{ transform:translateX(0); }
-  25%    { transform:translateX(-5px); }
-  75%    { transform:translateX(5px); }
-}
-.pick-row.is-refused{ animation:ui-refuse .22s ease-in-out; }
+/* `ui-refuse` and `.is-refused` now live in base.css: everything that can
+ * refuse shakes with the same 220ms, not just this row. */
 
 /* --- §3.16 the upgrade sheet body ---------------------------------------- */
 .sheet__identity{
@@ -211,6 +232,14 @@ html.shot .sheet__panel{ transition:none; }
   background:rgba(23,19,14,.72);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.22);
   pointer-events:auto;
+  /* §5 law 1: nothing appears out of nothing. A full-width 96px bar
+   * materialising in a single frame is the loudest possible version of that
+   * mistake — it slides up from the edge it is anchored to instead.
+   *
+   * Portrait only: in landscape the bar carries a projected translate3d for the
+   * ghost it follows, and a keyframe writing `transform` would throw it across
+   * the screen. That orientation gets the `scale` property, which composes. */
+  animation:ui-slide-in-bottom .2s cubic-bezier(.2,1.1,.4,1);
 }
 .buildbar__text{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:3px; }
 .buildbar__caption{ font-size:19px; }
@@ -236,6 +265,9 @@ html.shot .sheet__panel{ transition:none; }
     border-radius:16px;
     transform:translate3d(var(--gx,50vw), var(--gy,50vh), 0) translate(-50%,-118%);
     box-shadow:inset 0 1px 0 rgba(255,255,255,.22), 0 8px 20px rgba(0,0,0,.45);
+    /* Arrives by scaling with an overshoot on the `scale` property, so the
+     * projected transform above survives the entrance untouched. */
+    animation:ui-pop-s .22s cubic-bezier(.2,1.4,.4,1);
   }
   .buildbar__text{ align-items:center; text-align:center; }
   .buildbar__btn{ width:56px; height:56px; }
@@ -262,13 +294,33 @@ html.shot .sheet__panel{ transition:none; }
  * The world-anchored layer has to go quiet too — a collect bubble sits above
  * the canvas and would otherwise swallow the tap meant to move the ghost, so
  * the building lands somewhere the player never pointed. */
+/* §5 law 1 and §6: a cross-dissolve is the generic-web tell. Clash slides the
+ * action bar up and slides the buttons it replaces OFF the screen — the swap is
+ * a physical exchange, not a fade. The clusters leave downward, past the bottom
+ * edge, and come back the same way. */
+.zone-c-primary,
+.zone-c-utility,
+.tray,
+.collect-all{
+  transition:transform .18s cubic-bezier(.2,1.1,.4,1);
+}
 #ui.is-placing .zone-c-primary,
 #ui.is-placing .zone-c-utility,
-#ui.is-placing .tray,
-#ui.is-placing .collect-all{
-  opacity:0;
+#ui.is-placing .tray{
+  transform:translateY(calc(100% + var(--ui-cluster-y) + var(--ui-safe-b)));
   pointer-events:none;
-  transition:opacity .16s ease-out;
+  transition:transform .16s ease-in;
+}
+/* The tray and Recoger Todo already carry a centring translate, so their exit
+ * has to compose with it rather than replace it. */
+#ui.is-placing .tray{
+  transform:translateX(-50%) translateY(calc(100% + 16px + var(--ui-safe-b)));
+}
+#ui.is-placing .collect-all{
+  transform:translateX(-50%)
+            translateY(calc(100% + 168px + var(--ui-cluster-y) + var(--ui-safe-b)));
+  pointer-events:none;
+  transition:transform .16s ease-in;
 }
 #ui.is-placing .zone-b,
 #ui.is-placing .zone-b *{ pointer-events:none !important; }

@@ -1,5 +1,6 @@
 import { el, pressable } from '../components/dom';
 import { FROZEN } from '../env';
+import { sfx } from '../sfx';
 
 /**
  * sheet.ts — the bottom sheet both §3.15's picker and §3.16's upgrade panel
@@ -77,14 +78,19 @@ export function createSheet(options: { title?: string; onClose?: () => void } = 
       // instead of being coalesced away with the `hidden` flip.
       if (!FROZEN) void root.offsetHeight;
       root.classList.add('is-open');
+      sfx('sheetIn');
     },
     close() {
       if (!api.isOpen) return;
       (api as { isOpen: boolean }).isOpen = false;
       root.classList.remove('is-open');
       const finish = () => { if (!api.isOpen) root.hidden = true; };
+      // The exit transition is 140ms (§5). The flip used to happen at 200ms
+      // against a 220ms transition, so the last 20ms of the panel's travel was
+      // cut off — it vanished mid-slide instead of leaving the screen.
       if (FROZEN) finish();
-      else window.setTimeout(finish, 200);
+      else window.setTimeout(finish, 160);
+      sfx('sheetOut');
       for (const fn of closers) fn();
     },
     onClosed(fn) { closers.push(fn); },

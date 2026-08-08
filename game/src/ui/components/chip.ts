@@ -1,4 +1,5 @@
-import { el, iconImg, pressable } from './dom';
+import { el, iconImg, pressable, punch } from './dom';
+import { alignInk } from '../icons';
 
 /**
  * §3.10 — the `¡Lleno!` label, and §2.4 — the status chip.
@@ -32,10 +33,20 @@ export function createStatusChip(opts: { icon?: string; onTap?: () => void }): S
   const root = el('div', 'cap status-chip');
   root.setAttribute('role', 'button');
   const num = el('span', 'num status-chip__num');
-  root.append(el('i', 'cap__rim'), el('span', 'cap__icon', iconImg(opts.icon, '')), num);
+  const icon = el('span', 'cap__icon', iconImg(opts.icon, ''));
+  alignInk(icon, opts.icon);      // §1.7 — the column aligns on ink, not on boxes
+  root.append(el('i', 'cap__gloss'), el('i', 'cap__rim'), icon, num);
   pressable(root, opts.onTap);
+  let shown = '';
   return {
     el: root,
-    set(text) { num.innerHTML = text; },
+    set(text) {
+      if (text === shown) return;
+      // §5.3 — notoriety moving is one of the few progress signals a session
+      // with nothing finished can offer, so it must be seen moving.
+      if (shown) punch(num);
+      shown = text;
+      num.innerHTML = text;
+    },
   };
 }

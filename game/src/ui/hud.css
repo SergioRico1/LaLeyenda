@@ -125,8 +125,16 @@
   min-height:52px; padding:10px 30px;
   --brk:60%;
   pointer-events:auto;
+  /* §5 law 1 — it used to materialise in one frame. The `scale` property, not
+   * `transform`, so the -50% centring above survives the entrance. Un-hiding
+   * flips `display`, which is what restarts this each time it is offered. */
+  animation:ui-pop-s 260ms cubic-bezier(.2,1.4,.4,1);
 }
 .collect-all[hidden]{ display:none; }
+/* Pressing it must still travel; `transform` is spoken for by the centring, so
+ * the press moves it with `translate` instead. */
+.collect-all:active,
+.collect-all.is-pressed{ transform:translateX(-50%); translate:0 4px; }
 
 /* --- Zurdo / Diestro (§10.1) — mirrors the two clusters, and only them ---- */
 .hud.is-left-handed .zone-c-primary{

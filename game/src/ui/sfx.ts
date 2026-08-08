@@ -1,0 +1,206 @@
+/**
+ * sfx.ts — the audio bus. §3.9, §3.11, §3.22 and §5.7.
+ *
+ * There was no sound of any kind in the game. Haptics were wired correctly, but
+ * `navigator.vibrate` is a no-op on iOS, so on roughly half the target devices
+ * every tap, every collect and every completion was silent.
+ *
+ * Everything here is SYNTHESISED rather than sampled, for three reasons that
+ * are all requirements rather than preferences:
+ *
+ *   · this is an offline PWA under a strict CSP — a dozen bundled .mp3 files is
+ *     a dozen more things that have to be fetched, cached and version-matched;
+ *   · §3.9 asks for the coin chink to be pitch-randomised ±2 semitones so five
+ *     collections in a row do not sound identical, which is one line here and a
+ *     resampler with a sample;
+ *   · a chest burst that has to duck a coin chink is a mixing problem, and a
+ *     shared gain bus with a compressor solves it once.
+ *
+ * iOS will not start an AudioContext outside a user gesture, so the context is
+ * created lazily on the first pointerdown and the first call before that is
+ * dropped rather than queued — a sound that arrives half a second late is worse
+ * than one that never played.
+ *
+ * §5's reduced-motion rule is explicit that SOUND SURVIVES when motion is cut,
+ * so this is deliberately NOT gated on FROZEN. It is gated on SHOT: the
+ * screenshot harness runs dozens of captures in a headless browser and an
+ * AudioContext there is pure noise in the logs.
+ */
+
+import { SHOT } from './env';
+
+type Wave = OscillatorType;
+
+interface Voice {
+  /** Base frequency in Hz. */
+  hz: number;
+  /** Frequency at the end of the note, for a sweep. Defaults to `hz`. */
+  to?: number;
+  wave?: Wave;
+  /** Seconds. */
+  attack?: number;
+  decay: number;
+  gain?: number;
+  /** Seconds to wait before this voice starts, for layered hits. */
+  delay?: number;
+  /** Low-pass cutoff; omit for none. */
+  cutoff?: number;
+}
+
+export type SfxName =
+  | 'press' | 'tick' | 'refuse'
+  | 'coin' | 'land' | 'pop'
+  | 'build' | 'levelup'
+  | 'sheetIn' | 'sheetOut'
+  | 'chestShake' | 'chestBurst' | 'reward';
+
+/**
+ * One entry per sound. A "sound" is a stack of voices, which is what stops the
+ * whole set reading as the same square-wave beep at different pitches.
+ */
+const BANK: Record<SfxName, { voices: Voice[]; gain: number; detune?: number }> = {
+  // A short woody knock. Deliberately quiet: it plays on every single tap.
+  press:  { gain: .16, voices: [{ hz: 320, to: 180, wave: 'triangle', decay: .055, cutoff: 2200 }] },
+  tick:   { gain: .10, voices: [{ hz: 900, to: 780, wave: 'square', decay: .022, cutoff: 3000 }] },
+  // Two notes DOWN — the universal "no". Paired with the ui-refuse shake.
+  refuse: { gain: .22, voices: [
+    { hz: 220, to: 190, wave: 'square', decay: .09, cutoff: 1200 },
+    { hz: 150, to: 120, wave: 'square', decay: .13, delay: .085, cutoff: 900 },
+  ] },
+  // §3.9's coin chink: two stacked partials a fifth apart, pitch randomised.
+  coin:   { gain: .20, detune: 200, voices: [
+    { hz: 1180, wave: 'triangle', decay: .085, gain: 1 },
+    { hz: 1770, wave: 'sine',     decay: .13,  gain: .55, delay: .012 },
+  ] },
+  // The arrival, half a beat lower — the flight has to LAND on something.
+  land:   { gain: .18, detune: 120, voices: [
+    { hz: 660, to: 880, wave: 'triangle', decay: .1 },
+    { hz: 1320, wave: 'sine', decay: .07, gain: .4, delay: .02 },
+  ] },
+  pop:    { gain: .16, voices: [{ hz: 520, to: 1040, wave: 'sine', decay: .09 }] },
+  // Build complete: a rising major triad. The one genuinely triumphant sound
+  // in the minute-to-minute loop, so it is allowed to be three notes long.
+  build:  { gain: .26, voices: [
+    { hz: 523, wave: 'triangle', decay: .16 },
+    { hz: 659, wave: 'triangle', decay: .16, delay: .085 },
+    { hz: 784, wave: 'triangle', decay: .30, delay: .17 },
+    { hz: 1046, wave: 'sine', decay: .34, gain: .5, delay: .17 },
+  ] },
+  levelup:{ gain: .28, voices: [
+    { hz: 659, wave: 'triangle', decay: .13 },
+    { hz: 880, wave: 'triangle', decay: .13, delay: .09 },
+    { hz: 1318, wave: 'triangle', decay: .38, delay: .18 },
+  ] },
+  sheetIn:  { gain: .13, voices: [{ hz: 180, to: 420, wave: 'sine', decay: .13, cutoff: 1400 }] },
+  sheetOut: { gain: .11, voices: [{ hz: 400, to: 170, wave: 'sine', decay: .1, cutoff: 1400 }] },
+  chestShake: { gain: .14, voices: [{ hz: 140, to: 90, wave: 'square', decay: .07, cutoff: 700 }] },
+  // §3.22's burst: a bass hit under a bright flash, paired with vibrate(20).
+  chestBurst: { gain: .34, voices: [
+    { hz: 90, to: 45, wave: 'sine', decay: .42, gain: 1 },
+    { hz: 880, to: 2200, wave: 'triangle', decay: .3, gain: .5 },
+  ] },
+  // §3.22 deals reward tiles a semitone higher each time — see `reveal()`.
+  reward: { gain: .22, voices: [
+    { hz: 880, wave: 'triangle', decay: .12 },
+    { hz: 1760, wave: 'sine', decay: .09, gain: .4, delay: .015 },
+  ] },
+};
+
+let ctx: AudioContext | null = null;
+let bus: GainNode | null = null;
+let muted = SHOT;
+/** Repeat-detune state, so five collects in a row are five different pitches. */
+const lastAt = new Map<SfxName, number>();
+
+function ensure(): AudioContext | null {
+  if (muted) return null;
+  if (ctx) return ctx;
+  const Ctor: typeof AudioContext | undefined =
+    window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctor) { muted = true; return null; }
+  try {
+    ctx = new Ctor();
+  } catch { muted = true; return null; }
+
+  // A compressor on the master bus is what lets a chest burst and six coin
+  // chinks overlap without clipping into a buzz.
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -18;
+  comp.ratio.value = 8;
+  comp.attack.value = .003;
+  comp.release.value = .12;
+  bus = ctx.createGain();
+  bus.gain.value = .9;
+  bus.connect(comp);
+  comp.connect(ctx.destination);
+  return ctx;
+}
+
+/**
+ * iOS refuses to start an AudioContext outside a user gesture and, worse,
+ * SUSPENDS one that was created too early. Both are fixed by creating and
+ * resuming from the first pointerdown anywhere on the document.
+ */
+export function unlockAudio(): void {
+  const audio = ensure();
+  if (!audio) return;
+  if (audio.state === 'suspended') void audio.resume();
+}
+
+if (!SHOT && typeof document !== 'undefined') {
+  const unlock = () => unlockAudio();
+  document.addEventListener('pointerdown', unlock, { capture: true });
+  document.addEventListener('touchstart', unlock, { capture: true, passive: true });
+}
+
+/**
+ * Plays one entry from the bank.
+ *
+ * `semitones` shifts the whole stack, which is how §3.22's reward tiles chime
+ * one semitone higher than the last one. `detune` in the bank is a RANDOM
+ * spread in cents applied per play, which is the §3.9 requirement.
+ */
+export function sfx(name: SfxName, semitones = 0): void {
+  const audio = ensure();
+  if (!audio || !bus) return;
+  const entry = BANK[name];
+  if (!entry) return;
+
+  // Two identical sounds inside 25ms is a double-fire, not a chord: collapse
+  // them, or a Recoger Todo of eight bubbles is a wall of noise.
+  const now = audio.currentTime;
+  const previous = lastAt.get(name) ?? -1;
+  if (now - previous < .025) return;
+  lastAt.set(name, now);
+
+  const spread = entry.detune ? (Math.random() * 2 - 1) * entry.detune : 0;
+  const shift = Math.pow(2, semitones / 12) * Math.pow(2, spread / 1200);
+
+  for (const voice of entry.voices) {
+    const at = now + (voice.delay ?? 0);
+    const osc = audio.createOscillator();
+    osc.type = voice.wave ?? 'sine';
+    osc.frequency.setValueAtTime(voice.hz * shift, at);
+    if (voice.to) osc.frequency.exponentialRampToValueAtTime(Math.max(20, voice.to * shift), at + voice.decay);
+
+    const env = audio.createGain();
+    const attack = voice.attack ?? .004;
+    const peak = entry.gain * (voice.gain ?? 1);
+    env.gain.setValueAtTime(0.0001, at);
+    env.gain.exponentialRampToValueAtTime(Math.max(.0002, peak), at + attack);
+    env.gain.exponentialRampToValueAtTime(.0001, at + attack + voice.decay);
+
+    let tail: AudioNode = env;
+    if (voice.cutoff) {
+      const filter = audio.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = voice.cutoff;
+      env.connect(filter);
+      tail = filter;
+    }
+    osc.connect(env);
+    tail.connect(bus);
+    osc.start(at);
+    osc.stop(at + attack + voice.decay + .04);
+  }
+}

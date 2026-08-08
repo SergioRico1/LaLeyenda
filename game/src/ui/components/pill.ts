@@ -1,4 +1,5 @@
-import { el, iconImg } from './dom';
+import { el, iconImg, punch } from './dom';
+import { alignInk } from '../icons';
 import { n, ratio } from '../format';
 import { FROZEN } from '../env';
 
@@ -34,6 +35,7 @@ export function createPill(opts: PillOptions = {}): Pill {
   if (opts.fill) track.append(fill);
   const num = el('span', 'num pill__num');
   const icon = el('span', 'pill__icon', iconImg(opts.icon, ''));
+  alignInk(icon, opts.icon);      // §1.7 — the stack aligns on ink, not on boxes
 
   root.append(track, el('i', 'pill__rim'), num, icon);
   if (!opts.fill) root.append(el('i', 'pill__rim pill__rim--low'));
@@ -80,9 +82,7 @@ export function createPill(opts: PillOptions = {}): Pill {
       else {
         shown = value;
         paint(value);
-        num.classList.remove('is-punching');
-        void num.offsetWidth;
-        num.classList.add('is-punching');
+        punch(num);
       }
     };
     raf = requestAnimationFrame(step);

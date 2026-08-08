@@ -1,0 +1,209 @@
+/* ============================================================================
+ * celebrate.css — §3.11's completion, §3.22's reward moment, and the two
+ * one-shot effects (§5) they are both built out of.
+ *
+ * Everything here is ADDITIVE and one-shot: nothing in this file loops, and
+ * every element removes itself on `animationend`. A celebration that is still
+ * on screen when the player takes their next action is a bug, not a reward.
+ *
+ * §6.12: the reward moment is NEVER wrapped in a card. There is no panel here,
+ * no border and no radius on the container — only the scrim (§3.22's one
+ * legitimate use of one, dimming the HUD along with everything else) and the
+ * content sitting directly on it.
+ * ========================================================================== */
+
+.layer-celebrate{
+  position:absolute; inset:0;
+  z-index:var(--z-celebrate);
+  pointer-events:none;
+  overflow:hidden;
+}
+
+/* --- the two primitives every completion is made of ----------------------- */
+
+/* A white radial bloom at a point in screen space. §3.11's "white flash". */
+@keyframes ui-flash{
+  0%   { opacity:0;   transform:translate(-50%,-50%) scale(.35); }
+  22%  { opacity:.95; transform:translate(-50%,-50%) scale(.9); }
+  100% { opacity:0;   transform:translate(-50%,-50%) scale(1.5); }
+}
+.fx-flash{
+  position:absolute; left:0; top:0;
+  border-radius:50%;
+  background:radial-gradient(circle,
+    rgba(255,255,255,.98) 0%, rgba(255,250,225,.72) 38%, rgba(255,240,190,0) 70%);
+  animation:ui-flash 320ms ease-out forwards;
+  will-change:transform, opacity;
+}
+
+/* §3.11's expanding dust ring. A RING, not a disc: the hole is what reads as
+ * the shockwave leaving the ground rather than a puff of smoke. */
+@keyframes ui-dust{
+  0%   { opacity:.85; transform:translate(-50%,-50%) scale(.2) scaleY(.42); }
+  100% { opacity:0;   transform:translate(-50%,-50%) scale(1.35) scaleY(.42); }
+}
+.fx-dust{
+  position:absolute; left:0; top:0;
+  border-radius:50%;
+  border:6px solid rgba(255,248,228,.85);
+  box-shadow:0 0 0 2px rgba(23,19,14,.30) inset;
+  animation:ui-dust 480ms cubic-bezier(.15,.75,.35,1) forwards;
+  will-change:transform, opacity;
+}
+
+/* §3.22's radial rays behind a burst. Drawn as a conic sweep so there is no
+ * image to load and no blur anywhere in it. */
+@keyframes ui-rays{
+  0%   { opacity:0;   transform:translate(-50%,-50%) scale(.3) rotate(0deg); }
+  18%  { opacity:.75; }
+  100% { opacity:0;   transform:translate(-50%,-50%) scale(1.25) rotate(26deg); }
+}
+.fx-rays{
+  position:absolute; left:0; top:0;
+  border-radius:50%;
+  background:
+    conic-gradient(from 0deg,
+      rgba(255,244,214,.85) 0deg 7deg, rgba(255,244,214,0) 7deg 30deg,
+      rgba(255,244,214,.85) 30deg 37deg, rgba(255,244,214,0) 37deg 60deg,
+      rgba(255,244,214,.85) 60deg 67deg, rgba(255,244,214,0) 67deg 90deg,
+      rgba(255,244,214,.85) 90deg 97deg, rgba(255,244,214,0) 97deg 120deg,
+      rgba(255,244,214,.85) 120deg 127deg, rgba(255,244,214,0) 127deg 150deg,
+      rgba(255,244,214,.85) 150deg 157deg, rgba(255,244,214,0) 157deg 180deg,
+      rgba(255,244,214,.85) 180deg 187deg, rgba(255,244,214,0) 187deg 210deg,
+      rgba(255,244,214,.85) 210deg 217deg, rgba(255,244,214,0) 217deg 240deg,
+      rgba(255,244,214,.85) 240deg 247deg, rgba(255,244,214,0) 247deg 270deg,
+      rgba(255,244,214,.85) 270deg 277deg, rgba(255,244,214,0) 277deg 300deg,
+      rgba(255,244,214,.85) 300deg 307deg, rgba(255,244,214,0) 307deg 330deg,
+      rgba(255,244,214,.85) 330deg 337deg, rgba(255,244,214,0) 337deg 360deg);
+  -webkit-mask-image:radial-gradient(circle, #000 18%, rgba(0,0,0,.6) 55%, transparent 72%);
+  mask-image:radial-gradient(circle, #000 18%, rgba(0,0,0,.6) 55%, transparent 72%);
+  animation:ui-rays 620ms ease-out forwards;
+  will-change:transform, opacity;
+}
+
+/* §3.22's 6px screen shake. Applied to #app so the WORLD moves with the HUD —
+ * shaking only the overlay reads as a broken layer, not as an impact. */
+@keyframes ui-shake{
+  0%,100%{ transform:translate3d(0,0,0); }
+  12%    { transform:translate3d(var(--sx,5px), calc(var(--sx,5px) * -.6), 0); }
+  28%    { transform:translate3d(calc(var(--sx,5px) * -.85), var(--sx,5px), 0); }
+  46%    { transform:translate3d(calc(var(--sx,5px) * .7), calc(var(--sx,5px) * .5), 0); }
+  64%    { transform:translate3d(calc(var(--sx,5px) * -.45), calc(var(--sx,5px) * -.35), 0); }
+  82%    { transform:translate3d(calc(var(--sx,5px) * .22), 0, 0); }
+}
+#app.is-shaking{ animation:ui-shake 260ms ease-out; }
+
+/* --- §3.11 the inauguration bubble --------------------------------------- */
+/* The green ✓ that must be TAPPED to finish a building. It is the same
+ * physical object as a collect bubble — four layers, world-anchored, bobbing —
+ * in the green "go" hue, because it is the same gesture. */
+.ok-bubble{
+  position:relative;
+  width:52px; height:52px;
+  border:var(--ui-ink-w) solid var(--ui-ink);
+  border-radius:15px;
+  background:linear-gradient(180deg,
+    var(--ui-ok-gloss-a) 0%, var(--ui-ok-gloss-b) 52%,
+    var(--ui-ok-a) 52.01%, var(--ui-ok-b) 92%,
+    var(--ui-ok-lip) 92.01%, var(--ui-ok-lip) 100%);
+  box-shadow:inset 0 2px 0 var(--ui-rim), 0 4px 0 rgba(0,0,0,.32);
+  display:grid; place-items:center;
+  pointer-events:auto;
+  cursor:pointer;
+  transition:transform .06s ease-out, box-shadow .06s ease-out, filter .06s ease-out;
+}
+.ok-bubble__mark{
+  width:60%; height:60%;
+  display:block;
+  pointer-events:none;
+}
+/* Arrives with the §5 overshoot, then joins the permitted idle loops: this is
+ * a claimable thing and §5.6 lets a claimable thing keep asking. */
+.ok-bubble{ animation:ui-pop 300ms cubic-bezier(.2,1.5,.4,1); }
+.ok-bubble__bob{ animation:ui-bob 1.1s ease-in-out infinite; }
+.ok-bubble.is-pressed{
+  transform:translateY(4px);
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.35), 0 1px 0 rgba(0,0,0,.3);
+  filter:brightness(.94);
+}
+.ok-bubble.is-bursting{ animation:ui-bubble-burst 180ms ease-in forwards; }
+
+/* --- §3.22 the reward moment --------------------------------------------- */
+/* No card, no border, no radius (§6.12). Only the scrim and the content. */
+.reward{
+  position:absolute; inset:0;
+  z-index:var(--z-celebrate);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:14px;
+  padding:24px;
+  background:var(--ui-scrim);
+  pointer-events:auto;
+  opacity:0;
+  animation:ui-scrim-in 160ms ease-out forwards;
+}
+@keyframes ui-scrim-in{ to{ opacity:1; } }
+
+/* The gold ribbon banner, with folded notched tails hanging past both ends. */
+.reward__banner{
+  position:relative;
+  padding:6px 34px;
+  background:linear-gradient(180deg, var(--ui-gold-a) 0%, var(--ui-gold-a) 47%,
+    var(--ui-gold-b) 47.01%, var(--ui-gold-b) 100%);
+  border:var(--ui-ink-w) solid var(--ui-ink);
+  box-shadow:inset 0 2px 0 rgba(255,255,250,.55), 0 4px 0 rgba(0,0,0,.32);
+  transform:scale(0);
+  animation:ui-pop 340ms cubic-bezier(.2,1.5,.4,1) forwards;
+}
+.reward__banner::before,
+.reward__banner::after{
+  content:''; position:absolute; top:6px; width:22px; height:calc(100% - 12px);
+  background:var(--ui-gold-deep);
+  border:var(--ui-ink-w) solid var(--ui-ink);
+  z-index:-1;
+}
+.reward__banner::before{ left:-20px; clip-path:polygon(0 0,100% 0,100% 100%,0 100%,26% 50%); }
+.reward__banner::after { right:-20px; clip-path:polygon(0 0,100% 0,74% 50%,100% 100%,0 100%); }
+.reward__title{ font-size:32px; color:var(--ui-gold-text); }
+.reward__label{ font-size:14px; color:#7FB2E0; -webkit-text-stroke:0; text-shadow:none; }
+
+.reward__grid{
+  display:grid; grid-template-columns:repeat(3, 88px);
+  gap:12px; justify-content:center;
+}
+/* §3.21 reward tile — the same physical object as everything else, at 88px. */
+.reward__tile{
+  position:relative;
+  width:88px; height:88px;
+  border:var(--ui-ink-w) solid var(--ui-ink);
+  border-radius:var(--ui-r-tile);
+  background:linear-gradient(180deg,
+    #5EDBF2 0%, var(--ui-blue-a) 47%,
+    var(--ui-blue-b) 47.01%, #2B7EA0 92%,
+    var(--ui-blue-stroke) 92.01%, var(--ui-blue-stroke) 100%);
+  box-shadow:inset 0 2px 0 var(--ui-rim), 0 4px 0 rgba(0,0,0,.32);
+  display:grid; place-items:center;
+  /* Dealt one at a time (§5.5) — each starts collapsed and is released by JS. */
+  transform:scale(0);
+}
+.reward__tile.is-in{ animation:ui-deal 220ms cubic-bezier(.2,1.4,.4,1) forwards; }
+@keyframes ui-deal{
+  0%   { transform:scale(.4); }
+  62%  { transform:scale(1.2); }
+  100% { transform:scale(1); }
+}
+.reward__tile img{
+  width:66%; height:66%; object-fit:contain;
+  margin-top:-8px;
+  filter:drop-shadow(0 2px 0 rgba(0,0,0,.4));
+}
+.reward__n{
+  position:absolute; left:0; right:0; bottom:2px;
+  text-align:center; font-size:22px;
+}
+.reward__cta{ margin-top:4px; min-height:60px; padding:12px 40px; --brk:52%; }
+.reward__cta .t-btn{ font-size:22px; }
+.reward__cta[hidden]{ display:none; }
+
+/* html.shot: the harness captures two frames after boot, so a dealt grid would
+ * be caught mid-deal. Freeze every tile at its resting state. */
+html.shot:not(.motion) .reward__tile{ transform:none; }

@@ -27,17 +27,32 @@
   flex:0 0 auto;
 }
 .slot__art{
-  width:74%; height:auto;
-  filter:drop-shadow(0 3px 3px rgba(0,0,0,.4));
+  width:78%; height:auto;
+  filter:drop-shadow(0 2px 0 rgba(0,0,0,.45));
   pointer-events:none;
 }
 
-/* Empty: dashed, translucent black, faint anchor glyph. */
+/* Empty = a RECESSED WELL, physically the same object as a full slot with the
+ * light coming from the same place — just empty.
+ *
+ * It used to be a 2px dashed white border over translucent black with a chest
+ * ghosted to 30%. Dashes are a wireframe convention that appears nowhere in the
+ * reference, at 2px on a phone they shimmer, and three of them sat in a row
+ * across the bottom of the landscape HUD. A well inverts the four layers rather
+ * than dropping them: ink contour, dark face, hard shadow cast INWARD from the
+ * top edge, and a light lip along the bottom where a raised object would have
+ * its dark one. */
 .slot--empty{
-  border:2px dashed rgba(255,255,255,.35);
-  background:rgba(0,0,0,.38);
+  border:var(--ui-ink-w) solid var(--ui-ink);
+  background:linear-gradient(180deg,
+    #1E1B19 0%, #1E1B19 46%,
+    #2A2624 46.01%, #33302D 100%);
+  box-shadow:
+    inset 0 3px 0 rgba(0,0,0,.55),
+    inset 0 -2px 0 rgba(255,255,255,.16);
 }
-.slot--empty .slot__art{ opacity:.3; filter:none; }
+/* The chest ghost is gone; an empty slot shows the lock that opens it. */
+.slot--empty .slot__art{ width:52%; opacity:.55; filter:none; }
 
 /* Waiting / unlocking / ready all carry the full four layers. */
 .slot--live{
@@ -46,10 +61,29 @@
     #55504B 0%, #55504B 47%,
     #3A3635 47.01%, #2E2B2A 92%,
     #1C1A19 92.01%, #1C1A19 100%);
-  box-shadow:inset 0 2px 0 rgba(255,255,255,.28), 0 4px 0 rgba(0,0,0,.3);
+  box-shadow:inset 0 2px 0 var(--ui-rim),
+             inset 0 -2px 0 var(--ui-rim-low),
+             var(--ui-drop);
   pointer-events:auto;
 }
-.slot--unlocking{ box-shadow:inset 0 2px 0 rgba(255,255,255,.28), 0 0 0 1px rgba(255,226,150,.75), 0 4px 0 rgba(0,0,0,.3); }
+/* "Unlocking" used to be a 1px gold outline OUTSIDE the contour — a browser
+ * focus ring, and a fifth layer on an object that already has four. The state
+ * now lives inside those four: the slot's own gloss plate warms up. */
+.slot--unlocking{
+  background:linear-gradient(180deg,
+    #6E6449 0%, #6E6449 47%,
+    #3E3830 47.01%, #302B25 92%,
+    #1C1A19 92.01%, #1C1A19 100%);
+}
+/* A live slot is tappable (start it, skip it, open it) so it depresses into its
+ * own extrusion like every other object (§3.0). */
+.slot--live{ transition:transform .06s ease-out, box-shadow .06s ease-out, filter .06s ease-out; }
+.slot--live:active,
+.slot--live.is-pressed{
+  transform:translateY(3px);
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.28), 0 1px 0 rgba(0,0,0,.3);
+  filter:brightness(.94);
+}
 /* A white radial behind the art, so a dark chest does not sit on a dark slot. */
 .slot--live::after{
   content:''; position:absolute; left:50%; top:44%;
@@ -67,9 +101,14 @@
 }
 .slot--ready .slot__art{ animation:ui-bob .9s ease-in-out infinite; }
 
+/* The bar gets its own clear band BELOW the art rather than being clipped by
+ * the slot's bottom edge with its label overlapping the chest. The art rides up
+ * to make room — the two never share rows. */
+.slot--unlocking .slot__art{ margin-bottom:16px; }
 .slot .timerbar{
-  position:absolute; left:50%; bottom:-6px;
-  width:56px; height:14px;
+  position:absolute; left:50%; bottom:6px;
+  width:50px; height:13px;
   transform:translateX(-50%);
+  z-index:2;
 }
-.slot .timerbar__label{ font-size:13px; transform:translate(-50%,-96%); }
+.slot .timerbar__label{ font-size:12px; transform:translate(-50%,-100%); }

@@ -6,19 +6,37 @@
  * growing end. Getting these two backwards is anti-goal §6.2.
  * ========================================================================== */
 
+/* 2px of ink, not 3. §1.1 reserves --ui-ink-w-sm for elements under ~28px and
+ * this bar is 20px tall: at 3px the contour was 30% of the bar's own height and
+ * the fill had barely a third of it left to show progress in. */
 .timerbar{
   --pct:0;
   position:relative;
   width:130px; height:20px;
-  border:var(--ui-ink-w) solid var(--ui-ink);
+  border:var(--ui-ink-w-sm) solid var(--ui-ink);
   border-radius:var(--ui-r-pill);
   background:var(--ui-track-well);
+  box-shadow:var(--ui-drop-xs);
   pointer-events:auto;
 }
+/* The bar is a route into §3.16's finish-now decision, so it is a button and
+ * presses like one — it used to absorb the tap and show nothing. */
+.timerbar[role="button"]{ transition:transform .06s ease-out, filter .06s ease-out; }
+.timerbar[role="button"]:active,
+.timerbar[role="button"].is-pressed{ transform:translateY(3px); filter:brightness(.9); }
 .timerbar__track{
   position:absolute; inset:0;
   border-radius:var(--ui-r-pill);
   overflow:hidden;
+}
+/* The tube's own step and lip, over the empty track AND the fill — measured on
+ * the reference's build bar: rim L=227, upper half L≈205, lower half L≈158. */
+.timerbar__track::after{
+  content:'';
+  position:absolute; inset:0;
+  background:var(--ui-track-gloss);
+  box-shadow:inset 0 -2px 0 var(--ui-lip);
+  pointer-events:none;
 }
 .timerbar__fill{
   position:absolute; left:0; top:0; bottom:0;
@@ -26,16 +44,27 @@
   border-radius:999px 0 0 999px;      /* rounded left cap, flat growing edge */
   background:linear-gradient(180deg,
     var(--ui-timer-a) 0 55%, var(--ui-timer-b) 55.01% 100%);
+  /* Driven every frame from the scene clock, so this is deliberately a SHORT
+   * smoothing pass and not the pills' 450ms ramp: it only exists to stop the
+   * bar stepping when the sim re-syncs the figure every 250ms. */
+  transition:width .12s linear;
 }
+html.shot:not(.motion) .timerbar__fill{ transition:none; }
 .timerbar__rim{
   position:absolute; left:6px; right:6px; top:0; height:1px;
   background:rgba(255,255,255,.4); border-radius:999px; pointer-events:none;
 }
-/* The numeral is CENTRED and overlaps the bar's top edge by ~40% — it is not
- * a label sitting politely above the bar. */
+/* The numeral is CENTRED and sits just clear of the bar's top contour.
+ *
+ * §3.11 asks for a ~40% overlap, and at -62% that is what it did — but the
+ * label carries its own near-black outline, so the two contours merged into one
+ * thick smear and the bar lost its top edge everywhere the digits crossed it.
+ * Scanned on the reference's own build bar, its "12M 2s" clears the top contour
+ * entirely. The label still reads as attached because it is centred and close,
+ * not because it sits on top of the ink. */
 .timerbar__label{
   position:absolute; left:50%; top:0;
-  transform:translate(-50%,-62%);
+  transform:translate(-50%,-100%);
   white-space:nowrap;
   pointer-events:none;
 }

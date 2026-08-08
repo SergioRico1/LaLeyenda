@@ -27,7 +27,8 @@ import { loadModel, loadManifest } from '../render/assets';
 export type IconId =
   | 'oro' | 'madera' | 'ron' | 'metal' | 'gema'
   | 'carpintero' | 'rango'
-  | 'zarpar' | 'construir' | 'cofres' | 'diario' | 'ajustes';
+  | 'zarpar' | 'construir' | 'cofres' | 'diario' | 'ajustes'
+  | 'candado';
 
 export type IconSet = Partial<Record<IconId, string>>;
 
@@ -37,6 +38,7 @@ const DISPLAY_PX: Record<IconId, number> = {
   oro: 54, madera: 54, ron: 54, metal: 54, gema: 54,
   carpintero: 44, rango: 36,
   zarpar: 58, construir: 36, cofres: 56, diario: 36, ajustes: 36,
+  candado: 38,
 };
 
 /** Icons that are a real model from public/assets/models. The chest is the one
@@ -230,17 +232,45 @@ const PROPS: Partial<Record<IconId, () => THREE.Object3D>> = {
     box(0.1, 0.06, 0.56, 0xf0b722, [0.24, 0.14, 0.14]),
   ], [0.12, -0.42, 0.06]),
 
-  /* Ajustes — a capstan gear. */
+  /* Candado — the padlock that overhangs a locked CTA (§3.5).
+   *
+   * §6.10: a locked primary stays the SAME OBJECT in its own hue; what tells
+   * you it is locked is this prop sitting on its corner, not the colour being
+   * drained out of the button underneath. Brass body, dark steel shackle, so it
+   * reads against both the orange CTA and the cream utility family. */
+  candado: () => {
+    const shackle: THREE.Object3D[] = [];
+    for (let i = 0; i <= 8; i++) {
+      const a = Math.PI * (i / 8);
+      shackle.push(box(0.15, 0.15, 0.15, 0x8d99a6, [-Math.cos(a) * 0.3, 0.34 + Math.sin(a) * 0.3, 0], [0, 0, a]));
+    }
+    return group([
+      ...shackle,
+      box(0.16, 0.2, 0.16, 0x8d99a6, [-0.3, 0.22, 0]),
+      box(0.16, 0.2, 0.16, 0x8d99a6, [0.3, 0.22, 0]),
+      box(0.92, 0.72, 0.42, 0xe0a418, [0, -0.18, 0], undefined, 0.7),
+      box(0.92, 0.14, 0.44, 0xf5c94a, [0, 0.08, 0], undefined, 0.8),
+      box(0.16, 0.22, 0.06, 0x6b4a10, [0, -0.14, 0.22]),
+      prism(0.11, 0.11, 0.07, 10, 0x6b4a10, [0, 0.02, 0.22], [Math.PI / 2, 0, 0]),
+    ], [0.12, -0.26, 0]);
+  },
+
+  /* Ajustes — a capstan gear.
+   *
+   * Steel, not cream. It was modelled in #C9C7B0 / #EFEDDC, which are the
+   * utility family's own face colours — a cream gear on a cream button, with
+   * the ink contour left doing all the work of telling them apart. Cool grey
+   * separates it by hue as well as by value and suits a capstan besides. */
   ajustes: () => {
     const teeth: THREE.Object3D[] = [];
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2;
-      teeth.push(box(0.24, 0.24, 0.32, 0xc9c7b0, [Math.cos(a) * 0.46, Math.sin(a) * 0.46, 0], [0, 0, a]));
+      teeth.push(box(0.24, 0.24, 0.32, 0x8e99a6, [Math.cos(a) * 0.46, Math.sin(a) * 0.46, 0], [0, 0, a], 0.5));
     }
     return group([
       ...teeth,
-      prism(0.4, 0.4, 0.3, 12, 0xefeddc, [0, 0, 0], [Math.PI / 2, 0, 0]),
-      prism(0.17, 0.17, 0.34, 10, 0x8f8d78, [0, 0, 0], [Math.PI / 2, 0, 0]),
+      prism(0.4, 0.4, 0.3, 12, 0xb9c3cd, [0, 0, 0], [Math.PI / 2, 0, 0], 0.6),
+      prism(0.17, 0.17, 0.34, 10, 0x5b636d, [0, 0, 0], [Math.PI / 2, 0, 0], 0.4),
     ], [0.12, -0.2, 0.22]);
   },
 };
@@ -264,6 +294,27 @@ function iconScene(): THREE.Scene {
   scene.add(new THREE.HemisphereLight(0xcfe9ff, 0xe8d9b4, 1.9));
   return scene;
 }
+
+/**
+ * How much of the finished PNG the drawn ink must span.
+ *
+ * A Clash button's art crosses its gloss boundary and nearly touches the frame:
+ * measured on the reference, the Shop tile's art is 62% of the tile, the Attack
+ * map ~74%, the small army tile ~83%. That fullness is the whole reason a Clash
+ * button reads as an OBJECT rather than as a container with a token in it.
+ *
+ * Fitting the frustum to the world-space AABB's projected corners cannot
+ * deliver that: a 3/4 orthographic view of a box circumscribes the silhouette,
+ * so a diagonal prop (the mallet, the sloop) keeps up to 50% of its canvas as
+ * transparent margin while a blocky one (the log stack) keeps 14%. The props
+ * then arrive at CSS at wildly different visual sizes and every attempt to fix
+ * it in CSS trades one icon's fullness for another's.
+ *
+ * So the bake measures the rendered ALPHA and re-frames to it, then pads back
+ * out to this constant. Every icon leaves the oven at the same ink fill, and
+ * the CSS percentage finally means what it says.
+ */
+const INK_FILL = 0.9;
 
 /** Points the camera at `box` and tightens the frustum around its projected
  *  corners, so every prop fills the same share of its canvas no matter how it
@@ -297,20 +348,13 @@ function frame(camera: THREE.OrthographicCamera, target: THREE.Box3, pad: number
   camera.updateProjectionMatrix();
 }
 
-/** Renders `object` to an RGBA buffer through the live renderer. */
-function renderProp(
+/** One render pass into an offscreen target, read back as RGBA. */
+function draw(
   renderer: THREE.WebGLRenderer,
-  object: THREE.Object3D,
+  scene: THREE.Scene,
+  camera: THREE.Camera,
   size: number
-): { pixels: Uint8Array; size: number } {
-  const scene = iconScene();
-  scene.add(object);
-
-  object.updateWorldMatrix(true, true);
-  const bounds = new THREE.Box3().setFromObject(object);
-  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 100);
-  frame(camera, bounds, 1.04);
-
+): Uint8Array {
   const target = new THREE.WebGLRenderTarget(size, size, {
     minFilter: THREE.LinearFilter,
     magFilter: THREE.LinearFilter,
@@ -334,8 +378,73 @@ function renderProp(
   renderer.setRenderTarget(prevTarget);
   renderer.setClearColor(prevClear, prevAlpha);
   target.dispose();
-  scene.clear();
+  return pixels;
+}
 
+/** Bounding box of everything the render actually drew, in buffer pixels.
+ *  Null when the prop rendered empty. WebGL reads bottom-up, so y grows
+ *  upward here — the caller maps it back through the frustum, not the canvas. */
+function alphaBounds(
+  pixels: Uint8Array,
+  size: number
+): { x0: number; y0: number; x1: number; y1: number } | null {
+  let x0 = size, y0 = size, x1 = -1, y1 = -1;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      // 8/255 rejects the antialiasing fringe without eating a real thin edge.
+      if (pixels[(y * size + x) * 4 + 3] <= 8) continue;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  return x1 < 0 ? null : { x0, y0, x1, y1 };
+}
+
+/**
+ * Renders `object` to an RGBA buffer, framed on its SILHOUETTE rather than on
+ * its bounding box.
+ *
+ * The first pass is a cheap probe whose only job is to tell us where the prop
+ * actually put ink; the second re-frames the frustum onto exactly that and
+ * renders for real. Two renders of a dozen tiny props is nothing next to
+ * shipping icons that are half margin.
+ */
+function renderProp(
+  renderer: THREE.WebGLRenderer,
+  object: THREE.Object3D,
+  size: number,
+  fill: number
+): { pixels: Uint8Array; size: number } {
+  const scene = iconScene();
+  scene.add(object);
+
+  object.updateWorldMatrix(true, true);
+  const bounds = new THREE.Box3().setFromObject(object);
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 100);
+  // Loose enough that the probe cannot clip a prop whose AABB under-reports.
+  frame(camera, bounds, 1.25);
+
+  const PROBE = 128;
+  const hit = alphaBounds(draw(renderer, scene, camera, PROBE), PROBE);
+  if (hit) {
+    const { left, right, top, bottom } = camera;
+    const u = (right - left) / PROBE;
+    const v = (top - bottom) / PROBE;
+    const minX = left + hit.x0 * u, maxX = left + (hit.x1 + 1) * u;
+    const minY = bottom + hit.y0 * v, maxY = bottom + (hit.y1 + 1) * v;
+    // Square, centred on the ink, then padded back out to the target fill so
+    // every icon leaves the bake occupying the same share of its canvas.
+    const half = (Math.max(maxX - minX, maxY - minY) * 0.5) / fill;
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    camera.left = cx - half; camera.right = cx + half;
+    camera.top = cy + half; camera.bottom = cy - half;
+    camera.updateProjectionMatrix();
+  }
+
+  const pixels = draw(renderer, scene, camera, size);
+  scene.clear();
   return { pixels, size };
 }
 
@@ -388,6 +497,67 @@ function inkOutline(source: HTMLCanvasElement, out: number, ink: number): HTMLCa
   }
   ctx.drawImage(source, ink, ink, out, out);
   return canvas;
+}
+
+/** The share of `out` the silhouette must span for the finished PNG — which is
+ *  `out` plus an `ink` ring on every side — to carry INK_FILL of drawn ink. */
+const silhouetteFill = (out: number, ink: number) =>
+  (INK_FILL * (out + ink * 2) - ink * 2) / out;
+
+/**
+ * Where the drawn ink sits inside a finished icon, as fractions of the canvas.
+ *
+ * Normalising the bake equalises how BIG each icon is, but not where its ink
+ * lands: a tall prop centred in a square canvas leaves more transparent margin
+ * left and right than a wide one does. §1.7's edge rule is about drawn extent,
+ * so a column of HUD rows can only share a left margin if each row knows where
+ * its own ink starts. That is this.
+ */
+export interface InkBox { x0: number; y0: number; x1: number; y1: number }
+
+const inkBoxes = new Map<string, InkBox>();
+/** Keyed by data URL too, so a component holding only `opts.icon` can align on
+ *  drawn ink without every signature growing an id parameter. */
+const inkByUrl = new Map<string, InkBox>();
+
+/** Alpha bbox of a finished icon canvas, top-down, as 0–1 fractions. */
+function measureInk(canvas: HTMLCanvasElement): InkBox {
+  const size = canvas.width;
+  const data = canvas.getContext('2d')!.getImageData(0, 0, size, size).data;
+  let x0 = size, y0 = size, x1 = -1, y1 = -1;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      if (data[(y * size + x) * 4 + 3] <= 8) continue;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  if (x1 < 0) return { x0: 0, y0: 0, x1: 1, y1: 1 };
+  return { x0: x0 / size, y0: y0 / size, x1: (x1 + 1) / size, y1: (y1 + 1) / size };
+}
+
+/** Ink extent of a baked icon, for callers that must align on drawn edges. */
+export const inkBox = (id: IconId): InkBox =>
+  inkBoxes.get(id) ?? { x0: 0, y0: 0, x1: 1, y1: 1 };
+
+/**
+ * Publishes an icon's ink bbox onto its host element as CSS custom properties.
+ *
+ * §1.7's edge rule is about DRAWN extent, and an overhanging icon's drawn extent
+ * is not its box: the props are normalised to a fixed ink fill on their major
+ * axis, so a tall one leaves more transparent margin left and right than a wide
+ * one. Left unaccounted for, a three-row Zone A column lands its ink at three
+ * different margins (measured 12 / 22 / 19) and the right-hand pills terminate
+ * on a ragged edge. The CSS offsets each icon by these fractions so every row
+ * begins — or ends — on the same pixel.
+ */
+export function alignInk(host: HTMLElement, url: string | undefined): void {
+  const box = url ? inkByUrl.get(url) : undefined;
+  if (!box) return;
+  host.style.setProperty('--ink-x0', String(box.x0));
+  host.style.setProperty('--ink-x1', String(box.x1));
 }
 
 /** Normalizes a .glb into the same unit box the hand-modelled props use. */
@@ -459,8 +629,9 @@ export async function bakeModelIcons(
         );
         object.add(proxy);
       }
-      const { pixels, size } = renderProp(renderer, object, out * SUPERSAMPLE);
-      modelIcons.set(id, inkOutline(toCanvas(pixels, size), out, 3 * INK_SCALE).toDataURL('image/png'));
+      const ink = 3 * INK_SCALE;
+      const { pixels, size } = renderProp(renderer, object, out * SUPERSAMPLE, silhouetteFill(out, ink));
+      modelIcons.set(id, inkOutline(toCanvas(pixels, size), out, ink).toDataURL('image/png'));
     } catch (err) {
       console.warn(`[icons] model ${id} failed to bake`, err);
     }
@@ -502,9 +673,14 @@ export function bakeIcons(renderer: THREE.WebGLRenderer): Promise<IconSet> {
           object.add(proxy);
         }
 
-        const { pixels, size } = renderProp(renderer, object, out * SUPERSAMPLE);
-        const flat = toCanvas(pixels, size);
-        set[id] = inkOutline(flat, out, 3 * INK_SCALE).toDataURL('image/png');
+        const ink = 3 * INK_SCALE;
+        const { pixels, size } = renderProp(renderer, object, out * SUPERSAMPLE, silhouetteFill(out, ink));
+        const baked = inkOutline(toCanvas(pixels, size), out, ink);
+        const box = measureInk(baked);
+        const url = baked.toDataURL('image/png');
+        inkBoxes.set(id, box);
+        inkByUrl.set(url, box);
+        set[id] = url;
       } catch (err) {
         console.warn(`[icons] ${id} failed to bake`, err);
       }

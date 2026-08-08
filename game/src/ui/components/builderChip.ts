@@ -1,4 +1,5 @@
-import { el, iconImg, pressable } from './dom';
+import { el, iconImg, pressable, punch } from './dom';
+import { alignInk } from '../icons';
 
 /**
  * §3.4 — the builder chip.
@@ -28,12 +29,9 @@ export function createBuilderChip(opts: {
   info.type = 'button';
   info.setAttribute('aria-label', 'Información');
 
-  root.append(
-    el('i', 'cap__rim'),
-    el('span', 'cap__icon', iconImg(opts.icon, '')),
-    num,
-    info
-  );
+  const icon = el('span', 'cap__icon', iconImg(opts.icon, ''));
+  alignInk(icon, opts.icon);      // §1.7 — the column aligns on ink, not on boxes
+  root.append(el('i', 'cap__gloss'), el('i', 'cap__rim'), icon, num, info);
 
   if (opts.onPlus) {
     const plus = el('button', 'plus tap', el('span', 't t-glyph', '+'));
@@ -45,11 +43,19 @@ export function createBuilderChip(opts: {
 
   pressable(root, opts.onTap);
 
+  let shown = '';
   return {
     el: root,
     set(free, total) {
       // Clash shows FREE / TOTAL, so 1/2 means one carpenter is idle.
-      num.textContent = `${free}/${total}`;
+      const next = `${free}/${total}`;
+      if (next !== shown) {
+        // §5.3 — a carpenter coming free is a state change the player has to
+        // catch, and this counter used to mutate silently.
+        if (shown) punch(num);
+        shown = next;
+        num.textContent = next;
+      }
       root.classList.toggle('is-free', free > 0);
     },
   };

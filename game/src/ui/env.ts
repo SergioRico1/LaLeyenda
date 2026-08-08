@@ -15,7 +15,20 @@ export const SHOT = params.get('shot') === '1';
 
 export const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+/**
+ * `?motion=1` — shot mode WITHOUT the freeze.
+ *
+ * A frozen capture is what makes a screenshot byte-identical, and it is also
+ * what makes every animation in the game unreviewable: a celebration that is
+ * skipped in shot mode cannot be checked against the pixels, only described.
+ * This flag exists so the harness can drive a real interaction and photograph
+ * the motion it produces. It is never on in a deterministic capture — the
+ * default is still frozen — and nothing in the product reads it.
+ */
+export const MOTION = SHOT && params.get('motion') === '1';
+
 /** Skip travel and overshoot, keep every state change (§5). */
-export const FROZEN = SHOT || REDUCED;
+export const FROZEN = (SHOT && !MOTION) || REDUCED;
 
 if (SHOT) document.documentElement.classList.add('shot');
+if (MOTION) document.documentElement.classList.add('motion');
