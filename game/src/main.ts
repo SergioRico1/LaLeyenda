@@ -1,4 +1,5 @@
 import { Stage } from './render/stage';
+import { measureRendered } from './render/assets';
 import { createIslandScene } from './scenes/islandScene';
 import { createGame, type Game } from './core/game';
 import { landCargoInPlace } from './sim';
@@ -12,8 +13,9 @@ declare global {
     __error?: string;
     /** Shot mode only — see the note where it is assigned. */
     __step?: (frames?: number) => void;
-    /** Set when something in the scene is impossibly large; the harness fails
-     *  the capture on it. See the OVERSIZED check. */
+    /** Set when something in the scene draws at a wildly different size from
+     *  the one it was normalized to — in either direction. The harness fails
+     *  the capture on it. See __checkSizes. */
     __oversized?: string;
     /** Re-runs that check. The harness calls it after an act, because the bug
      *  it guards against arrived through an interaction. */
@@ -114,13 +116,29 @@ async function boot() {
       }
       console.log(`[frame] largest non-water object at capture: ${worst.name} span ${worst.span.toFixed(1)}`);
 
-      // A placed building is never more than a few cells across, and each one
-      // knows its own footprint. Anything several times that means something
-      // wrote over the model's normalization — the failure that has come back
-      // four times, most recently when the upgrade celebration reset the scale
-      // it was animating to 1 and restored the Ayuntamiento's native 126 units.
+      // Every model that has been normalized states the size it is meant to be:
+      // a placed building carries the footprint it was built for, and anything
+      // through instantiate({fit}) carries the width it asked fitToFootprint
+      // for. This compares that promise against what is actually drawn, and
+      // fails the capture in EITHER direction.
       //
-      // Checked per building rather than against the whole scene: the terrain,
+      // Too large has come back four times, most recently when the upgrade
+      // celebration reset the scale it was animating to 1 and restored the
+      // Ayuntamiento's native 126 units.
+      //
+      // Too small had nothing watching it at all, which is how the avatar
+      // bodies reached the captain screen drawing at 0.58 units against a
+      // target of 10. Note what that failure needed to be caught: a plain
+      // Box3 reported those bodies at a perfect 10 the whole time, because it
+      // never asks the bones where the vertices went. measureRendered does —
+      // a guard built on the cheap box would have missed it again.
+      //
+      // The band is deliberately wide. A clip legitimately moves a model's
+      // extent around: the widest sample in the library draws 2.2x its fitted
+      // width (an anglerfish mid-lunge) and the narrowest 0.57x (a dancing
+      // body), so 3x either way flags real breakage and nothing else.
+      //
+      // Checked per model rather than against the whole scene: the terrain,
       // the water and the single InstancedMesh holding every decoration all
       // legitimately span the island.
       //
@@ -128,17 +146,24 @@ async function boot() {
       // arrived through an INTERACTION — the harness re-runs it after each act.
       window.__checkSizes = () => {
         const bad: string[] = [];
+        const size = new THREE_.Vector3();
         stage.scene.traverse((node) => {
-          const footprint = node.userData?.footprint as number | undefined;
-          if (!footprint) return;
-          const size = new THREE_.Box3().setFromObject(node).getSize(new THREE_.Vector3());
+          const target =
+            (node.userData?.footprint as number | undefined) ??
+            (node.userData?.fitTarget as number | undefined);
+          if (!target) return;
+          measureRendered(node).getSize(size);
           const span = Math.max(size.x, size.z);
-          if (Number.isFinite(span) && span > footprint * 3) {
-            bad.push(`${node.name} spans ${span.toFixed(1)} for a footprint of ${footprint}`);
+          // An empty box means the model has not loaded into this node yet.
+          if (!Number.isFinite(span) || span === 0) return;
+          if (span > target * 3) {
+            bad.push(`${node.name || node.type} draws ${span.toFixed(2)} across, over 3x its target of ${target}`);
+          } else if (span < target / 3) {
+            bad.push(`${node.name || node.type} draws ${span.toFixed(2)} across, under a third of its target of ${target}`);
           }
         });
         window.__oversized = bad.length ? bad.join('; ') : undefined;
-        if (bad.length) console.error(`[frame] OVERSIZED: ${window.__oversized}`);
+        if (bad.length) console.error(`[frame] BAD SIZE: ${window.__oversized}`);
         return window.__oversized;
       };
       window.__checkSizes();

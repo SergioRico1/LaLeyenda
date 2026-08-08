@@ -1,5 +1,5 @@
 {
-  "_comment": "source = path inside 'Voxel Game Assets/' in proofofplay/piratenation-art (CC0-1.0). id = output name (public/assets/models/<id>.glb). Folders with trailing spaces are intentional - they exist in the repo.",
+  "_comment": "source = path inside 'Voxel Game Assets/' in proofofplay/piratenation-art (CC0-1.0). id = output name (public/assets/models/<id>.glb). Folders with trailing spaces are intentional - they exist in the repo. Optional per-asset `clips` lists the animations to KEEP; optimize.mjs drops every other clip from that model. Omit it and the model keeps all of them.",
   "base": "https://media.githubusercontent.com/media/proofofplay/piratenation-art/main/Voxel%20Game%20Assets/",
   "assets": [
     { "id": "ship_skiff",        "source": "ships/Pirate Ships/Pirate_s Skiff (XS)/VE/ship_pirate_XS01C/ship_pirate_XS01C.gltf" },
@@ -64,9 +64,13 @@
     { "id": "mob_sealion",       "source": "Mob Enemies /Sea Lion/Sea Lion Neutral /model.gltf" },
 
     { "_comment": "Templates 01-10 also ship a stray un-rigged copy of the body plus baked hair/beard meshes outside the armature; 11-20 are clean single-armature bodies. Only pick from 11-20.",
+      "_clipsNote": "The bodies ship 30 clips (00_TPose..29_Dance_5_Cabbage_Patch) and the keyframes are most of the file, which put every one of them over twice PLAN.md's 300KB budget. A captain stands, walks, waves and celebrates; the rest are dance moves and combat swings nothing in this game asks for. Order matters — the first surviving clip is what instantiate() plays when no clip is named, so idle comes first. Naming a clip the model does not have fails the build rather than silently shipping without it. Leave `clips` off any model that needs all of its animations: the mobs and the ships do.",
+      "clips": ["01_Idle_1", "04_Walk", "15_Waving_Right", "18_Success_Celebration"],
       "id": "av_body_pale",      "source": "Avatar/Naked Pirate/Naked Pirate Templates/GLTF/Pirate_Template_13.gltf" },
-    { "id": "av_body_tan",       "source": "Avatar/Naked Pirate/Naked Pirate Templates/GLTF/Pirate_Template_15.gltf" },
-    { "id": "av_body_dark",      "source": "Avatar/Naked Pirate/Naked Pirate Templates/GLTF/Pirate_Template_20.gltf" },
+    { "id": "av_body_tan",       "source": "Avatar/Naked Pirate/Naked Pirate Templates/GLTF/Pirate_Template_15.gltf",
+      "clips": ["01_Idle_1", "04_Walk", "15_Waving_Right", "18_Success_Celebration"] },
+    { "id": "av_body_dark",      "source": "Avatar/Naked Pirate/Naked Pirate Templates/GLTF/Pirate_Template_20.gltf",
+      "clips": ["01_Idle_1", "04_Walk", "15_Waving_Right", "18_Success_Celebration"] },
 
     { "id": "av_hair_short",     "source": "Avatar/hair/1/model.gltf" },
     { "id": "av_hair_dreads",    "source": "Avatar/hair/7/model.gltf" },

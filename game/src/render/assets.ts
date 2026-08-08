@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { clone as cloneRebindingSkeletons } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 /** Loads the optimized .glb models and hands out clones with their animations. */
 
@@ -84,7 +85,29 @@ export interface InstantiateOptions {
 
 export async function instantiate(id: string, opts: InstantiateOptions = {}): Promise<ModelInstance> {
   const model = await loadModel(id);
-  const inner = model.scene.clone(true);
+
+  // Skeleton-aware clone, and this is load-bearing for every skinned model.
+  //
+  // Object3D.clone() does NOT clone a skeleton: SkinnedMesh.copy assigns
+  // `this.skeleton = source.skeleton`, so a plain clone keeps drawing through
+  // the ORIGINAL bones — the ones inside the cached gltf.scene, which is never
+  // added to any scene and never scaled. Two things follow, and both bit us:
+  //
+  //  - Nothing this instance is scaled by can reach the geometry. A skinned
+  //    vertex is drawn at `matrixWorld * bindMatrixInverse * boneWorld * v`,
+  //    and in the default AttachedBindMode three keeps
+  //    `bindMatrixInverse = inverse(matrixWorld)`. The mesh's own world matrix
+  //    therefore cancels out exactly, and the size on screen is decided purely
+  //    by where the BONES are. Bones outside this subtree meant fitToFootprint
+  //    was a no-op: the avatar bodies drew at their native 0.58 units against a
+  //    target of 10, and bldg_foundry "stayed roughly 20 units across whatever
+  //    footprint it was normalized to" (see balance.json) for the same reason.
+  //  - The mixer below animates this clone's bones, which nothing was bound to,
+  //    so the clips silently did nothing.
+  //
+  // SkeletonUtils.clone rebinds each cloned SkinnedMesh to the cloned bones, so
+  // the bones ride along inside the wrapper and both problems go away.
+  const inner = cloneRebindingSkeletons(model.scene) as THREE.Group;
 
   // The clips animate the model's own nodes, root included, so anything written
   // directly onto that root is overwritten the moment the mixer ticks. These
@@ -138,17 +161,34 @@ export async function instantiate(id: string, opts: InstantiateOptions = {}): Pr
 }
 
 /**
- * Runtime bounds of a model, for cases where no pipeline dimensions exist.
+ * World-space bounds of a model AS DRAWN — the number to check anything against.
  *
- * Prefer the manifest: almost every model here is a SkinnedMesh whose armature
- * carries a large scale (23x on the foundry), and three.js reports the
- * pre-armature extent — Box3.setFromObject and SkinnedMesh.computeBoundingBox
- * both come back short by exactly that factor. Only the file itself, read
- * through the node scales, gives the size the GPU actually draws.
+ * The default Box3.setFromObject takes each mesh's geometry bounding box through
+ * its world matrix. For a SkinnedMesh that is not what the GPU draws: the shader
+ * puts every vertex through the bones, and the mesh's own world matrix cancels
+ * out on the way (see instantiate). A skinned model can therefore report a
+ * perfect 10 units while drawing at 0.58 — which is exactly how the avatar
+ * bodies shipped 17x too small without a single size check noticing.
+ *
+ * So: when the subtree contains a SkinnedMesh, measure in Box3's `precise` mode,
+ * which routes through SkinnedMesh.getVertexPosition and applies the same bone
+ * transform the shader does. It costs one pass over the vertices, which is worth
+ * it for the handful of skinned models in the library.
  */
 export function measureRendered(object: THREE.Object3D): THREE.Box3 {
   object.updateWorldMatrix(true, true);
-  return new THREE.Box3().setFromObject(object);
+
+  let skinned = false;
+  object.traverse((node) => {
+    if ((node as THREE.SkinnedMesh).isSkinnedMesh) skinned = true;
+  });
+
+  // updateWorldMatrix refreshes matrixWorld but never calls updateMatrixWorld,
+  // and only the latter recomputes a SkinnedMesh's bindMatrixInverse. Measuring
+  // without this reads a stale inverse and double-counts the model's own scale.
+  if (skinned) object.updateMatrixWorld(true);
+
+  return new THREE.Box3().setFromObject(object, skinned);
 }
 
 /**
@@ -178,6 +218,12 @@ export function fitToFootprint(
 
   const scale = targetWidth / Math.max(size.x, size.z || 1);
   object.scale.setScalar(scale);
+
+  // What this model was asked to be, left where a check can find it. main.ts's
+  // __checkSizes reads it and compares against what actually draws, so a model
+  // that ignores its normalization — in either direction — fails a capture
+  // instead of reaching a player. Nothing else reads this.
+  object.userData.fitTarget = targetWidth;
 
   // The offsets are in the model's own units, so they scale along with it.
   object.position.x = -(min.x + size.x / 2) * scale;
