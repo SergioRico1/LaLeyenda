@@ -107,8 +107,9 @@
 .slot--unlocking .slot__art{ margin-bottom:16px; }
 .slot .timerbar{
   position:absolute; left:50%; bottom:6px;
-  width:50px; height:13px;
+  width:50px; --bar-h:12px;
+  padding-top:15px;
   transform:translateX(-50%);
   z-index:2;
 }
-.slot .timerbar__label{ font-size:12px; transform:translate(-50%,-100%); }
+.slot .timerbar__label{ font-size:12px; }

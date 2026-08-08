@@ -6,29 +6,36 @@
  * growing end. Getting these two backwards is anti-goal §6.2.
  * ========================================================================== */
 
+/* The root is the wrapper; --bar-h is the bar. The top band is the label's, and
+ * it is real layout height so the world layer can space these apart. */
+.timerbar{
+  --pct:0;
+  --bar-h:20px;
+  position:relative;
+  width:130px;
+  padding-top:20px;          /* the label's band — 18px of numeral plus air */
+  pointer-events:auto;
+}
 /* 2px of ink, not 3. §1.1 reserves --ui-ink-w-sm for elements under ~28px and
  * this bar is 20px tall: at 3px the contour was 30% of the bar's own height and
  * the fill had barely a third of it left to show progress in. */
-.timerbar{
-  --pct:0;
+.timerbar__track{
   position:relative;
-  width:130px; height:20px;
+  height:var(--bar-h);
   border:var(--ui-ink-w-sm) solid var(--ui-ink);
   border-radius:var(--ui-r-pill);
-  background:var(--ui-track-well);
+  /* Denser than the chips' --ui-track-well. Those sit over open sea, which is
+   * flat; this one is world-anchored and routinely lands on top of a building,
+   * where 46% let every scaffolding beam read straight through the empty half. */
+  background:rgba(26,21,15,.70);
   box-shadow:var(--ui-drop-xs);
-  pointer-events:auto;
+  overflow:hidden;
 }
 /* The bar is a route into §3.16's finish-now decision, so it is a button and
  * presses like one — it used to absorb the tap and show nothing. */
 .timerbar[role="button"]{ transition:transform .06s ease-out, filter .06s ease-out; }
 .timerbar[role="button"]:active,
 .timerbar[role="button"].is-pressed{ transform:translateY(3px); filter:brightness(.9); }
-.timerbar__track{
-  position:absolute; inset:0;
-  border-radius:var(--ui-r-pill);
-  overflow:hidden;
-}
 /* The tube's own step and lip, over the empty track AND the fill — measured on
  * the reference's build bar: rim L=227, upper half L≈205, lower half L≈158. */
 .timerbar__track::after{
@@ -50,9 +57,12 @@
   transition:width .12s linear;
 }
 html.shot:not(.motion) .timerbar__fill{ transition:none; }
+/* Inside the track, and above its gloss overlay — the rim is layer 3, and the
+ * gloss is layer 2. */
 .timerbar__rim{
   position:absolute; left:6px; right:6px; top:0; height:1px;
-  background:rgba(255,255,255,.4); border-radius:999px; pointer-events:none;
+  background:var(--ui-rim); border-radius:999px; pointer-events:none;
+  z-index:1;
 }
 /* The numeral is CENTRED and sits just clear of the bar's top contour.
  *
@@ -64,9 +74,10 @@ html.shot:not(.motion) .timerbar__fill{ transition:none; }
  * not because it sits on top of the ink. */
 .timerbar__label{
   position:absolute; left:50%; top:0;
-  transform:translate(-50%,-100%);
+  transform:translateX(-50%);
+  line-height:1;
   white-space:nowrap;
   pointer-events:none;
 }
 
-@media (orientation:landscape){ .timerbar{ width:150px; height:22px; } }
+@media (orientation:landscape){ .timerbar{ width:150px; --bar-h:22px; } }

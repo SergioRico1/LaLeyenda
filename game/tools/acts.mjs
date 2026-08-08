@@ -128,11 +128,16 @@ export const ACTS = {
    */
   async inaugurate(page) {
     await raiseTownHall(page);
+    await need(page, '.ok-bubble', 'the inauguration ✓ bubble');
+    // The world-anchored layer is only positioned by the projection pass, and
+    // in shot mode that only runs on __step — without this the ✓ is still at
+    // the origin and the tap lands in the corner of the screen.
+    await step(page, 2);
     // `force` because the ✓ is bobbing — §5.6 lets a claimable thing keep
     // asking, and Playwright's stability check would wait for it forever.
-    await (await need(page, '.ok-bubble', 'the inauguration ✓ bubble')).click({ force: true });
+    await page.locator('.ok-bubble').click({ force: true });
     // Caught mid-flight on purpose — §5.4's arc is the thing being reviewed.
-    await page.waitForTimeout(150);
+    await page.waitForTimeout(260);
     await step(page, 2);
   },
 

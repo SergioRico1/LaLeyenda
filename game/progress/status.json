@@ -1,7 +1,7 @@
 {
   "title": "La Leyenda Pirata — Gauntlet Loop",
   "goal": "Mobile Three.js pirate game (island builder + open-sea sailing + raids) built from the CC0 Pirate Nation voxel assets.",
-  "bar": "Art direction: official Pirate Nation media (the shipped game built from these exact assets). UI and retention: Clash of Clans / Clash Royale. Our screenshots must win a blind side-by-side against both.",
+  "bar": "Art direction: official Pirate Nation media (the shipped game built from these exact assets). UI objects and retention: Clash of Clans / Clash Royale. HUD layout and restraint: Kingshot. Our screenshots must win a blind side-by-side against them.",
   "pieces": [
     {
       "id": "pipeline",
@@ -72,7 +72,7 @@
     },
     {
       "id": "ui",
-      "name": "HUD and panels (Clash-style)",
+      "name": "HUD and panels (Clash objects, Kingshot layout)",
       "bar": "reference/clash/coc_hud_collect.jpg",
       "status": "in_progress",
       "rounds": [

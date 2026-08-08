@@ -118,9 +118,14 @@
   pointer-events:none;
 }
 /* Arrives with the §5 overshoot, then joins the permitted idle loops: this is
- * a claimable thing and §5.6 lets a claimable thing keep asking. */
-.ok-bubble{ animation:ui-pop 300ms cubic-bezier(.2,1.5,.4,1); }
+ * a claimable thing and §5.6 lets a claimable thing keep asking.
+ *
+ * The two live on DIFFERENT elements on purpose. `animation` is a shorthand,
+ * so declaring the entrance and the loop on one element means whichever rule
+ * comes second silently deletes the other — which is how the overshoot went
+ * missing the first time. The wrapper bobs; the object inside it pops. */
 .ok-bubble__bob{ animation:ui-bob 1.1s ease-in-out infinite; }
+.ok-bubble{ animation:ui-pop 300ms cubic-bezier(.2,1.5,.4,1); }
 .ok-bubble.is-pressed{
   transform:translateY(4px);
   box-shadow:inset 0 2px 0 rgba(255,255,255,.35), 0 1px 0 rgba(0,0,0,.3);

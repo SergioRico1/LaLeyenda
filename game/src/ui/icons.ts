@@ -41,11 +41,20 @@ const DISPLAY_PX: Record<IconId, number> = {
   candado: 38,
 };
 
-/** Icons that are a real model from public/assets/models. The chest is the one
- *  library asset whose subject and proportions survive being drawn at 56px. */
-const GLB_PROPS: Partial<Record<IconId, string>> = {
-  cofres: 'chest_bandit',
-};
+/**
+ * Icons that are a real model from public/assets/models.
+ *
+ * Empty, deliberately. `cofres` used to take `chest_bandit`, on the grounds
+ * that it was the one library asset whose subject and proportions survived
+ * being drawn at 56px. Proportions were never the problem: the bandit chest is
+ * near-black oak with dark iron, and once the art was normalised to fill its
+ * tile the way the reference does, it went from a small dark token to a large
+ * dark mass sitting on the one GOLD button in the game. The library has no
+ * other chest. So the chest joins the five resource props and is modelled here,
+ * where its value can be chosen — which is the same reason those five are
+ * hand-modelled rather than shrunk from a 90-unit building.
+ */
+const GLB_PROPS: Partial<Record<IconId, string>> = {};
 
 const INK = '#17130E';          // --ui-ink. Never #000 (§6.14).
 const SUPERSAMPLE = 2;          // render at 2× and downscale — free antialiasing
@@ -231,6 +240,24 @@ const PROPS: Partial<Record<IconId, () => THREE.Object3D>> = {
     box(0.14, 0.42, 0.74, 0x5e1f18, [-0.45, -0.12, 0]),
     box(0.1, 0.06, 0.56, 0xf0b722, [0.24, 0.14, 0.14]),
   ], [0.12, -0.42, 0.06]),
+
+  /* Cofres — a banded treasure chest.
+   *
+   * Warm oak and brass, chosen to sit on the gold featured tile: the icon has
+   * to separate from its face by HUE and by silhouette, since it cannot
+   * separate by value without going darker than the tile can carry. The lid is
+   * a low faceted cylinder so the chest reads as domed from the 3/4 view rather
+   * than as a plain box. */
+  cofres: () => group([
+    box(1.02, 0.1, 0.7, 0x8a5a22, [0, -0.56, 0]),                       // plinth
+    box(0.98, 0.5, 0.64, 0xb5782f, [0, -0.3, 0]),                       // body
+    box(1.0, 0.12, 0.66, 0xf0b722, [0, -0.22, 0], undefined, 0.95),     // waist band
+    prism(0.33, 0.33, 0.98, 10, 0xc4883a, [0, 0.04, 0], [0, 0, Math.PI / 2]),
+    prism(0.35, 0.35, 0.12, 10, 0xf0b722, [-0.33, 0.04, 0], [0, 0, Math.PI / 2], 0.95),
+    prism(0.35, 0.35, 0.12, 10, 0xf0b722, [0.33, 0.04, 0], [0, 0, Math.PI / 2], 0.95),
+    box(0.22, 0.26, 0.09, 0xffd75e, [0, -0.2, 0.34], undefined, 1.0),   // lock plate
+    box(0.09, 0.1, 0.06, 0x6b4a10, [0, -0.24, 0.39]),                   // keyhole
+  ], [0.1, -0.34, 0]),
 
   /* Candado — the padlock that overhangs a locked CTA (§3.5).
    *

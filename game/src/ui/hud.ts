@@ -361,13 +361,13 @@ export async function createHud(
       // the building shows nothing, so this is the object that stands in
       // between the timer bar disappearing and the finished model being just
       // another rooftop.
-      const mark = el('div', 'ok-bubble ok-bubble__bob', checkMark());
+      const mark = el('div', 'ok-bubble', checkMark());
       mark.setAttribute('role', 'button');
       mark.setAttribute('aria-label', 'Inaugurar');
       pressable(mark, () => inaugurate(item));
       item.ay = 1;
       anchor.style.setProperty('--ay', '-100%');
-      anchor.append(mark);
+      anchor.append(el('div', 'ok-bubble__bob', mark));
     } else {
       // §10.11 — `¡Lleno!` keeps the informational dashed border but opens the
       // storage upgrade sheet in one tap. A scolding becomes a conversion.
@@ -653,7 +653,7 @@ export async function createHud(
     if (item.spec.kind !== 'done') return;
     const id = item.spec.id;
     world.delete(id);
-    const mark = item.inner.firstElementChild as HTMLElement | null;
+    const mark = item.inner.querySelector('.ok-bubble') as HTMLElement | null;
     const rect = (mark ?? item.inner).getBoundingClientRect();
     sfx('build');
     navigator.vibrate?.([10, 30, 18]);

@@ -26,7 +26,10 @@ const result = await build({
   platform: 'node',
   target: 'node20',
   sourcemap: 'inline',
-  loader: { '.json': 'json' },
+  // `.css` as text so a test can assert on a stylesheet's own source (see
+  // tokens.test.ts) without reaching for node:fs — the suite has no @types/node
+  // and does not want one.
+  loader: { '.json': 'json', '.css': 'text' },
   write: false,
   logLevel: 'warning',
 });

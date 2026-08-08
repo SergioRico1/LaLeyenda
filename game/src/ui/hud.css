@@ -109,7 +109,11 @@
     left:50%; top:calc(26px + var(--ui-safe-t));
     transform:translateX(-50%);
     flex-direction:row; align-items:flex-start;
-    gap:14px;
+    /* 40, not 14: side by side, the builder chip's `+` overhangs its right cap
+     * by 15px and the status chip's anchor overhangs its left by ~22px, so a
+     * 14px gap left the two props 3px apart and reading as one object. The gap
+     * has to clear the DRAWN extent, not the boxes (§1.7). */
+    gap:40px;
     padding-left:18px;   /* balances the carpenter portrait's overhang */
   }
 }

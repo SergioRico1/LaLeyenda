@@ -74,7 +74,9 @@
  * level badge at 12, the carpenter at 22, the rank anchor at 19. */
 .builder-chip .cap__icon{
   --w:44px;
-  left:calc(-18px - var(--ink-x0,0) * var(--w));
+  /* `left` is measured from the PADDING edge, so the capsule's own contour has
+   * to be added back or every overhang is 3px shy of where it was specified. */
+  left:calc(-18px - var(--ui-ink-w) - var(--ink-x0,0) * var(--w));
   width:var(--w); height:var(--w);
 }
 .builder-chip__num{
@@ -121,9 +123,10 @@
  * capsule's own gloss plate and keeps its extrusion. */
 .builder-chip.is-free .cap__gloss{
   background:linear-gradient(180deg,
-    rgba(255,231,163,.42) 0%,   rgba(255,231,163,.42) 50%,
-    rgba(0,0,0,.10)       50.01%,rgba(0,0,0,.10)      100%);
+    rgba(255,206,92,.34) 0%,   rgba(255,206,92,.34) 50%,
+    rgba(0,0,0,.10)      50.01%,rgba(0,0,0,.10)     100%);
 }
+.builder-chip.is-free .cap__rim{ background:#FFE9B4; }
 .builder-chip.is-free .cap__icon{ animation:ui-builder-nag 2.5s ease-in-out infinite; }
 .builder-chip.is-free::before{
   content:''; position:absolute; left:-20px; top:50%;
@@ -142,7 +145,7 @@
 }
 .status-chip .cap__icon{
   --w:40px;
-  left:calc(-18px - var(--ink-x0,0) * var(--w));
+  left:calc(-18px - var(--ui-ink-w) - var(--ink-x0,0) * var(--w));
   width:var(--w); height:var(--w);
 }
 .status-chip__num{ font-size:18px; }

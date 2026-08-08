@@ -9,9 +9,17 @@ Dos referencias distintas, y no se mezclan:
 
 - **Arte y mundo 3D → Pirate Nation** (`reference/*.png`): el juego comercial hecho con
   estos mismos assets CC0. Marca el agua, el terreno, la iluminación y la escala.
-- **UI y enganche → Clash of Clans / Clash Royale** (`reference/clash/*.png`): es un juego
-  de móvil, y Clash es el estándar de HUD táctil y de los bucles que hacen volver cada día.
+- **Objetos de UI y enganche → Clash of Clans / Clash Royale** (`reference/clash/*.jpg`): el
+  estándar de control táctil con volumen físico, y de los bucles que hacen volver cada día.
   El diseño de retención está en [`RETENTION.md`](RETENTION.md).
+- **Layout y contención del HUD → Kingshot** (`reference/kingshot/*.jpg`): un builder de móvil
+  de 2024, y el contrapeso a Clash. Donde Clash enmarca cada valor en su propia píldora
+  ornamentada, Kingshot agrupa todo en una sola cápsula translúcida con separadores finos y deja
+  ver el mundo a través del cromo.
+
+Donde Clash y Kingshot discrepan: **Clash manda en el objeto** (un botón, una píldora, un badge)
+y **Kingshot manda en el layout** (cuántos objetos, cómo se agrupan, cuánto mundo queda visible).
+Detalle completo en [`reference/README.md`](reference/README.md).
 
 ## Visión
 

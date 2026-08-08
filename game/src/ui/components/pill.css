@@ -6,8 +6,10 @@
  *     left edge and no rounded cap (§6.2)
  *   · the empty track is translucent WHITE over the live 3D scene — never an
  *     opaque grey, which is what severs a HUD from its world (§6.3)
- *   · the icon OVERHANGS the capsule (§6.6)
- *   · no box-shadow: HUD pills sit ON the world, they do not float above it
+ *   · the icon OVERHANGS the capsule (§6.6), and its overhang is measured from
+ *     the DRAWN ink, not from the PNG's box (§1.7)
+ *   · the hard step belongs to the TUBE, not to the liquid in it: the empty
+ *     half of a Clash bar is as carved as the full half (§0.2 layer 2)
  * ========================================================================== */
 
 .pill{
@@ -89,7 +91,9 @@
  * edge on the same pixel instead of on a 6px ragged line. */
 .pill__icon{
   position:absolute; top:50%;
-  right:calc(-18px - (1 - var(--ink-x1,1)) * var(--ui-pill-icon));
+  /* `right` is measured from the PADDING edge, so the capsule's own contour has
+   * to be added back or every overhang is 3px shy of where it was specified. */
+  right:calc(-18px - var(--ui-ink-w) - (1 - var(--ink-x1,1)) * var(--ui-pill-icon));
   width:var(--ui-pill-icon); height:var(--ui-pill-icon);
   transform:translateY(-50%);
   pointer-events:none;
@@ -98,7 +102,7 @@
 
 @media (orientation:landscape){
   .pill__num{ font-size:22px; right:50px; }
-  .pill__icon{ right:calc(-20px - (1 - var(--ink-x1,1)) * var(--ui-pill-icon)); }
+  .pill__icon{ right:calc(-20px - var(--ui-ink-w) - (1 - var(--ink-x1,1)) * var(--ui-pill-icon)); }
 }
 
 /* Counters punch when they change (§5.3) — the shared `.is-punching` rule in
