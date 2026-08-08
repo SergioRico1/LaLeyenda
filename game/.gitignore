@@ -3,3 +3,8 @@ dist/
 tools/raw/
 shots/
 *.local
+
+# Third-party UI pack: licensed for use, NOT for redistribution.
+# Dropped in locally by the developer, processed into public/assets/ui/.
+tools/uipack/
+public/assets/ui/

@@ -17,3 +17,7 @@
 @import './components/tray.css';
 
 @import './panels/panels.css';
+
+/* Optional third-party artwork; every rule inside is scoped to html.has-uipack
+   and the HUD is correct without it. See pack.css. */
+@import './pack.css';

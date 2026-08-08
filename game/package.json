@@ -11,7 +11,8 @@
     "assets:fetch": "node tools/fetch-assets.mjs",
     "assets:optimize": "node tools/optimize.mjs",
     "assets": "npm run assets:fetch && npm run assets:optimize",
-    "shoot": "node tools/shoot.mjs"
+    "shoot": "node tools/shoot.mjs",
+    "assets:ui": "node tools/ui-assets.mjs"
   },
   "dependencies": {
     "three": "^0.171.0"

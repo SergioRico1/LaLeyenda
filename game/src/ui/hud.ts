@@ -11,6 +11,7 @@ import { createTray, type SlotState } from './components/tray';
 import { n } from './format';
 import { COPY } from './copy';
 import { FROZEN } from './env';
+import { detectPack } from './pack';
 
 /**
  * hud.ts — assembles the §2 layout and exposes the small surface the sim
@@ -138,6 +139,10 @@ export async function createHud(
     ]);
     await document.fonts.ready;
   } catch { /* document.fonts is optional */ }
+
+  // Optional artwork, awaited for the same reason as the fonts: the harness
+  // captures within a couple of frames, so a late class flip would be missed.
+  await detectPack();
 
   const state: HudState = structuredClone(initial);
 
