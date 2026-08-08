@@ -70,8 +70,14 @@
 .btn--grey2 { --a:var(--ui-grey2-gloss-a);  --b:var(--ui-grey2-gloss-b);
               --c:var(--ui-grey2-a);        --d:var(--ui-grey2-b);
               --lip:var(--ui-grey-lip-2); }
+/* The lower face drops to --ui-gold-deep rather than --ui-gold-b. Measured:
+   the old pair stepped 188 -> 145 in luminance, a ratio of 0.83, where §0.2
+   asks for a HARD step and Clash's own buttons sit near 0.47. A 23% fall reads
+   as a gradient, not as two planes meeting — and this is the family the
+   upgrade CTA wears, so it was the flattest face on the most-pressed button in
+   the game. 188 -> 114 is a ratio of 0.61. */
 .btn--gold  { --a:#FFD966;                  --b:var(--ui-gold-a);
-              --c:var(--ui-gold-b);         --d:#C3830E;
+              --c:var(--ui-gold-deep);      --d:#8F6212;
               --lip:var(--ui-gold-lip); }
 
 /* --- §3.5 / §3.6 square tiles -------------------------------------------

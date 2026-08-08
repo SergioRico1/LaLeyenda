@@ -26,7 +26,13 @@ These run on every change. A red gate is a blocker, not a finding.
       timer capsule (no lip: a deliberate LAYOUT_SPEC item 3 dark capsule, so
       a spec conflict to resolve rather than a bug to fix), objective row,
       picker row CTA and close button (no warm rim), sheet CTA (gloss ratio
-      0.83 against ≤0.62 — a flat face on the most-pressed button in the game).
+      0.83 against ≤0.62). The gold family is fixed and verified; the flat face
+      that remains is `.btn` ITSELF — green is the base, not a modifier, so the
+      same change touches every button in the game. Before making it, settle
+      which side is wrong: task 13 recalibrated these palettes against Clash
+      pixels, and the audit says Clash sits near 0.47 while our green measures
+      0.83. Both cannot be true. Measure a Clash button's face directly out of
+      reference/clash/ rather than trusting either number.
       Three more (builder chip, badge, chest slot) need a save state that shows
       them before they can be measured at all.
 - [x] `npm run audit:sea` — sea texture against the reference, HUD excluded
