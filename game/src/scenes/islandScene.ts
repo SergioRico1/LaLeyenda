@@ -220,17 +220,130 @@ export async function createIslandScene(
     ship = skiff.object;
   }
 
-  // Camera: high angled view looking down at the island, like the reference.
-  // `?cam=x,y,z` overrides it so shots can be framed without editing code.
-  const target = new THREE.Vector3(0, 0, 0);
+  /* --- the camera ---------------------------------------------------------
+   *
+   * Framed against reference/island_hero.png, because that frame is the bar.
+   * Three numbers make it and all three were wrong here.
+   *
+   * LENS. Every vertical in their shot is vertical on screen — dock piling,
+   * totem, house corner — and their foam chips are the same size at the top of
+   * the frame as at the bottom. Both are signatures of a near-parallel
+   * projection. A 38-degree lens instead draws the near corner of the island
+   * half again as large as the far one, which is what made ours read as a
+   * photograph of a model rather than as the flat isometric board this art was
+   * drawn for. So the island fits a long lens to the shared camera and stands
+   * well back: same framing, none of the splay. It hands the lens back on
+   * dispose, because the sea scene borrows the same camera and a telephoto
+   * left on it would sail the ship down a telescope.
+   *
+   * PITCH, measured off their coastline rather than guessed. A ground axis
+   * runs down-screen at |dy/dx| = tan(bearing)·sin(pitch) on one flank of the
+   * island and cot(bearing)·sin(pitch) on the other, so the PRODUCT of the two
+   * silhouette slopes is sin(pitch)² whatever the bearing happens to be.
+   * Theirs measure 0.96 and 0.32 → sin(pitch) ≈ 0.55, i.e. 33.5 degrees above
+   * the ground: a shade shallower than a true 35.26-degree isometric, and
+   * nowhere near the map view that "high angled view" invited. The BEARING
+   * does not move — the dock, the moored skiff and every prop on the island
+   * were composed against it.
+   *
+   * REACH. Their island spans 0.70 of the frame's width and 0.91 of its
+   * height, and better than a third of their frame is land. Ours spanned
+   * 0.42 / 0.53 / 0.12: a speck adrift in ocean. So the distance stopped being
+   * a hand-tuned triple and is solved from the coast's own projected width —
+   * which is also the only way one rule frames both a 16:9 capture and a
+   * portrait phone.
+   *
+   * `?cam=x,y,z` still overrides the position outright, so a shot can be
+   * framed without editing code.
+   */
+  const PITCH = THREE.MathUtils.degToRad(33.5);
+  /** Unchanged: the diagonal the whole island was dressed against. */
+  const BEARING = Math.atan2(26, 32);
+  /** Long enough that the coast's near edge outgrows its far one by a fifth,
+   *  not by half. Restored on dispose. */
+  const LENS = 10;
+  /** Coast width ÷ frame width at 16:9. Calibrated on the capture until the
+   *  island measured 0.70 of it, as theirs does — the walk below sees the
+   *  beach skirt that runs down under the waterline, which the frame does not. */
+  const COAST_FILL = 0.72;
+  /** What stands above the terrain AT THE SILHOUETTE's top and bottom edge —
+   *  which is barely anything, because the tall props all live inland. Measured
+   *  at a unit and a half; two leaves a little headroom. */
+  const RISE = 2;
+
+  const target = new THREE.Vector3(0, STEP * 2, 0);
+  const offset = new THREE.Vector3(
+    Math.cos(PITCH) * Math.sin(BEARING),
+    Math.sin(PITCH),
+    Math.cos(PITCH) * Math.cos(BEARING)
+  );
+
+  // The screen axes of that fixed view. The island is measured in these rather
+  // than in world x/z, so the framing is solved in the plane it is seen in.
+  const screenX = new THREE.Vector3(offset.z, 0, -offset.x).normalize();
+  const screenY = new THREE.Vector3().crossVectors(screenX, offset.clone().negate());
+
+  // The coast's real silhouette, not its bounding box. The island is a rounded
+  // landmass inside a square grid, so its box overstates how wide it reads by
+  // about a sixth — and a sixth of the frame handed back to ocean is the whole
+  // complaint. Walked once, at boot.
+  const vertex = new THREE.Vector3();
+  let coastLeft = Infinity, coastRight = -Infinity, coastLow = Infinity, coastHigh = -Infinity;
+  terrain.updateMatrixWorld(true);
+  terrain.traverse((node) => {
+    const geometry = (node as Partial<THREE.Mesh>).geometry;
+    if (!geometry) return;
+    const position = geometry.getAttribute('position');
+    if (!position) return;
+    for (let i = 0; i < position.count; i++) {
+      vertex.fromBufferAttribute(position, i).applyMatrix4(node.matrixWorld);
+      const sx = vertex.dot(screenX), sy = vertex.dot(screenY);
+      if (sx < coastLeft) coastLeft = sx;
+      if (sx > coastRight) coastRight = sx;
+      if (sy < coastLow) coastLow = sy;
+      if (sy > coastHigh) coastHigh = sy;
+    }
+  });
+  const coastWide = coastRight - coastLeft;
+  const coastTall = coastHigh - coastLow;
+
+  const previousLens = stage.camera.fov;
+  stage.camera.fov = LENS;
+  stage.camera.updateProjectionMatrix();
+  const aspect = stage.camera.aspect;
+  const halfLens = Math.tan(THREE.MathUtils.degToRad(LENS) / 2);
+  // Their 0.68 is a 16:9 number. A phone's frame is narrow and very tall, so
+  // holding it there would strand the island in open sea all over again; a
+  // narrow frame gets a bigger share of its width instead, and the sea that
+  // leaves above and below the coast is where the HUD bars sit anyway.
+  const fill = THREE.MathUtils.clamp(
+    THREE.MathUtils.mapLinear(aspect, 0.5, 16 / 9, 0.96, COAST_FILL),
+    COAST_FILL,
+    0.96
+  );
+  const distance = Math.max(
+    coastWide / (2 * fill * halfLens * aspect),
+    // On a frame wider than 16:9 the width stops being what binds; without
+    // this the coast would be cropped off the top and bottom instead. Theirs
+    // runs to 0.91 of the frame height, so 0.92 is the ceiling, not a target.
+    (coastTall + RISE * Math.cos(PITCH)) / (2 * 0.92 * halfLens)
+  );
+
   const camParam = params.get('cam');
   const camPos = camParam
     ? (camParam.split(',').map(Number) as [number, number, number])
-    : ([26, 29, 32] as [number, number, number]);
+    : (target.clone().addScaledVector(offset, distance).toArray() as [number, number, number]);
   stage.camera.position.set(camPos[0], camPos[1], camPos[2]);
   stage.camera.lookAt(target);
-  stage.sun.target.position.copy(target);
+  // The sun goes on looking at the island's middle at ground level, where its
+  // shadow frustum was tuned; only the camera's look-at rides up onto the
+  // build plateau.
+  stage.sun.target.position.set(0, 0, 0);
   stage.sun.target.updateMatrixWorld();
+  listeners.signal.addEventListener('abort', () => {
+    stage.camera.fov = previousLens;
+    stage.camera.updateProjectionMatrix();
+  });
 
   // One finger pans, two pinch. A phone shows a fraction of the island, so
   // without this half of what the player owns is unreachable.
@@ -250,8 +363,11 @@ export async function createIslandScene(
     // Far enough to see the whole coast from the middle, not so far that the
     // island can leave the frame entirely.
     bounds: (shape.size * CELL) / 2,
-    minDistance: 18,
-    maxDistance: 72,
+    // Bracketed around the framing solved above rather than around a lens that
+    // no longer exists: a pinch in doubles the coast on screen, a pinch out
+    // pulls back to a full half-frame of sea on every side.
+    minDistance: distance * 0.55,
+    maxDistance: distance * 1.5,
   });
 
   {
