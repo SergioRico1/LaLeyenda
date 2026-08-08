@@ -11,7 +11,7 @@ Status legend: `[x]` done and verified · `[~]` partly there, gap named · `[ ]`
 These run on every change. A red gate is a blocker, not a finding.
 
 - [x] `npx tsc --noEmit` clean (strict, `noUnusedLocals`)
-- [x] `npm test` — the pure-sim suite, 124 cases
+- [x] `npm test` — the pure-sim suite, 125 cases
 - [x] `npm run test:roundtrip` — island → sea → island driven as a player,
       with no shot mode and no test hooks. The screenshot harness cannot cover
       this: every act runs under `?shot=1`, which boots one scene and never
@@ -73,6 +73,9 @@ never closes. This is the single largest gap between here and a finished game.
 - [ ] PvE islands: harvestables and chests are placed, but a site is taken by
       sailing over it — there is no boarding or harvesting beat yet
 - [ ] The Giant Squid is spawned and tethered, but has no fight of its own
+- [ ] Balance is UNTESTED. A capture at ring 3 with the throttle at zero had the
+      hull nearly gone in six seconds — arguably correct (keep moving) but
+      nobody has played it.
 
 **Done when:** island → sail → fight/loot → return → build works end to end and
 is worth repeating. — *the transition is proven by `npm run test:roundtrip`;
@@ -106,10 +109,10 @@ is worth repeating.
       Today `window.laLeyenda.export()` is the only route, which is not shipping.
 - [ ] First-run director: the game currently explains itself through one idle
       tooltip. A player who has never seen it should be building inside a minute.
-- [~] Audio. I wrote "not a single sound exists" here and that was wrong —
-      `src/ui/sfx.ts` is a 206-line synthesised bus with a compressor, pitch
-      randomisation and an iOS-safe lazy context. What is missing is the SEA:
-      no cannon, no hit, no hull groan, no wave. The island is covered.
+- [x] Audio. `src/ui/sfx.ts` is a synthesised bus with a compressor, pitch
+      randomisation and an iOS-safe lazy context. The sea now has its half:
+      cannon, hit-on-mob, hit-on-hull, kill, loot and sinking, all pitched
+      below the island bank so a broadside has room under a hull groan.
 - [ ] PWA installable, offline boot verified on a device
 - [ ] An error a player can hit does something other than a blank canvas
 

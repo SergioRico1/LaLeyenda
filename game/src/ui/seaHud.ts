@@ -28,6 +28,14 @@ const RESOURCE_LABEL: Record<string, string> = {
 
 export interface SeaHud {
   update(voyage: Voyage): void;
+  /**
+   * Takes a hit, as a fading red vignette round the edge of the screen.
+   *
+   * At the edge rather than over the middle deliberately: the player is
+   * steering and reading the water, so the one place damage can be shown
+   * without hiding what they need is the border they are not looking at.
+   */
+  setHurt(seconds: number): void;
   /** Shows the end-of-voyage card. Resolves when the player dismisses it. */
   finish(voyage: Voyage, reason: 'home' | 'sunk' | 'left'): Promise<void>;
   dispose(): void;
@@ -50,6 +58,7 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
       <div class="sea__cap"><span class="sea__label">Bodega</span><span data-hold>0</span></div>
       <div class="sea__cap"><span class="sea__label">Zona</span><span data-ring>1</span></div>
     </div>
+    <div class="sea__hurt"></div>
     <button class="sea__leave tap" type="button">Volver</button>
     <div class="sea__home">
       <svg class="sea__arrow" viewBox="0 0 24 24" aria-hidden="true">
@@ -67,6 +76,7 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
   const ringOut = root.querySelector('[data-ring]') as HTMLElement;
   const homeOut = root.querySelector('[data-home]') as HTMLElement;
   const arrow = root.querySelector('.sea__arrow') as HTMLElement;
+  const hurtVeil = root.querySelector('.sea__hurt') as HTMLElement;
   const leave = root.querySelector('.sea__leave') as HTMLButtonElement;
   leave.addEventListener('click', () => opts.onLeave());
 
@@ -86,6 +96,11 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
       arrow.style.setProperty('--sea-bearing', `${(bearing * 180) / Math.PI}deg`);
       const distance = Math.hypot(voyage.x, voyage.y);
       homeOut.textContent = distance < SEA_CELL * 0.5 ? 'En casa' : `${Math.round(distance)} m`;
+    },
+
+    setHurt(seconds) {
+      // 0.42s is the scene's full hit; anything longer is the sinking cue.
+      hurtVeil.style.opacity = String(Math.min(1, seconds / 0.42));
     },
 
     finish(voyage, reason) {

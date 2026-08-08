@@ -490,8 +490,17 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
 
     const want = Math.atan2(target.y - mob.y, target.x - mob.x);
     mob.heading += Math.max(-ms.turn * dt, Math.min(ms.turn * dt, angleDelta(mob.heading, want)));
-    // It stops closing once it is in reach, so it circles rather than shoving.
-    const closing = mob.state === 'attack' ? 0.25 : mob.state === 'chase' ? 1 : 0.45;
+    // Station-keeping, not shoving.
+    //
+    // "Stops closing" used to mean closing at a quarter speed, which over a few
+    // seconds simply parks the creature INSIDE the hull — three of them at once
+    // and the ship is invisible under a pile of fish. A mob in reach now holds
+    // its distance and backs off if it is closer than it wants to be, which is
+    // also what makes a swarm read as a swarm rather than as one object.
+    const keep = ms.reach * 0.78;
+    const closing = mob.state === 'attack'
+      ? (distance < keep ? -0.6 : 0.15)
+      : mob.state === 'chase' ? 1 : 0.45;
     mob.x += Math.cos(mob.heading) * ms.speed * closing * dt;
     mob.y += Math.sin(mob.heading) * ms.speed * closing * dt;
 

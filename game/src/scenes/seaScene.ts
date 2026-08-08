@@ -5,6 +5,7 @@ import { instantiate, preload, type ModelInstance } from '../render/assets';
 import { Rng } from '../core/rng';
 import { createStick, type Stick } from '../ui/stick';
 import { createSeaHud, type SeaHud } from '../ui/seaHud';
+import { sfx } from '../ui/sfx';
 import {
   MOBS, SEA_CELL, SEA_RANGE, SEA_STEP, SHIPS, sitesNear, startVoyage, steer, stepVoyage,
   type MobKind, type SeaEvent, type Site, type Voyage,
@@ -423,6 +424,79 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
     });
   }
 
+  /**
+   * What a hit LOOKS like.
+   *
+   * The simulation already said everything that happens out here; none of it
+   * was visible. A cannon fired with no flash, a mob took damage with no
+   * reaction, and the hull lost a third of itself with nothing on screen but a
+   * bar quietly shortening in a corner. A fight the player cannot read is a
+   * fight they cannot play.
+   *
+   * Three cues, each attached to the thing it is about rather than floating in
+   * the middle of the screen: powder smoke at the gun that fired, a white flash
+   * on the creature that was struck, and a red vignette when it is the player.
+   */
+  const flashes = new Map<number, number>();   // mob id -> seconds of flash left
+  let hurt = 0;                                 // seconds of hull vignette left
+  const puffs: { x: number; y: number; life: number; node: THREE.Mesh }[] = [];
+
+  const puffGeometry = new THREE.PlaneGeometry(3.4, 3.4);
+  const puffMaterial = new THREE.MeshBasicMaterial({
+    color: 0xf2f6f4, transparent: true, opacity: 0.8, depthWrite: false,
+  });
+
+  function puffAt(x: number, y: number): void {
+    if (puffs.length > 14) return;
+    const node = new THREE.Mesh(puffGeometry, puffMaterial.clone());
+    node.rotation.x = -Math.PI / 2;
+    node.position.set(x, SEA_Y + 1.2, y);
+    node.renderOrder = 2;
+    stage.scene.add(node);
+    puffs.push({ x, y, life: 0.42, node });
+  }
+
+  /** Translates one simulation event into something a player can perceive. */
+  function feedback(event: SeaEvent): void {
+    switch (event.kind) {
+      case 'fired':
+        sfx('cannon');
+        puffAt(event.x, event.y);
+        break;
+      case 'hit':
+        if (event.target === 'ship') {
+          sfx('hitHull');
+          hurt = 0.42;
+        } else {
+          sfx('hitMob');
+          // The mob nearest the impact is the one that took it; the event
+          // carries the shot's position rather than an id, and picking the
+          // closest is both correct and cheaper than threading one through.
+          let best: number | null = null;
+          let near = 9;
+          for (const mob of voyage.mobs) {
+            const d = Math.hypot(mob.x - event.x, mob.y - event.y);
+            if (d < near) { near = d; best = mob.id; }
+          }
+          if (best !== null) flashes.set(best, 0.16);
+        }
+        break;
+      case 'mob-killed':
+        sfx('mobDown');
+        puffAt(event.x, event.y);
+        break;
+      case 'looted':
+        sfx('loot');
+        break;
+      case 'sunk':
+        sfx('sinking');
+        hurt = 1.2;
+        break;
+      default:
+        break;
+    }
+  }
+
   // The sim runs on a fixed step and the frame does not, so time is banked and
   // spent in whole steps. Same pattern as the island's economy tick, and the
   // reason a slow frame cannot change how a fight plays out.
@@ -441,6 +515,12 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
         voyage = out.voyage;
         for (const event of out.events) {
           opts.onEvent?.(event);
+          // Run in shot mode too. sfx() gates itself on SHOT, and the puffs
+          // and flashes advance on the same fixed dt the sim does, so a
+          // capture stays deterministic — while a broadside becomes something
+          // a critic can actually look at. Hiding it from the harness is how
+          // the panning gesture went a whole project without being seen.
+          feedback(event);
           if (event.kind === 'sunk') end('sunk');
           if (event.kind === 'home') end('home');
         }
@@ -462,6 +542,42 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
       water.update(elapsed, stage.camera);
 
       hud?.update(voyage);
+
+      // Advance the cues. Emissive rather than a colour swap, so a struck mob
+      // reads as lit up rather than as a different creature.
+      for (const [id, left] of flashes) {
+        const next = left - dt;
+        const entry = mobNodes.get(id);
+        if (entry) {
+          entry.node.traverse((node) => {
+            const mesh = node as THREE.Mesh;
+            const material = mesh.material as THREE.MeshStandardMaterial | undefined;
+            if (!material?.isMaterial || !('emissive' in material)) return;
+            material.emissive?.setScalar(Math.max(0, next) * 4);
+          });
+        }
+        if (next <= 0) flashes.delete(id); else flashes.set(id, next);
+      }
+
+      for (let i = puffs.length - 1; i >= 0; i--) {
+        const puff = puffs[i];
+        puff.life -= dt;
+        const t = Math.max(0, puff.life / 0.42);
+        const material = puff.node.material as THREE.MeshBasicMaterial;
+        material.opacity = t * 0.8;
+        puff.node.scale.setScalar(1 + (1 - t) * 1.5);
+        puff.node.position.y = SEA_Y + 1.2 + (1 - t) * 1.4;
+        if (puff.life <= 0) {
+          stage.scene.remove(puff.node);
+          material.dispose();
+          puffs.splice(i, 1);
+        }
+      }
+
+      if (hurt > 0) {
+        hurt = Math.max(0, hurt - dt);
+        hud?.setHurt(hurt);
+      }
       for (const mixer of mixers) mixer.update(dt);
       syncSites();
       syncMobs();

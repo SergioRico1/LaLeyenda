@@ -399,3 +399,22 @@ describe('finding the way home', () => {
     near(to.y, 0, 1e-9, 'and not up or down it');
   });
 });
+
+describe('a swarm is a swarm, not a pile', () => {
+  test('an attacking mob holds its distance instead of parking in the hull', () => {
+    const v = startVoyage('spacing');
+    for (let i = 0; i < 3; i++) {
+      v.mobs.push({
+        id: i + 1, kind: 'kelpling', x: 5 + i, y: i - 1, heading: 0, hp: 999,
+        state: 'attack', cooldown: 0, homeX: 5, homeY: 0, tether: 0, cell: '0:0',
+      });
+    }
+    for (let cx = -3; cx <= 3; cx++) for (let cy = -3; cy <= 3; cy++) v.seen.push(`${cx}:${cy}`);
+    // Ten seconds of being swarmed while dead in the water — the worst case.
+    const after = sail(v, 10, { throttle: 0 }).voyage;
+    for (const mob of after.mobs) {
+      const gap = Math.hypot(mob.x - after.x, mob.y - after.y);
+      ok(gap > MOBS.kelpling.radius, `a kelpling is ${gap.toFixed(1)} out, not inside the boat`);
+    }
+  });
+});

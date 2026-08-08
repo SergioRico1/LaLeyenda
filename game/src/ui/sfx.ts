@@ -52,6 +52,7 @@ export type SfxName =
   | 'coin' | 'land' | 'pop'
   | 'build' | 'levelup'
   | 'sheetIn' | 'sheetOut'
+  | 'cannon' | 'hitMob' | 'hitHull' | 'mobDown' | 'loot' | 'sinking'
   | 'chestShake' | 'chestBurst' | 'reward';
 
 /**
@@ -91,6 +92,43 @@ const BANK: Record<SfxName, { voices: Voice[]; gain: number; detune?: number }> 
     { hz: 880, wave: 'triangle', decay: .13, delay: .09 },
     { hz: 1318, wave: 'triangle', decay: .38, delay: .18 },
   ] },
+  /* --- the sea ----------------------------------------------------------
+   * A broadside is the sound the player hears most, so it is short and dry:
+   * a low body with a click of powder on top, and 300 cents of spread so a
+   * running fight never repeats the same report twice. Everything here is
+   * pitched BELOW the island bank — out there the sea is the loud thing and
+   * the UI chimes have no competition, but a cannon over a hull groan needs
+   * room at the bottom of the mix. */
+  cannon:  { gain: .30, detune: 300, voices: [
+    { hz: 150, to: 42, wave: 'square', decay: .16, cutoff: 480 },
+    { hz: 900, to: 260, wave: 'sawtooth', decay: .05, gain: .5, cutoff: 2600 },
+  ] },
+  // A wet thud on the target. Quieter than the shot that caused it, or a
+  // volley landing reads louder than the guns firing.
+  hitMob:  { gain: .17, detune: 260, voices: [
+    { hz: 210, to: 70, wave: 'triangle', decay: .085, cutoff: 900 },
+  ] },
+  // Taking damage is the one sound that must cut through: timber and a
+  // downward slide, so it is unmistakably the player being hit.
+  hitHull: { gain: .30, detune: 90, voices: [
+    { hz: 120, to: 46, wave: 'sawtooth', decay: .21, cutoff: 620 },
+    { hz: 330, to: 150, wave: 'square', decay: .1, gain: .45, cutoff: 1500 },
+  ] },
+  mobDown: { gain: .26, voices: [
+    { hz: 300, to: 120, wave: 'triangle', decay: .16, cutoff: 1400 },
+    { hz: 150, to: 60, wave: 'sine', decay: .26, gain: .7, delay: .04 },
+  ] },
+  // Rising, and the only rising sound out here — reward has to be legible
+  // against a bank where everything else falls.
+  loot:    { gain: .24, detune: 150, voices: [
+    { hz: 480, to: 960, wave: 'sine', decay: .12 },
+    { hz: 720, to: 1440, wave: 'triangle', decay: .1, gain: .5, delay: .05 },
+  ] },
+  sinking: { gain: .34, voices: [
+    { hz: 200, to: 34, wave: 'sawtooth', decay: .9, cutoff: 400 },
+    { hz: 90, to: 28, wave: 'square', decay: 1.2, gain: .6, delay: .1, cutoff: 260 },
+  ] },
+
   sheetIn:  { gain: .13, voices: [{ hz: 180, to: 420, wave: 'sine', decay: .13, cutoff: 1400 }] },
   sheetOut: { gain: .11, voices: [{ hz: 400, to: 170, wave: 'sine', decay: .1, cutoff: 1400 }] },
   chestShake: { gain: .14, voices: [{ hz: 140, to: 90, wave: 'square', decay: .07, cutoff: 700 }] },
