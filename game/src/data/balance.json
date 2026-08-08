@@ -1333,5 +1333,10 @@
   "invariant": {
     "$doc": "§4.2 STORE INVARIANT — build-failing test. Reachable capacity must clear the worst cost at that Ayuntamiento level by this margin.",
     "storageHeadroom": 0.25
+  },
+
+  "placement": {
+    "$doc": "§3.15 build mode. `footprint` is how wide the MODEL is fitted, which is deliberately larger than the plot it stands on — the reference islands have roofs and jetties overhanging their neighbours. `plotFactor` is the fraction of that footprint two buildings may not share. 0.6 is the tightest value the shipped layouts already satisfy (the Fundición/Muelle pair sits at 0.667), so it rejects genuine overlaps without invalidating an island the renderer was tuned against.",
+    "plotFactor": 0.6
   }
 }

@@ -1,16 +1,26 @@
 import * as THREE from 'three';
 import { Stage } from '../render/stage';
 import { Water } from '../render/water';
-import { generateIsland, buildIslandMesh, buildShoreSDF, cellToWorld, STEP, CELL, type IslandShape } from '../render/island';
+import {
+  generateIsland, buildIslandMesh, buildShoreSDF, cellToWorld, worldToCell, STEP, CELL,
+  type IslandShape,
+} from '../render/island';
+import { createGhost, type Ghost } from '../render/ghost';
 import { instantiate, preload } from '../render/assets';
 import { Rng } from '../core/rng';
 import { createGame, type Game } from '../core/game';
 import {
   BALANCE, buildingSpec, claimDaily, claimFreeChest, claimQuest, collect, collectAll, finishNow,
-  openChest, placeable, questComplete, startChest, startUpgrade, upgradePlan, type GameState,
+  levelSpec, openChest, place, placeRefusal, questComplete, spotRefusal, startChest, startUpgrade,
+  townHallLevel, type GameState, type Refusal,
 } from '../sim';
 import { createHud, type Hud, type ResourceId } from '../ui/hud';
-import { buildingIdOf, toHudState, toWorldItems } from '../ui/present';
+import { bakeIcons, bakeModelIcons, type IconSet } from '../ui/icons';
+import { buildingIdOf, toBuildOptions, toHudState, toUpgradeView, toWorldItems } from '../ui/present';
+import { createBuildPicker } from '../ui/panels/buildPicker';
+import { createUpgradeSheet } from '../ui/panels/upgradeSheet';
+import { createBuildBar } from '../ui/panels/buildBar';
+import type { RefusalKey } from '../ui/copy';
 
 /** The home island: the builder scene, seen from the Clash-of-Clans style camera.
  *
@@ -63,10 +73,14 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
   /* --- the simulation ---------------------------------------------------- */
 
   let sceneElapsed = 0;
+  // §4.10's island is the DEFAULT boot. `?save=demo` is the only route to the
+  // Ayuntamiento-4 fixture, which exists to frame shots and exercise the
+  // late-game HUD — it is not a game anyone starts.
+  const saveParam = params.get('save');
   const game: Game = await createGame({
     seed,
     persist: !shot,
-    fresh: params.get('save') === 'new',
+    start: saveParam === 'demo' ? 'demo' : saveParam === 'new' ? 'new' : 'stored',
     clock: shot ? () => SHOT_EPOCH + sceneElapsed * 1000 : undefined,
   });
 
@@ -85,6 +99,8 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
    *  the GRID, not off a model's bounding box, so it stays correct however the
    *  model itself ends up normalized. */
   const anchorFor = new Map<number, THREE.Vector3>();
+  /** What a tap on the island can hit — §3.16's route into the upgrade sheet. */
+  const pickable: THREE.Object3D[] = [];
 
   const placeBuilding = async (b: GameState['buildings'][number]) => {
     const spec = buildingSpec(b.type);
@@ -95,7 +111,9 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
     inst.object.position.z += pos.z;
     inst.object.position.y += pos.y;
     inst.object.rotation.y = bldgRng.pick([0, Math.PI / 2, Math.PI, -Math.PI / 2]);
+    inst.object.userData.buildingId = b.id;
     stage.scene.add(inst.object);
+    pickable.push(inst.object);
     if (inst.mixer) mixers.push(inst.mixer);
     anchorFor.set(b.id, new THREE.Vector3(pos.x, pos.y, pos.z));
 
@@ -219,6 +237,201 @@ export async function createIslandScene(stage: Stage, seed = 'la-leyenda'): Prom
   }
 
   game.onChange(() => { if (hud) hud.setState(toHudState(game.state(), game.now())); });
+
+  /* --- §3.15 build mode + §3.16 the upgrade sheet ------------------------- */
+
+  // The picker rows and the sheet header show the building being discussed, so
+  // the models are baked into icons through the same rig as the HUD's. Both
+  // bakes are memoized, so asking again here costs nothing.
+  const modelIcons = uiRoot && !bare
+    ? await bakeModelIcons(stage.renderer, [...new Set(Object.values(BALANCE.buildings).map((b) => b.model))], 56)
+    : {};
+  const iconSet: IconSet = uiRoot ? await bakeIcons(stage.renderer) : {};
+
+  const ghost: Ghost = createGhost(shape);
+  stage.scene.add(ghost.object);
+
+  /** Non-null only while a placement is in progress. */
+  let placing: { type: string; footprint: number } | null = null;
+
+  const picker = uiRoot ? createBuildPicker({
+    icons: iconSet,
+    onPick: (type) => void beginPlacement(type),
+  }) : null;
+
+  const sheet = uiRoot ? createUpgradeSheet({
+    icons: iconSet,
+    onUpgrade: (id) => {
+      const result = game.dispatch((s) => startUpgrade(s, id, game.now()));
+      if (result.ok) { sheet!.close(); void syncBuildings(); }
+      else refreshSheet();
+    },
+    onFinishNow: (id) => {
+      const result = game.dispatch((s) => finishNow(s, id, game.now()));
+      if (result.ok) { sheet!.close(); void syncBuildings(); }
+      else refreshSheet();
+    },
+  }) : null;
+
+  const bar = uiRoot ? createBuildBar({
+    icons: iconSet,
+    onConfirm: confirmPlacement,
+    onCancel: endPlacement,
+  }) : null;
+
+  if (uiRoot) {
+    if (picker) uiRoot.append(picker.el);
+    if (sheet) uiRoot.append(sheet.el);
+    if (bar) uiRoot.append(bar.el);
+  }
+
+  async function beginPlacement(type: string): Promise<void> {
+    const spec = buildingSpec(type);
+    placing = { type, footprint: spec.footprint };
+    // Start under the middle of the island rather than at 0,0, so the first
+    // frame of the ghost is somewhere plausible even before a finger moves.
+    moveGhost(Math.floor(shape.size / 2), Math.floor(shape.size / 2));
+    ghost.show(true);
+    bar?.show({ label: spec.label, cost: levelSpec(type, 1).cost, timeMs: levelSpec(type, 1).timeMs });
+    await ghost.setModel(spec.model, spec.footprint);
+    refreshPlacement();
+  }
+
+  function endPlacement(): void {
+    placing = null;
+    ghost.show(false);
+    bar?.hide();
+  }
+
+  /**
+   * Where the sim and the terrain each answer the half they own.
+   *
+   * The sim knows about builders, cost, counts and whether another building's
+   * plot is in the way. It knows nothing about the coastline — the island shape
+   * is generated per seed in render/island.ts and never enters the save — so
+   * buildable ground is the ghost's answer. Both have to be green.
+   */
+  function placementRefusal(): Refusal | null {
+    if (!placing) return null;
+    const state = game.state();
+    const now = game.now();
+    return placeRefusal(state, placing.type, now)
+      ?? spotRefusal(state, placing.type, ghost.cell.x, ghost.cell.z)
+      ?? (ghost.valid ? null : 'cell-occupied');
+  }
+
+  function moveGhost(x: number, z: number): void {
+    if (!placing) return;
+    const blocked = spotRefusal(game.state(), placing.type, x, z) !== null;
+    const before = ghost.cell;
+    ghost.setCell(x, z, blocked);
+    // §3.15's haptics: a tick on crossing each cell, a distinct double tick on
+    // entering an invalid one.
+    if (before.x !== x || before.z !== z) {
+      navigator.vibrate?.(ghost.valid && !blocked ? 6 : [12, 40, 12]);
+    }
+  }
+
+  function refreshPlacement(): void {
+    if (!placing || !bar) return;
+    const refusal = placementRefusal();
+    bar.setValid(refusal === null, refusal as RefusalKey | null, buildingSpec(placing.type).unlockAtTownHall);
+  }
+
+  function confirmPlacement(): void {
+    if (!placing) return;
+    const { x, z } = ghost.cell;
+    const result = game.dispatch((s) => place(s, placing!.type, x, z, game.now()));
+    if (!result.ok) { refreshPlacement(); return; }
+    endPlacement();
+    void syncBuildings();
+  }
+
+  function openSheetFor(buildingId: number): void {
+    const building = game.state().buildings.find((b) => b.id === buildingId);
+    if (!building || !sheet) return;
+    if (placing) endPlacement();
+    sheet.show(toUpgradeView(game.state(), building, game.now(), modelIcons));
+  }
+
+  /** Keeps an open sheet honest while the world moves under it. */
+  function refreshSheet(): void {
+    const id = sheet?.buildingId;
+    if (id == null) return;
+    const building = game.state().buildings.find((b) => b.id === id);
+    if (building) sheet!.refresh(toUpgradeView(game.state(), building, game.now(), modelIcons));
+    else sheet!.close();
+  }
+
+  /* --- pointer: the finger the ghost follows, and the tap that opens a sheet */
+
+  const raycaster = new THREE.Raycaster();
+  const pointer = new THREE.Vector2();
+  let down: { x: number; y: number; moved: boolean } | null = null;
+
+  function toNdc(event: PointerEvent): void {
+    const rect = stage.renderer.domElement.getBoundingClientRect();
+    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  }
+
+  /** The grid cell under the pointer, or null if it missed the island. */
+  function cellUnder(event: PointerEvent): { x: number; z: number } | null {
+    toNdc(event);
+    raycaster.setFromCamera(pointer, stage.camera);
+    const hit = raycaster.intersectObject(terrain, true)[0];
+    if (!hit) return null;
+    return worldToCell(shape, hit.point.x, hit.point.z);
+  }
+
+  function buildingUnder(event: PointerEvent): number | null {
+    toNdc(event);
+    raycaster.setFromCamera(pointer, stage.camera);
+    for (const hit of raycaster.intersectObjects(pickable, true)) {
+      let node: THREE.Object3D | null = hit.object;
+      while (node) {
+        const id = node.userData.buildingId;
+        if (typeof id === 'number') return id;
+        node = node.parent;
+      }
+    }
+    return null;
+  }
+
+  const canvas = stage.renderer.domElement;
+  canvas.addEventListener('pointerdown', (event) => {
+    down = { x: event.clientX, y: event.clientY, moved: false };
+    if (!placing) return;
+    const cell = cellUnder(event);
+    if (cell) { moveGhost(cell.x, cell.z); refreshPlacement(); }
+  });
+
+  canvas.addEventListener('pointermove', (event) => {
+    if (!placing) return;
+    // §3.15 — "a translucent ghost of the real model follows the finger". On a
+    // phone that means while the finger is DOWN; with a mouse there is no such
+    // state, so hovering moves it too.
+    if (down) {
+      if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > 8) down.moved = true;
+    } else if (event.pointerType === 'touch') {
+      return;
+    }
+    const cell = cellUnder(event);
+    if (cell) { moveGhost(cell.x, cell.z); refreshPlacement(); }
+  });
+
+  const release = (event: PointerEvent) => {
+    const start = down;
+    down = null;
+    if (!start || placing) return;
+    // A tap, not a drag: the island is pannable in a later slice and a swipe
+    // must never be read as "open this building".
+    if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10) return;
+    const id = buildingUnder(event);
+    if (id !== null) openSheetFor(id);
+  };
+  canvas.addEventListener('pointerup', release);
+  canvas.addEventListener('pointercancel', () => { down = null; });
 
   /**
    * Placeholder routes. The panels are the next slice; until they exist each

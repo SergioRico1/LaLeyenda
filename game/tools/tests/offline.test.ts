@@ -3,7 +3,7 @@ import {
   startChest, startUpgrade, tick,
 } from '../../src/sim';
 import { describe, eq, near, ok, test } from './harness';
-import { T0, find, game, rich, stockOf } from './fixtures';
+import { T0, find, quiet, rich, stockOf } from './fixtures';
 
 /**
  * §4.7: the only limit on offline production is the producer's own cap. There
@@ -13,14 +13,13 @@ import { T0, find, game, rich, stockOf } from './fixtures';
 
 describe('offline catch-up', () => {
   test('an hour away pays exactly an hour of production', () => {
-    const state = tick(game(), T0 + HOUR).state;
-    // The Aserradero opens pre-seeded with 60 (§4.10 beat 0:20).
-    near(stockOf(state, 'aserradero'), 60 + 200, 0.001, 'Nv1 makes 200/h');
+    const state = tick(quiet(), T0 + HOUR).state;
+    near(stockOf(state, 'aserradero'), 200, 0.001, 'Nv1 makes 200/h');
     near(stockOf(state, 'mercado'), 150, 0.001, 'the Mercado makes 150/h');
   });
 
   test('production is capped by the producer, and by nothing else', () => {
-    const state = tick(game(), T0 + 30 * DAY).state;
+    const state = tick(quiet(), T0 + 30 * DAY).state;
     for (const b of state.buildings) {
       const cap = producerCapacity(b);
       if (cap <= 0) continue;
@@ -29,12 +28,12 @@ describe('offline catch-up', () => {
   });
 
   test('the summary describes the welcome-back moment', () => {
-    const result = tick(game(), T0 + 4 * HOUR);
-    near(result.summary.produced.madera, 600 - 60, 0.001, 'wood produced while away');
+    const result = tick(quiet(), T0 + 4 * HOUR);
+    near(result.summary.produced.madera, 600, 0.001, 'wood produced while away');
     near(result.summary.pending.madera, 600, 0.001, 'and what is waiting for a tap');
     eq(result.summary.fullProducers, 2, 'both starting producers are at cap');
     ok(!result.summary.longAbsence, '4h is not a long absence');
-    ok(tick(game(), T0 + 80 * HOUR).summary.longAbsence, '80h is — §3.22C `La Isla Resistió`');
+    ok(tick(quiet(), T0 + 80 * HOUR).summary.longAbsence, '80h is — §3.22C `La Isla Resistió`');
   });
 
   test('the window is integrated PIECEWISE, split at every completion inside it', () => {
@@ -91,12 +90,12 @@ describe('offline catch-up', () => {
 
   test('the Cofre Libre stacks to two and no further — that gap IS the pressure', () => {
     const every = BALANCE.chests.freeChest.everyMs;
-    const state = tick(game(), T0 + 40 * every).state;
+    const state = tick(quiet(), T0 + 40 * every).state;
     eq(state.freeChestsBanked, BALANCE.chests.freeChest.stack, 'banked at the stack limit');
   });
 
   test('a new calendar day makes the daily claimable again', () => {
-    const state = game();
+    const state = quiet();
     ok(dailyAvailable(state, T0), 'never claimed → available');
     const claimed = { ...state, daily: { ...state.daily, lastClaimedDay: Math.floor(T0 / DAY) } };
     ok(!dailyAvailable(claimed, T0 + HOUR), 'same day → not available');
@@ -104,7 +103,7 @@ describe('offline catch-up', () => {
   });
 
   test('tick is pure: the state passed in is never touched', () => {
-    const before = game();
+    const before = quiet();
     const snapshot = JSON.stringify(before);
     const after = tick(before, T0 + 8 * HOUR).state;
     eq(JSON.stringify(before), snapshot, 'the input is byte-identical afterwards');
@@ -112,15 +111,15 @@ describe('offline catch-up', () => {
   });
 
   test('replaying the same window in slices lands where one jump does', () => {
-    const oneJump = tick(game(), T0 + 6 * HOUR).state;
-    let sliced = game();
+    const oneJump = tick(quiet(), T0 + 6 * HOUR).state;
+    let sliced = quiet();
     for (let i = 1; i <= 6 * 60; i++) sliced = tick(sliced, T0 + i * MINUTE).state;
     near(stockOf(sliced, 'aserradero'), stockOf(oneJump, 'aserradero'), 0.001, 'same wood');
     near(stockOf(sliced, 'mercado'), stockOf(oneJump, 'mercado'), 0.001, 'same gold');
   });
 
   test('the round trip is closed: away → collect → the store goes up', () => {
-    const away = tick(game(), T0 + 3 * HOUR).state;
+    const away = tick(quiet(), T0 + 3 * HOUR).state;
     const saw = find(away, 'aserradero');
     const result = collect(away, saw.id);
     near(result.state.store.madera, saw.stock, 0.001, 'everything the island made is now banked');

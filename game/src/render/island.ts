@@ -342,6 +342,21 @@ export function buildShoreSDF(shape: IslandShape, range = 8, resolution = 256): 
   return texture;
 }
 
+/** The grid cell a world-space point falls in. Inverse of `cellToWorld`. */
+export function worldToCell(shape: IslandShape, wx: number, wz: number): { x: number; z: number } {
+  const half = (shape.size * CELL) / 2;
+  return {
+    x: Math.round((wx + half - CELL / 2) / CELL),
+    z: Math.round((wz + half - CELL / 2) / CELL),
+  };
+}
+
+/** Whether a cell exists and is part of the buildable plateau. */
+export function isBuildable(shape: IslandShape, x: number, z: number): boolean {
+  if (x < 0 || z < 0 || x >= shape.size || z >= shape.size) return false;
+  return shape.cells[z * shape.size + x].buildable;
+}
+
 /** World-space position of the centre-top of a grid cell. */
 export function cellToWorld(shape: IslandShape, x: number, z: number): THREE.Vector3 {
   const half = (shape.size * CELL) / 2;

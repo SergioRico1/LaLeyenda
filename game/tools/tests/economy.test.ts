@@ -2,7 +2,7 @@ import {
   BALANCE, HOUR, MINUTE, buildersFree, collect, producerCapacity, startUpgrade, storeCap, tick,
 } from '../../src/sim';
 import { describe, eq, near, ok, test } from './harness';
-import { T0, find, game, rich, stockOf } from './fixtures';
+import { T0, find, quiet, rich, stockOf } from './fixtures';
 
 /**
  * The mechanic UI_SPEC §4.2 says RETENTION.md fuses by mistake, and the
@@ -11,7 +11,7 @@ import { T0, find, game, rich, stockOf } from './fixtures';
 
 describe('§4.2 two separate caps', () => {
   test('a producer fills its OWN capacity and stops — the store is irrelevant', () => {
-    const start = game();
+    const start = quiet();
     const saw = find(start, 'aserradero');
     const capacity = producerCapacity(saw);
     eq(capacity, 600, 'Aserradero Nv1 holds 600');
@@ -24,7 +24,7 @@ describe('§4.2 two separate caps', () => {
   });
 
   test('collecting is the ONLY path from the producer to the store', () => {
-    const filled = tick(game(), T0 + 10 * HOUR).state;
+    const filled = tick(quiet(), T0 + 10 * HOUR).state;
     const result = collect(filled, find(filled, 'aserradero').id);
 
     ok(result.ok, 'the collect succeeded');
@@ -34,7 +34,7 @@ describe('§4.2 two separate caps', () => {
   });
 
   test('a full STORE is a different failure: the collect spills and the stock stays', () => {
-    let state = tick(game(), T0 + 10 * HOUR).state;
+    let state = tick(quiet(), T0 + 10 * HOUR).state;
     state = { ...state, store: { ...state.store, madera: storeCap(state, 'madera') } };
 
     const result = collect(state, find(state, 'aserradero').id);
@@ -46,7 +46,7 @@ describe('§4.2 two separate caps', () => {
   });
 
   test('a half-full store takes what fits and leaves the rest in the building', () => {
-    let state = tick(game(), T0 + 10 * HOUR).state;
+    let state = tick(quiet(), T0 + 10 * HOUR).state;
     const cap = storeCap(state, 'madera');
     state = { ...state, store: { ...state.store, madera: cap - 250 } };
 
@@ -69,7 +69,7 @@ describe('§4.2 two separate caps', () => {
 
 describe('§4.3 / §9 the builder limit — START WITH TWO', () => {
   test('a fresh island has two builders, both free', () => {
-    const state = game();
+    const state = quiet();
     eq(state.builders.owned, 2, 'two owned');
     eq(buildersFree(state, T0), 2, 'two free');
   });

@@ -1,6 +1,7 @@
 import { BALANCE, type ResourceId } from './balance';
 import {
-  buildersFree, finishNowCost, placeInPlace, placeRefusal, startUpgradeInPlace, upgradeRefusal,
+  buildersFree, finishNowCost, placeInPlace, placeRefusal, spotRefusal, startUpgradeInPlace,
+  upgradeRefusal,
 } from './build';
 import {
   awardChestInPlace, openChestInPlace, skipCost, startChestInPlace, startRefusal,
@@ -25,6 +26,9 @@ export { createNewGame, createDemoIsland } from './state';
 export { advanceInPlace, applyLongAbsenceGiftInPlace, type OfflineSummary } from './offline';
 export {
   buildersFree, buildersTotal, buildersBusy, gemSpeedupCost, finishNowCost, upgradePlan, placeable,
+  buildCatalog, upgradeGains, upgradeRefusal, townHallUnlocks, placeRefusal, spotRefusal,
+  plotHalf, plotsOverlap,
+  type CatalogEntry, type UpgradeGain, type UpgradePlan,
 } from './build';
 export {
   storeCap, storeCaps, producerCapacity, producerRate, producerResource, isProducer, isFull,
@@ -114,9 +118,16 @@ export function startUpgrade(state: GameState, buildingId: number, now: number):
   return { state: next, events: [], ok: true };
 }
 
+/**
+ * §3.15 — the confirm tap. Both halves of the refusal are re-checked here even
+ * though the ghost has been asking them on every pointer move: the picker's
+ * answer can go stale between opening the sheet and the ✓ (another timer
+ * finished and took the last builder), and an action that trusts the UI's last
+ * word is an action that can be raced.
+ */
 export function place(state: GameState, type: string, x: number, z: number, now: number): ActionResult {
   const next = clone(state);
-  const refusal = placeRefusal(next, type, now);
+  const refusal = placeRefusal(next, type, now) ?? spotRefusal(next, type, x, z);
   if (refusal) return fail(next, refusal);
   placeInPlace(next, type, x, z, now);
   return { state: next, events: [], ok: true };

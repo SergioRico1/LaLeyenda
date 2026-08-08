@@ -422,6 +422,52 @@ async function glbProp(id: string): Promise<THREE.Object3D> {
   return holder;
 }
 
+const modelIcons = new Map<string, string>();
+
+/**
+ * Bakes arbitrary .glb models into icons, for §3.15's picker and §3.16's sheet.
+ *
+ * The picker's rows and the upgrade sheet's header have to show the building
+ * being discussed, and the only honest portrait of a building is the building:
+ * a drawn substitute would be the one place in the game where the icon and the
+ * thing it names were modelled by different hands. This is the same bake the
+ * HUD icons go through — same rig, same ink dilation — so a row in the picker
+ * is lit by the same sun as the island behind it.
+ *
+ * Results are memoized across calls; a failed bake yields no entry rather than
+ * a broken image, and the row falls back to its label.
+ */
+export async function bakeModelIcons(
+  renderer: THREE.WebGLRenderer,
+  ids: readonly string[],
+  px = 56
+): Promise<Record<string, string>> {
+  for (const id of ids) {
+    if (modelIcons.has(id)) continue;
+    try {
+      const object = await glbProp(id);
+      const out = px * INK_SCALE;
+      const bounds = object.userData.bounds as THREE.Box3 | undefined;
+      if (bounds) {
+        const proxy = new THREE.Mesh(
+          new THREE.BoxGeometry(
+            bounds.max.x - bounds.min.x,
+            bounds.max.y - bounds.min.y,
+            bounds.max.z - bounds.min.z
+          ),
+          new THREE.MeshBasicMaterial({ visible: false })
+        );
+        object.add(proxy);
+      }
+      const { pixels, size } = renderProp(renderer, object, out * SUPERSAMPLE);
+      modelIcons.set(id, inkOutline(toCanvas(pixels, size), out, 3 * INK_SCALE).toDataURL('image/png'));
+    } catch (err) {
+      console.warn(`[icons] model ${id} failed to bake`, err);
+    }
+  }
+  return Object.fromEntries(ids.map((id) => [id, modelIcons.get(id)]).filter(([, v]) => v)) as Record<string, string>;
+}
+
 let cached: Promise<IconSet> | null = null;
 
 /**

@@ -160,6 +160,10 @@ export type Refusal =
   | 'busy'
   | 'no-builders'
   | 'max-level'
+  /** The island already holds as many of this building as the hall allows. */
+  | 'max-count'
+  /** §3.15 — the footprint under the finger overlaps something already built. */
+  | 'cell-occupied'
   | 'town-hall-too-low'
   | 'not-enough-resources'
   | 'not-enough-gems'

@@ -155,6 +155,7 @@ const data = raw as unknown as {
   xp: { perBuildSecondsSqrt: number; perObstacle: number; perQuest: number; levelCurve: { base: number; growth: number } };
   offline: { graceDays: number; beyondGraceMultiplier: number; longAbsence: string; longAbsenceGiftChest: string };
   invariant: { storageHeadroom: number };
+  placement: { plotFactor: number };
 };
 
 const asCost = (cost: Record<string, number> | undefined): Cost => (cost ?? {}) as Cost;
@@ -292,6 +293,7 @@ export const BALANCE = {
   },
 
   invariant: data.invariant,
+  placement: data.placement,
 } as const;
 
 /* --------------------------------------------------------------------------

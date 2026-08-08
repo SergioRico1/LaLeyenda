@@ -21,8 +21,18 @@ export interface GameOptions {
   clock?: () => number;
   /** false under the harness: a screenshot must never overwrite a real save. */
   persist?: boolean;
-  /** Start from §4.10's first-session island instead of whatever is stored. */
-  fresh?: boolean;
+  /**
+   * Where the first state comes from.
+   *
+   *   'stored' — the save if there is one, otherwise §4.10's island. The default,
+   *              and the only one a player ever meets.
+   *   'new'    — §4.10's island, ignoring the save. `?save=new`.
+   *   'demo'   — the Ayuntamiento-4 fixture, for framing shots and exercising
+   *              the late-game HUD. `?save=demo`, and it never persists: it is a
+   *              fixture, and writing it over someone's island would be a bug
+   *              they could not undo.
+   */
+  start?: 'stored' | 'new' | 'demo';
 }
 
 export interface Game {
@@ -44,16 +54,20 @@ export interface Game {
 
 export async function createGame(options: GameOptions): Promise<Game> {
   const clock = options.clock ?? (() => Date.now());
-  const persist = options.persist !== false;
+  const start = options.start ?? 'stored';
+  const persist = options.persist !== false && start !== 'demo';
   const store = persist ? await SaveStore.open() : null;
 
   // getTimezoneOffset is read HERE and stored, so day boundaries inside the sim
   // stay pure. It is re-read on every load: the player may have flown.
   const tz = new Date().getTimezoneOffset();
 
-  let state =
-    (!options.fresh && store ? await store.load() : null) ??
-    (options.fresh ? createNewGame(options.seed, clock(), tz) : createDemoIsland(options.seed, clock(), tz));
+  const authored = () =>
+    start === 'demo'
+      ? createDemoIsland(options.seed, clock(), tz)
+      : createNewGame(options.seed, clock(), tz);
+
+  let state = (start === 'stored' && store ? await store.load() : null) ?? authored();
   state = { ...state, tzOffsetMinutes: tz };
 
   if (store) console.log(`[save] backend: ${store.backendName}`);

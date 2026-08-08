@@ -15,3 +15,5 @@
 @import './components/bubble.css';
 @import './components/timer.css';
 @import './components/tray.css';
+
+@import './panels/panels.css';

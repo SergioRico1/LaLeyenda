@@ -1,0 +1,243 @@
+/* ============================================================================
+ * panels.css — §3.15 build mode, §3.16 the bottom sheet, §3.17 the header.
+ *
+ * The sheet keeps §3.16's three-layer edge (near-black outside, taupe band,
+ * light inner rim, then cream) and drops its bottom corners, because it is
+ * hinged on the bottom edge of the screen rather than floating in the middle
+ * of it. §3.15's hard rule — no primary action above 55% of viewport height —
+ * is what puts it there.
+ * ========================================================================== */
+
+/* --- the sheet shell ----------------------------------------------------- */
+.sheet{
+  position:fixed; inset:0;
+  z-index:var(--z-panel);
+  pointer-events:none;
+}
+/* No scrim (§3.16): the island stays at full brightness on both sides of the
+ * panel. This catcher is transparent and exists only to take the outside tap. */
+.sheet__catcher{
+  position:absolute; inset:0;
+  pointer-events:auto;
+}
+.sheet__panel{
+  position:absolute; left:0; right:0; bottom:0;
+  display:flex; flex-direction:column;
+  max-height:min(70vh, 620px);
+  padding-bottom:var(--ui-safe-b);
+  pointer-events:auto;
+
+  background:var(--ui-panel);
+  border:var(--ui-frame-w) solid var(--ui-frame);
+  border-bottom:0;
+  border-radius:var(--ui-r-panel) var(--ui-r-panel) 0 0;
+  box-shadow:
+    0 0 0 3px var(--ui-frame-dark),          /* outer near-black stroke */
+    inset 0 0 0 1px rgba(255,255,255,.55),   /* light rim inside the frame */
+    0 -10px 44px rgba(0,0,0,.55);
+
+  transform:translateY(100%);
+  transition:transform .22s cubic-bezier(.2,1.1,.4,1);
+}
+.sheet.is-open .sheet__panel{ transform:translateY(0); }
+html.shot .sheet__panel{ transition:none; }
+
+/* A short grab bar reads as "this came from the bottom edge and goes back". */
+.sheet__grab{
+  width:44px; height:5px; margin:8px auto 0;
+  border-radius:999px;
+  background:rgba(23,19,14,.22);
+}
+
+/* --- §3.17 the header: the title sits directly on the cream -------------- */
+.sheet__head{
+  position:relative;
+  display:flex; align-items:center; justify-content:center;
+  min-height:64px; padding:6px 64px 10px;
+  border-bottom:1px solid rgba(0,0,0,.12);   /* the hairline, and nothing else */
+}
+.sheet__title{
+  font-size:27px; text-align:center;
+  color:#fff;
+}
+/* §3.14 — the X OVERLAPS and breaks the corner, never sits politely inside. */
+.sheet__x{
+  position:absolute; right:10px; top:2px;
+  width:48px; height:48px; min-height:0; padding:0;
+  --brk:59%;
+  border-radius:13px;
+}
+.sheet__x span{ font-size:23px; -webkit-text-stroke:var(--ui-txt-stroke-x) var(--ui-ink); }
+
+.sheet__body{
+  overflow-y:auto; -webkit-overflow-scrolling:touch;
+  padding:10px 10px 4px;
+  overscroll-behavior:contain;
+}
+.sheet__footer{
+  padding:10px 14px calc(12px + var(--ui-safe-b));
+  display:flex; flex-direction:column; align-items:stretch; gap:6px;
+}
+
+/* §3.17 — list content goes in a --ui-well inset panel. */
+.well{
+  background:var(--ui-well);
+  border-radius:12px;
+  box-shadow:inset 0 2px 6px rgba(0,0,0,.5);
+  padding:6px;
+}
+
+/* --- cost rows (§3.20's footer rule) ------------------------------------- */
+.cost-row{ display:flex; align-items:center; flex-wrap:wrap; gap:6px 14px; }
+.cost-item{ display:inline-flex; align-items:center; gap:3px; }
+.cost-item__icon{ width:26px; height:26px; object-fit:contain; margin:-6px 0; }
+.cost-item__n{ font-size:19px; }
+.cost-item__clock{ font-size:15px; filter:grayscale(1) brightness(2); }
+/* Red is reserved for a price you cannot currently meet — the one number in
+ * the row that is actually stopping the player. */
+.cost-item.is-short .cost-item__n{ color:#FF7A6E; }
+.cost-row__free{ font-size:17px; opacity:.8; }
+
+/* --- §3.15 the picker list ----------------------------------------------- */
+.picker__list{ display:flex; flex-direction:column; gap:6px; }
+.picker__empty{ font-size:17px; padding:14px; text-align:center; opacity:.85; }
+
+.pick-row{
+  position:relative;
+  display:flex; align-items:center; gap:10px;
+  width:100%; min-height:76px;
+  padding:8px 10px;
+  text-align:left;
+  border:2px solid rgba(0,0,0,.45);
+  border-radius:12px;
+  background:linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.03));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14);
+}
+.pick-row:active{ background:rgba(255,255,255,.16); }
+.pick-row__art{
+  flex:0 0 auto; width:56px; height:56px;
+  display:grid; place-items:center;
+  /* §3.20 — every valuable object in Clash sits on a white radial starburst. */
+  background:radial-gradient(circle at 50% 52%, rgba(255,255,255,.30) 0%, transparent 62%);
+}
+.pick-row__art img{ width:100%; height:100%; object-fit:contain; }
+.pick-row__text{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:3px; }
+.pick-row__head{ display:flex; align-items:baseline; gap:8px; }
+.pick-row__name{ font-size:20px; }
+.pick-row__count{ font-size:15px; opacity:.75; margin-left:auto; }
+.pick-row__meta{ display:flex; flex-direction:column; gap:2px; }
+.pick-row__why{ font-size:15px; color:#FFD27A; }
+.pick-row__go{
+  flex:0 0 auto; min-height:44px; padding:8px 16px; --brk:56%;
+  pointer-events:none;   /* the whole row is the target */
+}
+.pick-row__go .t-btn{ font-size:17px; }
+
+/* A blocked row is the same object, drained — never a row with parts removed
+ * (§6.10). It keeps its price so the player can plan for it. */
+.pick-row.is-blocked{ filter:saturate(.3) brightness(.82); }
+.pick-row.is-blocked .cost-row{ opacity:.65; }
+.pick-row.is-blocked .pick-row__why{ filter:saturate(3) brightness(1.2); }
+
+@keyframes ui-refuse{
+  0%,100%{ transform:translateX(0); }
+  25%    { transform:translateX(-5px); }
+  75%    { transform:translateX(5px); }
+}
+.pick-row.is-refused{ animation:ui-refuse .22s ease-in-out; }
+
+/* --- §3.16 the upgrade sheet body ---------------------------------------- */
+.sheet__identity{
+  display:flex; align-items:center; gap:12px;
+  padding:2px 6px 10px;
+}
+.sheet__art{
+  width:72px; height:72px; flex:0 0 auto;
+  display:grid; place-items:center;
+  background:radial-gradient(circle at 50% 52%, rgba(255,255,255,.55) 0%, transparent 60%);
+}
+.sheet__art img{ width:100%; height:100%; object-fit:contain; }
+.sheet__art.is-blank{ display:none; }
+.sheet__level{ font-size:22px; color:#3A3635; -webkit-text-stroke:0; text-shadow:none; }
+
+.sheet__detail{ display:flex; flex-direction:column; gap:6px; padding:10px; }
+.sheet__row-label{ font-size:17px; opacity:.85; }
+.sheet__timer{ padding:4px 0 2px; }
+.sheet__timer .timerbar{ width:100%; }
+
+.gain{
+  display:flex; align-items:center; gap:8px;
+  padding:5px 0;
+  border-top:1px solid rgba(255,255,255,.12);
+}
+.gain__label{ font-size:16px; opacity:.8; flex:1 1 auto; }
+.gain__from{ font-size:18px; opacity:.6; }
+.gain__arrow{ font-size:15px; opacity:.6; }
+.gain__to{ font-size:19px; color:#C6F06A; }
+.gain--unlocks .gain__to{ font-size:16px; text-align:right; max-width:60%; }
+.sheet__price{ padding-top:8px; border-top:1px solid rgba(255,255,255,.12); }
+
+/* The CTA at thumb height — §4.10 beat 0:45's entire requirement. */
+.sheet__cta{
+  width:100%; min-height:60px; gap:10px;
+  --brk:50%;
+}
+.sheet__cta .t-btn{ font-size:22px; }
+.sheet__cta-time,
+.sheet__cta-price{ display:inline-flex; align-items:center; gap:4px; font-size:19px; opacity:.95; }
+.sheet__gem{ width:26px; height:26px; object-fit:contain; margin:-6px 0; }
+/* Blocked, not dead: it keeps its place and answers with the line below it. */
+.sheet__cta.is-blocked{ filter:saturate(.25); }
+.sheet__why{
+  font-size:16px; text-align:center; color:#8A3A22;
+  -webkit-text-stroke:0; text-shadow:none;
+}
+
+/* --- §3.15 the build bar ------------------------------------------------- */
+.buildbar{
+  position:fixed; left:0; right:0; bottom:0;
+  z-index:var(--z-buildbar);
+  min-height:calc(96px + var(--ui-safe-b));
+  padding:10px calc(24px + var(--ui-safe-r)) calc(10px + var(--ui-safe-b)) calc(24px + var(--ui-safe-l));
+  display:flex; align-items:center; gap:12px;
+  background:rgba(23,19,14,.72);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22);
+  pointer-events:auto;
+}
+.buildbar__text{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:3px; }
+.buildbar__caption{ font-size:19px; }
+.buildbar__why{ font-size:15px; color:#FF9C8E; }
+.buildbar__pair{ display:flex; align-items:center; gap:22px; flex:0 0 auto; }
+.buildbar__btn{
+  width:64px; height:64px; min-height:0; padding:0;
+  border-radius:13px; --brk:52%;
+}
+.buildbar__btn span{ font-size:28px; -webkit-text-stroke:var(--ui-txt-stroke-x) var(--ui-ink); }
+.buildbar__ok.is-blocked{ filter:saturate(.2); }
+.buildbar.is-refused{ animation:ui-refuse .22s ease-in-out; }
+
+/* §10.2 — in landscape the whole screen is in reach, so the pair goes back to
+ * following the ghost in world space, exactly as the reference does it. The
+ * caption rides above the buttons instead of beside them. */
+@media (orientation:landscape){
+  .buildbar{
+    left:auto; right:auto; bottom:auto;
+    min-height:0; width:max-content;
+    padding:10px 14px;
+    flex-direction:column; gap:8px;
+    border-radius:16px;
+    transform:translate3d(var(--gx,50vw), var(--gy,50vh), 0) translate(-50%,-118%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.22), 0 8px 20px rgba(0,0,0,.45);
+  }
+  .buildbar__text{ align-items:center; text-align:center; }
+  .buildbar__btn{ width:56px; height:56px; }
+}
+
+/* Landscape sheets do not need the full width. */
+@media (orientation:landscape){
+  .sheet__panel{
+    left:auto; right:12px; width:min(78vw, 520px);
+    max-height:86vh;
+    border-radius:var(--ui-r-panel) var(--ui-r-panel) 0 0;
+  }
+}
