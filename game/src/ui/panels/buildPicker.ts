@@ -53,9 +53,6 @@ export function createBuildPicker(opts: {
   onClose?(): void;
 }): BuildPicker {
   const sheet: Sheet = createSheet({ title: COPY['panel.build'], onClose: opts.onClose });
-  // The catalogue is the one panel that reads better as a ship's ledger than as
-  // a painted card, so it opts into the parchment artwork when it is installed.
-  sheet.el.classList.add('sheet--picker');
   const list = el('div', 'well picker__list');
   sheet.body.append(list);
 

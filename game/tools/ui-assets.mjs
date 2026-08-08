@@ -20,8 +20,9 @@
 // pinks, soft single gradients, no hard gloss step. Our HUD is built against
 // Clash's four-layer rule (ink contour, hard gloss step, warm rim, extrusion
 // lip) and sits over a warm voxel world, so wholesale adoption would be a step
-// backwards. What is taken is the handful of shapes CSS genuinely cannot draw:
-// a radial ray burst, a chunky pointer, a parchment panel, a nameplate.
+// backwards. What is taken is only free-standing artwork CSS cannot draw — a
+// radial ray burst and a chunky pointer. Container art was tried and removed;
+// the reasoning is recorded in src/ui/pack.css.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -63,22 +64,10 @@ const PIECES = [
     // instruction rather than as decoration.
     tint: { hue: -10, saturation: 1.2, brightness: 1.0 },
   },
-  {
-    id: 'parchment',
-    from: 'Modals/notebookModal_v1.png',
-    width: 720,
-    // Quests and the daily streak. A ledger with a warm header is exactly the
-    // right object for a pirate logbook, and it is the one panel shape CSS
-    // cannot fake convincingly.
-    tint: { hue: -4, saturation: 1.06, brightness: 1.02 },
-  },
-  {
-    id: 'nameplate',
-    from: 'Labels/labelSimple_cream.png',
-    fallbackFrom: 'Labels',
-    width: 480,
-    tint: { hue: -4, saturation: 1.06, brightness: 1.0 },
-  },
+  // Only free-standing pieces survive. The pack's containers (a notebook page,
+  // a nameplate) were tried and removed: artwork sized by its own geometry
+  // cannot marry a panel whose header, rows and corners the CSS already owns,
+  // and both attempts read as stickers pasted over the interface. See pack.css.
 ];
 
 /** Picks the first cream/white variant in a directory, for pieces whose exact
