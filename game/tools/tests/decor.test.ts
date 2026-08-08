@@ -1,5 +1,5 @@
 import { generateIsland, isBuildable, worldToCell } from '../../src/render/island';
-import { createDemoIsland, createNewGame, place, plotHalf, spotRefusal, type GameState } from '../../src/sim';
+import { createDemoIsland, createNewGame, plotHalf, spotRefusal, type GameState } from '../../src/sim';
 import { decorCells, planDecor, reservedMask } from '../../src/scenes/decor';
 import { describe, eq, ok, test } from './harness';
 
@@ -97,10 +97,29 @@ describe('the island dressing never stands on buildable ground', () => {
     const before = createNewGame(SEED, T0, 0);
     const safeBefore = new Set(decorCells(shape, before).map((c) => c.z * SIZE + c.x));
 
-    const result = place({ ...before, store: { ...before.store, oro: 9e6, madera: 9e6, ron: 9e6, metal: 9e6 } }, 'banco', 10, 13, T0);
-    ok(result.ok, `the fixture placement should succeed (${result.refusal ?? ''})`);
+    // The invariant is geometric, so the building is appended directly rather
+    // than placed: what is being tested is what a new plot does to the mask,
+    // not whether this island can currently afford one.
+    let spot: { x: number; z: number } | null = null;
+    for (let z = 0; z < SIZE && !spot; z++) {
+      for (let x = 0; x < SIZE && !spot; x++) {
+        let fits = true;
+        for (let dz = -1; dz <= 1 && fits; dz++) {
+          for (let dx = -1; dx <= 1 && fits; dx++) if (!isBuildable(shape, x + dx, z + dz)) fits = false;
+        }
+        if (fits && spotRefusal(before, 'mercado', x, z) === null) spot = { x, z };
+      }
+    }
+    ok(spot !== null, 'the island should have somewhere left to build');
 
-    const safeAfter = new Set(decorCells(shape, result.state).map((c) => c.z * SIZE + c.x));
+    const after: GameState = {
+      ...before,
+      buildings: [
+        ...before.buildings,
+        { id: 99, type: 'mercado', x: spot!.x, z: spot!.z, level: 1, stock: 0, work: null },
+      ],
+    };
+    const safeAfter = new Set(decorCells(shape, after).map((c) => c.z * SIZE + c.x));
     for (const cell of safeBefore) {
       ok(safeAfter.has(cell), `cell ${cell % SIZE},${Math.floor(cell / SIZE)} was decor-safe and stopped being so`);
     }
