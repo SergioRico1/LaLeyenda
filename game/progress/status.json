@@ -46,6 +46,12 @@
           "summary": "Terrain rebuilt to the measured recipe: island scaled to 26 cells with taller steps, beach ring stepping up to a plateau, grass plots stamped as rounded rectangles with sand between them reading as paths, sun/shade wall colours baked into vertex colours, and lighting retuned to the reference's bright low-contrast exposure.",
           "gap": "The terrain still has no surface noise at all - the reference has 25 unique colours in a patch where we have 1 - and the plots are laid out arbitrarily rather than composed.",
           "shot": "shots/v3_water.png"
+        },
+        {
+          "n": 3,
+          "summary": "With the chrome fixed, the verification found the gap had moved to the world: our HUD is now the better-looking half of our own screenshot. Measured, not asserted - sea luminance std-dev 10.7 against the reference's 26.9, detail pixels 10.1% against 24.9%, and empty grass plots reading as unpainted rectangles.",
+          "gap": "The amount of water is right (40.2% of frame against the reference's 43.1%). The texture is not. A round is running with those numbers as its acceptance criteria.",
+          "shot": "shots/layout_after.png"
         }
       ]
     },
@@ -81,6 +87,12 @@
           "summary": "Clash UI language reverse-engineered into a 1600-line implementation spec (src/ui/UI_SPEC.md): full token palette, the four-layer rule that makes a surface read as Clash (constant-weight ink contour, hard gloss step at ~50%, warm top rim, dark lip with zero-offset extrusion), portrait and landscape layouts, and component specs.",
           "gap": "Nothing implemented yet - the spec exists, the HUD does not.",
           "shot": null
+        },
+        {
+          "n": 2,
+          "summary": "HUD restructured to Kingshot's layout: four corner clusters became one bottom bar with five slots, seven separately-framed pills became one translucent capsule with dividers, building timers became dark capsules, and the sim's next-action verdict is now stated in words above the bar. Chrome hides 16.9% of the portrait screen; against Clash we win on chrome.",
+          "gap": "The four-layer rule was being applied per component by hand, so each round fixed some objects and regenerated the defect in others. Now enforced by npm run audit:layers, which measures the rendered pixels.",
+          "shot": "shots/layout_after.png"
         }
       ]
     },
@@ -88,8 +100,15 @@
       "id": "economy",
       "name": "Economy, save and daily hooks",
       "bar": "A session leaves a timer running and something to collect; reopening applies offline production. See RETENTION.md.",
-      "status": "pending",
-      "rounds": []
+      "status": "in_progress",
+      "rounds": [
+        {
+          "n": 1,
+          "summary": "Economy, persistence and the daily hooks built: balance.json holds every tuning number, src/sim/ is pure and deterministic, IndexedDB persistence with export/import, and 88 tests including the storage invariant at every town hall level and a greedy 24h playthrough that must never strand the player.",
+          "gap": "Verified by finger in a real browser: a builder can be spent both ways and the retention rule holds for 0 minutes of violation. Missing: the tutorial director, so a new game ships the opening session's result rather than its performance.",
+          "shot": null
+        }
+      ]
     },
     {
       "id": "hooks",
@@ -102,6 +121,12 @@
           "summary": "Retention design made concrete: beat-by-beat first three minutes (first tap before 10s, two buildings and two collections inside 32s, first real timer at 45s, first chest pre-aged so opening costs exactly 1 gem), plus full balance tables for producers, storages, town hall and chests.",
           "gap": "Corrections to RETENTION.md not yet folded in: start with 2 builders not 1, producer cap and storage cap are two different mechanics, and total storage must exceed the most expensive unlock by 25% or the player hits a hard wall.",
           "shot": null
+        },
+        {
+          "n": 2,
+          "summary": "Build mode and the upgrade sheet shipped, so the builder - the scarce resource the whole loop hangs on - can finally be spent. Picker, ghost placement on the grid, confirm/cancel, and a sheet with a 2x2 stat grid and the cost on the CTA.",
+          "gap": "Four economy defects found by verification and fixed: paying gems charged and did nothing, chest loot was destroyed while the reveal announced the roll, level 1 was free and instant for every copy, and the Lleno chip upgraded the wrong store.",
+          "shot": "shots/layout_sheet.png"
         }
       ]
     }
