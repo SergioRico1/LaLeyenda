@@ -253,10 +253,11 @@ export async function createIslandScene(
    * against the SHARE OF THE FRAME it should hold, and the share is an area
    * rather than a width because a phone's frame is a different SHAPE, not just
    * a smaller one — hold the width there and the island shrinks back to a
-   * speck between two vast bands of sea; hold the height and the coast runs
-   * three screens wide. Holding its share gives their 0.70 of the width at
-   * 16:9 and a coast that overruns a portrait screen by a third, which is what
-   * a builder on a phone wants and what the pan gesture is for.
+   * speck between two vast bands of sea (0.21 of a phone's height); hold the
+   * height and the coast runs nearly three screens wide. Holding its share
+   * gives their 0.70 of the width at 16:9 and a coast that runs a portrait
+   * screen edge to edge, with the sea it leaves above and below exactly where
+   * the HUD's two bars sit.
    *
    * `?cam=x,y,z` still overrides the position outright, so a shot can be
    * framed without editing code.
@@ -273,8 +274,8 @@ export async function createIslandScene(
    *  which the frame does not, so this is not simply 0.70 × 0.83. */
   const FRAME_SHARE = 0.564;
   /** What stands above the terrain AT THE SILHOUETTE's top and bottom edge —
-   *  which is barely anything, because the tall props all live inland. Measured
-   *  at a unit and a half; two leaves a little headroom. */
+   *  which is barely anything, because the palms and the masts all live inland.
+   *  Measured at half a unit against the capture; two leaves headroom. */
   const RISE = 2;
 
   const target = new THREE.Vector3(0, STEP * 2, 0);

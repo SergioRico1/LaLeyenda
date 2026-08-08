@@ -4,55 +4,58 @@ import * as THREE from 'three';
  * The ocean — the largest surface on screen, and the one carrying most of the
  * art direction.
  *
- * Everything here is driven by measurements taken off the reference frames:
+ * WHERE THE WHITE GOES
  *
- * - The surface is provably FLAT. The reference horizon is a straight line, hulls
- *   cut the water at a dead-level waterline, and there is no specular anywhere.
- *   The foam chips are the only highlights the art direction uses.
- * - Colour is a finely quantised ramp with per-cell dither (~12 steps, 2-3 tones
- *   co-existing at any given distance), not a few hard bands. Hard bands read as
- *   contour lines on a map.
- * - The single most important effect is the VIEW RAMP: water seen steeply from
- *   above is near-navy, water seen at a grazing angle brightens and desaturates
- *   into the sky colour, with no hard horizon. Without it the ocean reads as a
- *   painted floor rather than a surface.
- * - Foam is a SHORE phenomenon. It covers ~44% of the water at the sand edge and
- *   decays exponentially to under 1% in open water. It is also clustered, so most
- *   of the open ocean carries none at all; spreading it evenly gives confetti.
- * - Foam chips are elongated rectangles aligned to one world axis, drawn in two
- *   tiers (a dim plate with a bright core), and they are fogged by the same view
- *   ramp as the water.
+ * An earlier version of this file read the reference's statistics as "half the
+ * near water is below L=55 and a fifth of it is above L=200 at the same time",
+ * concluded that the missing ingredient was dense sun glitter everywhere, and
+ * drew a field of white chips at every distance. The frame it produced measured
+ * 39-45% of its near-water pixels above L=205. Cropping the same water out of
+ * the reference and counting it gives ZERO. Their bright fifth is not spread
+ * over the sea at all: it is the surf apron packed around the island, and the
+ * statistic was an average over a frame the island fills.
  *
- * All of that was measured, and all of it is still here. What it did NOT account
- * for is where the reference actually keeps its texture. Sampling both frames in
- * eighths from the far edge to the near one:
+ * So the rule this shader is built on now is the opposite one. Sampled by hand
+ * along scanlines running out from their beach:
  *
- *   island_hero far → near   sd 20 · 28 · 37 · 40 · 55 · 59 · 69 · 74
- *                            L>200   1% ·  2% ·  5% ·  5% · 10% ·  9% · 17% · 20%
- *                            L<55    0% ·  1% ·  0% ·  0% ·  3% · 39% · 52% · 40%
- *   sea_combat far → near    sd 26 · 18 · 23 · 21 · 17 · 23 · 53 · 43
+ *   surf collar   #E4F0E1 #CEECDF   under a world unit, and the crispest edge
+ *                                   in the frame
+ *   shelf         #8FD2CB #6AC2C6 #58C1C8 #49B7C3, carrying dense white BLOCKS
+ *                                   over roughly its first four units
+ *   mid water     #2898B6 #1A7DA4 #1A769D #1E6E95
+ *   deep          #04518C #044987 #034382 #033878
+ *   near-camera   #03215E #041E59 #021B54 #01174C
  *
- * Two things fall out of that and neither was in the shader. First, water seen
- * steeply from above is not one colour with a whisper of grain on it: half of it
- * is darker than L=55 and a fifth of it is brighter than L=200 AT THE SAME TIME.
- * That is sun glitter — a dense population of near-white chips over a navy base,
- * clustered into patches, and it is by far the largest source of texture in both
- * frames. Second, even the calm far water carries sd 20, where ours carried 3:
- * the per-cell tone spread is a quarter of the cell's own value, not the 5%
- * wobble a multiply gives you.
+ * and over a clean 140x120 patch of their near water: L=33, sd 12, 97% below
+ * L=55, nothing above L=200. Over their far water: L=111, sd 10, again nothing
+ * above L=200. Both ends of their sea are CALM. Every bright pixel is either on
+ * the shelf, on the collar, or one of the sparse light-STEEL dashes (#64879D
+ * with a #9EB7BC core, three chips in a hundred) that sit on the near water.
  *
- * Both are keyed to the same view angle the ramp already computes: the glitter
- * lives where the surface is seen steeply and fades out toward the horizon, so
- * it is the near-camera water that sparkles and the far water that stays flat.
+ * That gives four rules, and they are what the fragment shader is:
+ *
+ * - A depth ramp that reaches NINE world units, not three. The shelf is the
+ *   widest single feature in their frame and it cannot be drawn by a ramp that
+ *   has run out of distance two metres offshore.
+ * - A VIEW SWEEP from bright cerulean at the far edge of the frame to near-black
+ *   navy at the near one, normalised against the angular span the camera can
+ *   actually see (see updateViewSpan). Without the normalisation this game's
+ *   long lens spends a quarter of the ramp on the visible sea and the ocean
+ *   reads as one flat blue.
+ * - Texture that is BLOCKS, not speckle: large low-contrast rectangles for the
+ *   material, a three-level per-cell fleck under them for the hard edges, and a
+ *   dithered quantised ramp for the bands. No smooth gradients anywhere.
+ * - White concentrated at the sand, cut off hard past the shelf, and a handful
+ *   of dim dashes on the near water. Nothing else.
  *
  * THE SWELL
  *
- * The note above says the surface is provably flat, and against the reference
- * stills it is. A still cannot show a sea moving, though, and a sea that does
- * not move is the one thing a player notices immediately. So the surface now
- * carries a swell — small enough that the horizon stays a straight line and
- * hulls still cut it at a level waterline, large enough to be unmistakably
- * alive.
+ * The reference is a still and shows a dead-level surface: a straight horizon,
+ * hulls cutting the water at a flat waterline, no specular anywhere. A still
+ * cannot show a sea moving, though, and a sea that does not move is the one
+ * thing a player notices immediately. So the surface carries a swell — small
+ * enough that the horizon stays a straight line and hulls still cut it at a
+ * level waterline, large enough to be unmistakably alive.
  *
  * Three decisions are what keep it pixel art rather than a modern ocean:
  *
@@ -68,7 +71,9 @@ import * as THREE from 'three';
  *   terrain does.
  * - Whitecaps break along the crest, on cells stretched ALONG the wave rather
  *   than across it, so the foam reads as a line of surf and not as scattered
- *   chips that happen to sit high.
+ *   chips that happen to sit high — and they break RARELY, because the
+ *   reference's open water breaks nowhere and a cap plate is the largest white
+ *   object this shader can draw.
  *
  * The swell also drives the shoreline. Surf density and the waterline collar
  * are offset by the wave height, so the sea runs up the sand and drains back
@@ -138,15 +143,23 @@ const SWELL_GLSL = [
   '  }',
 ].join('\n');
 
-/** Distance to the nearest land in world units, or uSDFRange where there is
- *  none. Needed in both stages: the fragment shades by it, the vertex shoals
- *  the swell against it. */
+/** Distance to the nearest land in world units. Needed in both stages: the
+ *  fragment shades by it, the vertex shoals the swell against it.
+ *
+ *  The SDF texture only covers the island's own footprint, and the sea is
+ *  twenty times wider than that. Sampling the edge texel and ADDING the
+ *  distance back to the box continues the field outside it instead of jumping
+ *  to uSDFRange at an invisible square boundary. It matters now that the shelf
+ *  ramp reaches nine world units rather than three: with the old clamp, the
+ *  ramp ran out of distance inside the box and the last band drew a square
+ *  around the island. */
 const SHORE_GLSL = /* glsl */ `
   float shoreDistanceAt(vec2 p) {
     if (uHasShore < 0.5) return uSDFRange;
     vec2 uv = (p - uSDFOrigin) / uSDFSize;
-    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return uSDFRange;
-    return texture2D(uShoreSDF, uv).r * uSDFRange;
+    vec2 inside = clamp(uv, 0.0, 1.0);
+    float outside = length((uv - inside) * uSDFSize);
+    return texture2D(uShoreSDF, inside).r * uSDFRange + outside;
   }
 `;
 
@@ -195,7 +208,7 @@ const fragmentShader = /* glsl */ `
   uniform vec3  uCrest;         // lightest tone a single cell can take
   uniform vec3  uGlintDim;
   uniform vec3  uGlintBright;
-  uniform float uGlitter;       // scene-level gain on the sun glitter
+  uniform float uGlitter;       // scene-level gain on the open-water sparkle
   uniform vec3  uFoamBright;
   uniform vec3  uFoamDim;
   uniform vec3  uRing;          // solid waterline collar
@@ -210,6 +223,7 @@ const fragmentShader = /* glsl */ `
   uniform float uWaveAmp;
   uniform float uSurge;         // world units the waterline runs up and back
   uniform float uCaps;          // gain on the breaking-crest foam
+  uniform vec2  uViewSpan;      // toCam.y at the far and the near edge of frame
 
   varying vec3 vWorld;
 
@@ -257,17 +271,48 @@ ${SWELL_GLSL}
     float wave = sw.x;                      // -1 in a trough, +1 on a crest
     float shoal = smoothstep(0.0, ${g(SHOAL)}, d);
 
-    // Depth ramp, quantised with per-cell dither so band edges break into
-    // speckle instead of drawing clean contour rings.
-    float t = 1.0 - exp(-d / 1.1);
-    float dither = hash21(cell) * 0.9;
-    t = floor(t * 12.0 + dither) / 12.0;
+    // Depth ramp.
+    //
+    // Fitted to a reference scanline running out from the beach: mint through
+    // the first world unit, cyan out to three or four, a wide mid-teal band to
+    // eight, navy beyond that. The old constant put the whole of it inside three
+    // units, which is why our shelf was a hairline and theirs is the widest
+    // single feature in the frame.
+    //
+    // Quantised on a BLOCK rather than a cell, and dithered, so the bands break
+    // into the ragged stepped edge the reference has instead of drawing clean
+    // contour rings — and so the steps read as water-sized tiles rather than as
+    // per-pixel noise.
+    float t = 1.0 - exp(-d / 5.2);
+    vec2 tile = floor(vWorld.xz / (uCell * 2.0));
+    t = clamp(floor(t * 11.0 + hash21(tile) * 0.85) / 11.0, 0.0, 1.0);
     vec3 col = rampColour(t);
 
-    // How grazing is this pixel? 0 = looking straight down, 1 = edge-on.
-    // Hoisted above the tone and the glitter, which both key off the view angle.
+    // How steeply is this pixel seen? 1 = straight down, 0 = edge-on. Hoisted
+    // above the tone and the sparkle, which both key off the view angle.
     vec3 toCam = normalize(uCameraPos - vWorld);
-    float graze = pow(1.0 - max(toCam.y, 0.0), 2.2);
+    float toY = max(toCam.y, 0.0);
+
+    // The two ends of the view ramp, resolved separately rather than as one
+    // term and its complement, and both normalised against the span the camera
+    // actually covers rather than against constants.
+    //
+    // That normalisation is the whole trick. This game's island camera is a 38mm
+    // lens a long way back, so toCam.y only runs 0.47 to 0.62 from the top of
+    // the frame to the bottom — measured, by rendering it. Fixed thresholds
+    // wide enough to be safe therefore spend a quarter of their range on the
+    // visible sea and the ramp does almost nothing, which is exactly what the
+    // frame showed: our far water and our near water were the same blue. uViewSpan
+    // carries the two ends of the real range, recomputed whenever the camera
+    // moves, so a pinch or a pitch change cannot flatten the sea again.
+    //
+    // The reference goes from a bright cerulean at the far edge (#0878A8, and
+    // flat — sd 10, not one pixel above L=200) to near-black navy at the near
+    // one (#03215E, 97% of it below L=55). That single sweep is most of what
+    // makes their sea read as deep water rather than as a painted floor.
+    float view = clamp((toY - uViewSpan.x) / max(uViewSpan.y - uViewSpan.x, 0.001), 0.0, 1.0);
+    float distant = 1.0 - smoothstep(0.02, 0.50, view);
+    float close   = smoothstep(0.02, 0.88, view);
 
     // The mip level a procedural texture does not have.
     //
@@ -294,47 +339,51 @@ ${SWELL_GLSL}
     float broad = valueNoise(vWorld.xz * 0.052) * 0.62
                 + valueNoise(vWorld.xz * 0.157 + 31.0) * 0.38;
 
-    // Per-cell tone. The reference's calm water runs #103068 -> #205880 between
-    // NEIGHBOURING cells — a quarter of the cell's own value, not a 5% wobble —
-    // and it is drawn on two cell shapes at once so the field breaks into
-    // elongated streaks rather than a checkerboard. Quantised to six steps,
-    // because this is voxel water and a smooth gradient is the wrong material.
+    // The material grain: BLOCKS, low contrast.
     //
-    // Left at the contrast it was measured at. It was pulled back once, on the
-    // theory that it competed with the swell — and the measurement that seemed
-    // to support that had the HUD counted as sea. The two do not compete: this
-    // grain is one cell across and the swell is ten to thirty-five units, so
-    // they occupy different frequencies. The grain is the material and the
-    // swell is the form, and the way to make the form lead is to give the swell
-    // more contrast, never to take the material away.
-    vec2 streak = floor(vec2(vWorld.x / (uCell * 3.0), vWorld.z / uCell));
-    float tone = hash21(cell + 17.0) * 0.52 + hash21(streak + 4.2) * 0.48;
-    tone = tone * 0.70 + broad * 0.30;
-    tone = clamp(floor(tone * 6.0) / 5.0, 0.0, 1.0);
-    // The low end of the spread deepens with distance from land. In the
-    // reference the near-shore shelf is cyan (#0070A0) but the open water it sits
-    // in is navy (#001858..#102050) — a hue swing the depth ramp cannot cover,
-    // because the shore SDF saturates a few metres out and everything beyond it
-    // is one colour. Scaling by t puts the navy where the water is deep and
-    // leaves the turquoise shelf alone.
-    float grain = mix(0.55, 1.0, detail);
-    col = mix(mix(col, uDeep, (0.40 + 0.30 * t) * grain), mix(col, uCrest, 0.56 * grain), tone);
+    // Zoomed into the reference's open water, the texture is large flat
+    // rectangles — a fifth to three quarters of a world unit across — sitting
+    // within about ten RGB of each other. Sampled over a clean patch of its
+    // near water the whole field measures sd 12, and its far water sd 10, with
+    // literally no pixel above L=200. The previous version drew this one cell
+    // wide and at four times the contrast, which is a different material: at
+    // that frequency the eye reads static, not water.
+    //
+    // Two block shapes so the field breaks into rectangles rather than a
+    // checkerboard, and five levels, because this is voxel water and a smooth
+    // gradient is the wrong material.
+    vec2 blockA = floor(vWorld.xz / (uCell * vec2(3.0, 2.0)));
+    vec2 blockB = floor(vWorld.xz / (uCell * vec2(7.0, 4.0)));
+    float tone = hash21(blockA + 17.0) * 0.42 + hash21(blockB + 4.2) * 0.58;
+    tone = tone * 0.62 + broad * 0.38;
+    tone = clamp(floor(tone * 5.0) / 4.0, 0.0, 1.0);
+    // The dark half of the spread opens up with distance from land, so the navy
+    // gets its darkest tones and the turquoise shelf is left alone. On the shelf
+    // the reference's cyan is fully saturated (#58C1C8, #6AC2C6), and a grain
+    // that pulls a fifth of the way to navy greys it out — which is measurably
+    // what ours was doing, reading #4EA4B0 where theirs reads #58C1C8.
+    float grain = mix(0.5, 1.0, detail);
+    col = mix(mix(col, uDeep, (0.06 + 0.26 * t) * grain), mix(col, uCrest, 0.19 * grain), tone);
 
     // The swell, painted. See the note at the top for why this is a colour
     // ramp and not a lighting term: at an amplitude the waterline can afford,
     // the real normal moves a Lambert value by about two percent.
     //
-    // Four hard bands, because the shape has to survive being read at cell
-    // size, and a fifth of a band of dither on the edges so the crest lines
-    // break up the way the depth ramp does rather than drawing contours.
+    // Four hard bands, drawn on the same blocks as the grain so the two agree,
+    // with a third of a band of dither on the edges so the crest lines break up
+    // rather than drawing contours.
+    //
+    // Held to about a fifth of the contrast it used to carry. The reference is
+    // a still and shows no swell shading at all; this exists so the sea moves,
+    // and the amount that reads as motion is a long way below the amount that
+    // reads as mottling.
     float band = clamp(wave * 0.5 + 0.5, 0.0, 0.999);
-    band = floor(band * 4.0 + hash21(cell + 53.0) * 0.28) / 3.0;
+    band = floor(band * 4.0 + hash21(blockA + 53.0) * 0.30) / 3.0;
     // Asymmetric on purpose: the trough is pushed further toward the deep tone
-    // than the crest is toward the light one. The reference's near water spends
-    // 40-50% of its pixels below L=55 and almost none of ours did — a sea reads
-    // as deep because of how dark the troughs go, not how bright the crests are,
-    // and brightening the crests to compensate only makes it foamier.
-    col = mix(mix(col, uDeep, 0.76 * shoal), mix(col, uCrest, 0.58 * shoal), clamp(band, 0.0, 1.0));
+    // than the crest is toward the light one. A sea reads as deep because of how
+    // dark the troughs go, not how bright the crests are, and brightening the
+    // crests to compensate only makes it foamier.
+    col = mix(mix(col, uDeep, 0.30 * shoal), mix(col, uCrest, 0.17 * shoal), clamp(band, 0.0, 1.0));
 
     // The front face of the wave, which is the part of a swell you actually
     // see: the back is turned away and reads as one flat tone, the front rises
@@ -343,31 +392,44 @@ ${SWELL_GLSL}
     vec2 heading = vec2(${g(TRAINS[0].dir[0])}, ${g(TRAINS[0].dir[1])});
     float face = clamp(dot(sw.yz, heading) / 0.30, -1.0, 1.0);
 
-    // The crest itself: a narrow bright line along the top of the wave, thrown
+    // The crest itself: a narrow line along the top of the wave, thrown
     // slightly onto the leading face. This is the line that makes the swell
     // read as moving water rather than as mottling that happens to drift.
-    col = mix(col, uCrest, smoothstep(0.30, 0.85, wave) * (0.30 + 0.34 * max(face, 0.0)) * shoal);
+    col = mix(col, uCrest, smoothstep(0.40, 0.92, wave) * (0.11 + 0.15 * max(face, 0.0)) * shoal);
 
     // Surf running up the sand and draining back. Everything below measures the
     // shoreline from here rather than from d, so the waterline breathes.
     float dSurf = max(d - wave * uSurge, 0.0);
 
-    // Foam. Density decays exponentially from the shoreline, and a low-frequency
-    // mask keeps most of the open ocean clear so the chips read as surf clusters.
-    float density = uFoamFloor + 0.44 * exp(-dSurf / 0.60);
-    float clump = valueNoise(vWorld.xz * 0.35 + uTime * 0.02);
-    // Most of the open ocean carries no foam at all; without this gate the
-    // chips spread evenly and read as confetti rather than surf.
-    density *= mix(0.04, 1.0, smoothstep(0.55, 0.72, clump));
+    // THE SURF SHELF — where all the white in this frame lives.
+    //
+    // The reference does not scatter foam over the ocean; it packs it onto the
+    // shallow shelf. Zoomed in, that shelf is a bright cyan carrying big white
+    // blocks over its whole width, four or five world units of them, and then
+    // the water is clean: a 140x120 patch of its near water contains zero pixels
+    // above L=200.
+    //
+    // So the profile is FLAT and then CUT, not an exponential tail. This used to
+    // decay over two thirds of a unit, which drew a solid ring and nothing else;
+    // an exponential stretched wide enough to cover the real shelf instead
+    // leaves 15% coverage at five units and 8% at six, which was the field of
+    // cream slabs across our mid-water. The chips are the largest bright objects
+    // in the shader — a dim plate runs over a world unit long — so the shape of
+    // the tail matters far more than its numbers suggest.
+    float shelf = 1.0 - smoothstep(1.2, 5.0, dSurf);
+    float clump = valueNoise(vWorld.xz * 0.40 + uTime * 0.02);
+    float density = uFoamFloor + 0.62 * shelf * mix(0.16, 1.0, smoothstep(0.34, 0.74, clump));
 
     // Chips scroll rather than reseed, so they drift instead of teleporting.
-    vec2 drift = vWorld.xz + uTime * vec2(0.35, 0.12);
-    vec2 chip = floor(vec2(drift.x / (uCell * 4.0), drift.y / uCell));
-    vec2 chipWide = floor(vec2(drift.x / (uCell * 6.0), drift.y / (uCell * 2.0)));
+    vec2 drift = vWorld.xz + uTime * vec2(0.30, 0.10);
+    vec2 chip = floor(drift / (uCell * vec2(3.0, 1.0)));
+    vec2 chipWide = floor(drift / (uCell * vec2(6.0, 2.0)));
 
-    float phase = smoothstep(0.0, 0.15, sin(hash21(chip) * 6.2831 + uTime * 0.8) + 0.35);
-    float dimHit = step(1.0 - min(density * 2.2, 0.75), hash21(chipWide + 3.7));
-    float brightHit = step(1.0 - density, hash21(chip + 91.3)) * phase;
+    // A slow twinkle on the bright tier only. The old one gated on a sine
+    // through a hard smoothstep and blinked half the chips off at once.
+    float phase = 0.55 + 0.45 * sin(hash21(chip) * 6.2831 + uTime * 0.7);
+    float dimHit = step(1.0 - min(density * 1.6, 0.82), hash21(chipWide + 3.7));
+    float brightHit = step(1.0 - min(density * phase, 0.70), hash21(chip + 91.3));
 
     // Whitecaps: foam that belongs to the wave rather than to the shore, so it
     // is out in open water where the surf chips never reach.
@@ -378,7 +440,7 @@ ${SWELL_GLSL}
     // both high AND steep, which is where a real wave gives up its top.
     vec2 across = vec2(-heading.y, heading.x);
     vec2 wf = vec2(dot(vWorld.xz, heading), dot(vWorld.xz, across));
-    vec2 capCell = floor(vec2(wf.x / (uCell * 1.3), wf.y / (uCell * 6.5)));
+    vec2 capCell = floor(vec2(wf.x / (uCell * 1.1), wf.y / (uCell * 3.6)));
     // Gated on the wave being high AND on its leading face — not on the slope
     // being steep, which is the opposite condition: the top of a crest is the
     // one place the surface is level. A wave gives up its top just below the
@@ -390,101 +452,152 @@ ${SWELL_GLSL}
     // whitecaps come in patches with calm between them.
     float capField = valueNoise(vWorld.xz * 0.045 + uTime * vec2(0.012, 0.004)) * 0.65
                    + valueNoise(vWorld.xz * 0.13 + 7.0) * 0.35;
-    float capMask = smoothstep(0.24, 0.78, wave)
-                  * smoothstep(0.10, 0.70, face)
-                  * smoothstep(0.54, 0.82, capField)
-                  * shoal * uCaps;
+    // Held to a twentieth of what it was, and pulled off the far water entirely.
+    //
+    // The reference's open water breaks nowhere: it is calm from the shelf out
+    // to the frame edge. Caps at any real strength are the largest white objects
+    // in this shader — a cap plate is most of a world unit long — so a mask of
+    // even a tenth put a field of mint dashes across water that should be one
+    // flat cerulean, which is precisely what the far half of our frame showed.
+    // They earn their place as an occasional break on the near swell and nothing
+    // more.
+    float capMask = smoothstep(0.42, 0.86, wave)
+                  * smoothstep(0.20, 0.78, face)
+                  * smoothstep(0.66, 0.90, capField)
+                  * (1.0 - distant * 0.85)
+                  * shoal * uCaps * 0.055;
     float capHit = step(1.0 - min(capMask, 0.92), hash21(capCell + 7.9));
     // A brighter core on a quarter of the area, the same two-tier chip the
     // shore foam and the glitter both use.
     float capCore = capHit * step(0.52, hash21(floor(vec2(wf.x / (uCell * 0.65), wf.y / (uCell * 3.2))) + 21.4));
 
-    // Sun glitter — the effect carrying most of the reference's texture, and the
-    // one that was missing outright. It is NOT foam: it does not care where the
-    // shore is, it lives wherever the surface is seen steeply enough to throw the
-    // sun back at the camera, which is why both frames go from sd 20 at the far
-    // edge to sd 74 at the near one.
+    // How open this water is: 0 on the shelf, 1 out in the deep. The view ramp
+    // and the sparkle both key off it, so that neither drags the turquoise
+    // collar around the island with them.
     //
-    // Keyed on toCam.y rather than on graze, because graze is squashed by its own
-    // exponent into 0.65..0.99 across this camera's frame and would spread the
-    // glitter evenly over all of it. toCam.y runs 0.28 at the top of the frame to
-    // 0.81 at the bottom, which is the range that actually needs resolving.
-    float glintZone = smoothstep(0.24, 0.70, max(toCam.y, 0.0)) * uGlitter * detail;
+    // In world units rather than off the depth ramp, so retuning the ramp curve
+    // cannot silently move the line the far/near sweep is held back at — which
+    // it did once, brightening the whole sea by thirteen points of mean.
+    float open = smoothstep(1.5, 7.0, d);
 
-    // Everything below multiplies through glintZone, so ten hash evaluations are
-    // skipped outright once the surface is too grazing to throw any light back.
-    // The whole 420-unit plane is drawn, and in an open-sea view most of it is
-    // past that angle.
-    float dimGlint = 0.0;
-    float brightGlint = 0.0;
-    if (glintZone > 0.002) {
-      // Chips sit on their own elongated grid, and the density that decides
-      // whether one lights up is sampled at the chip's CENTRE — so a smooth field
-      // read through the chip grid comes back as blocks that agree with their
-      // neighbours. Two scales of it: coarse patches saying which stretches of
-      // water sparkle at all, and a crest field a few chips wide saying which
-      // cells inside a patch catch the light. Without the second one the chips
-      // spread evenly and read as static rather than as broken wave crests.
-      vec2 gdrift = vWorld.xz + uTime * vec2(0.16, 0.05);
-      vec2 gsize = vec2(uCell * 1.9, uCell * 1.05);
+    // OPEN-WATER SPARKLE.
+    //
+    // What used to sit here was sun glitter at a density that turned the near
+    // half of the frame into a white field — 39 to 45 percent of those pixels
+    // above L=205, against a reference that measures ZERO over the same water.
+    // Cropped and enlarged, the reference's near water is dark navy carrying
+    // sparse light-STEEL dashes, two or three chips per hundred, in patches with
+    // long clean stretches between them. That is what this draws now: the same
+    // mechanism at a tenth of the coverage and a fraction of the contrast, so it
+    // reads as light catching a swell rather than as confetti on a pond.
+    float sparkZone = close * uGlitter * detail * mix(0.25, 1.0, open);
+
+    // Everything below multiplies through sparkZone, so the hash evaluations
+    // are skipped outright over the far half of a 420-unit plane.
+    float sparkPlate = 0.0;
+    float sparkCore = 0.0;
+    if (sparkZone > 0.002) {
+      // Dashes: three cells along one world axis, one across, matching the
+      // elongated chips the reference draws. The patch field that decides
+      // whether one lights up is sampled at the dash's CENTRE, so a smooth
+      // field read through the dash grid comes back as blocks that agree with
+      // their neighbours rather than as a gradient cut into slivers.
+      vec2 gdrift = vWorld.xz + uTime * vec2(0.14, 0.05);
+      vec2 gsize = uCell * vec2(2.6, 1.0);
       vec2 gcell = floor(gdrift / gsize);
       vec2 gpos = (gcell + 0.5) * gsize;
 
-      // What the glitter is FOR is the surface tilting into the sun, so the
-      // patches are the wave's leading faces — that is the whole mechanism, and
-      // keying them off drifting noise instead was the reason the chips read as
-      // confetti sprinkled over the sea rather than as light on it. A third of
-      // broad noise stays in so the lines break up instead of banding.
-      // Centred on 0.5 so the SHARE of water that sparkles is what it was
-      // measured to be — an earlier version of this line sat at a mean of 0.37,
-      // which is below the threshold it feeds and quietly cut the glitter to a
-      // third. Structure, not amount: face swings it either way from there.
-      float glintPatch = clamp(0.50 + 0.55 * face + 0.20 * wave, 0.0, 1.0) * 0.70
-                       + broad * 0.30;
-      float crest = valueNoise(gpos * 0.85);
-      float glint = glintZone
-                  * mix(0.14, 1.22, smoothstep(0.30, 0.64, glintPatch))
-                  * mix(0.18, 1.75, smoothstep(0.30, 0.72, crest));
+      // Patches are the wave's leading faces plus a slab of broad noise: light
+      // catches the side of a swell that is climbing toward the camera, and the
+      // noise keeps that from banding into stripes.
+      // (Not called "patch": that is a reserved word in GLSL ES and the shader
+      // will not compile with it, whatever the desktop driver lets through.)
+      float lit = clamp(0.46 + 0.42 * face + 0.22 * wave, 0.0, 1.0) * 0.62
+                + valueNoise(gpos * 0.28) * 0.38;
+      // Three chips in a hundred, counted off the reference: along a 700-pixel
+      // scanline of its near water, seventeen pixels are chip. Anything above
+      // about a tenth here and the dashes join up into the field this shader
+      // used to draw.
+      float amount = sparkZone * 0.16 * smoothstep(0.50, 0.86, lit);
 
       // Hit tests go against a flat hash, never against the noise itself: value
       // noise is bell shaped, so thresholding it directly makes coverage collapse
       // the moment the threshold moves.
-      dimGlint = step(1.0 - min(glint * 0.95, 0.94), hash21(gcell + 61.0));
-      // The bright core is nested inside a dim plate, on a grid one quarter the
-      // area — a two-tier chip, exactly like the foam.
-      vec2 gfine = floor(gdrift / (gsize * 0.5));
-      brightGlint = dimGlint * step(0.44, hash21(gfine + 133.0));
+      sparkPlate = step(1.0 - min(amount, 0.45), hash21(gcell + 61.0));
+      // A brighter core nested inside a quarter of the dashes, the same two-tier
+      // chip the surf uses.
+      sparkCore = sparkPlate * step(0.68, hash21(floor(gdrift / (gsize * 0.5)) + 133.0));
     }
 
-    vec3 foamDim = mix(uFoamDim, uHorizon, clamp(graze, 0.0, 0.93));
-    vec3 foamBright = mix(uFoamBright, uHorizon, clamp(graze, 0.0, 0.93));
-    vec3 glintDim = mix(uGlintDim, uHorizon, clamp(graze, 0.0, 0.93));
-    vec3 glintBright = mix(uGlintBright, uHorizon, clamp(graze, 0.0, 0.93));
-
     // Water first, then the view ramp, then everything that sits on the surface,
-    // so the chips are fogged by exactly the same amount as the water is.
-    col = mix(col, uHorizon, clamp(graze, 0.0, 0.93));
-    // The near-camera darkening had the right shape and not enough of it. The
-    // reference's two nearest eighths sit at mean 90-96 with 40-52% of their
-    // pixels below L=55; at 0.55 ours sat at mean 123-130 with 0.2% below 55 —
-    // a bright blue field with white chips on it instead of a navy one. Scaled
-    // by depth, so the turquoise shelf inshore is not dragged down with it.
-    col = mix(col, uNear, pow(1.0 - graze, 3.0) * 0.90 * mix(0.30, 1.0, t));
+    // so the chips are hazed by the same amount as the water under them.
+    //
+    // Both ends are scaled by openness, which is the whole reason the shelf reads:
+    // in the reference the shallow ring stays cyan whether it is at the top of
+    // the frame or the bottom, while the deep water behind it goes from bright
+    // cerulean to near-black across the same sweep.
+    // Both ends carry the block grain rather than being flat colours, because a
+    // mix that strong onto a constant erases whatever texture the base had. The
+    // far edge of the portrait frame measured sd 1 against the reference's 19
+    // for exactly that reason: a hazed sea is not a blank one, and the reference
+    // is still visibly built out of blocks at the top of its frame.
+    vec3 hazeTone = uHorizon * mix(0.78, 1.18, tone);
+    hazeTone = mix(hazeTone, uCrest, 0.09 * tone);
+    vec3 nearTone = uNear * mix(0.50, 1.62, tone);
 
-    col = mix(col, glintDim, dimGlint * 0.72);
-    col = mix(col, glintBright, brightGlint);
-    col = mix(col, foamDim, capHit * 0.55 * detail);
-    col = mix(col, foamBright, capCore * 0.80 * detail);
-    col = mix(col, foamDim, dimHit * 0.85 * detail);
-    col = mix(col, foamBright, brightHit * detail);
+    col = mix(col, hazeTone, distant * 0.94 * mix(0.25, 1.0, open));
+    col = mix(col, nearTone, close * 0.96 * mix(0.16, 1.0, open));
 
-    // A solid collar exactly where water meets sand — one cell wide, no dither.
+    // A cell-scale fleck, applied last so the view ramp cannot flatten it.
+    //
+    // The blocks above are the structure the reference reads at arm's length;
+    // this is what it is made of up close. Their sea is drawn at cell
+    // resolution and no two neighbouring cells are quite equal, which is why
+    // every edge in their water is a hard step and a third of their sea pixels
+    // clear a Sobel threshold that only a seventh of ours did. Three levels and
+    // a few percent — enough to put a crisp boundary on every cell, far too
+    // little to read as noise.
+    //
+    // Multiplicative on purpose: it scales with the tone underneath, so the
+    // bright shelf gets a visible step and the near-black troughs get the
+    // proportionally larger one their own values show in the reference.
+    // Faded out with the LOD, because a cell smaller than a pixel is shimmer.
+    float fleck = floor(hash21(cell + 71.0) * 3.0) / 2.0;
+    col *= mix(1.0, mix(0.91, 1.09, fleck), detail);
+
+    // Chips are hazed by distance, not by the full view ramp: the reference's
+    // far reefs still show their white, they just show less of it.
+    float haze = distant * 0.72;
+    vec3 foamDim = mix(uFoamDim, uHorizon, haze);
+    vec3 foamBright = mix(uFoamBright, uHorizon, haze);
+    vec3 sparkDim = mix(uGlintDim, uHorizon, haze);
+    vec3 sparkBright = mix(uGlintBright, uHorizon, haze);
+
+    col = mix(col, sparkDim, sparkPlate * 0.50);
+    col = mix(col, sparkBright, sparkCore * 0.80);
+    col = mix(col, foamDim, capHit * 0.34 * detail);
+    col = mix(col, foamBright, capCore * 0.50 * detail);
+    col = mix(col, foamDim, dimHit * 0.80 * detail);
+    col = mix(col, foamBright, brightHit * 0.95 * detail);
+
+    // The collar exactly where water meets sand: the single crispest edge in
+    // the reference's frame, and the one they let no other white compete with.
+    //
+    // Narrow, and ragged on the outside. A wider version of this ran a smooth
+    // solid cream band a world unit and a third deep all the way round the
+    // island — which is not a collar, it is a moat, and it ate the whole mint
+    // shelf that is supposed to sit there. The reference's collar breaks into
+    // its shelf within about half a unit, alternating cream and mint block by
+    // block, so the jitter is not decoration: it is what stops the band reading
+    // as a drawn outline.
+    //
     // Measured off dSurf, so the collar rides up the beach with the swash and
     // pulls back with it. This is the part that sells the motion: it is the one
     // place the eye has something fixed to measure the water against.
     if (uHasShore > 0.5) {
-      if (dSurf < uCell) col = mix(uRing, uHorizon, clamp(graze, 0.0, 0.93));
-      else if (dSurf < uCell * 1.4) col = mix(uRingSoft, uHorizon, clamp(graze, 0.0, 0.93));
+      float collar = uCell * (0.9 + hash21(tile + 8.3) * 1.2);
+      if (dSurf < collar) col = mix(uRing, uHorizon, haze);
+      else if (dSurf < collar + uCell * 1.2) col = mix(uRingSoft, uHorizon, haze);
     }
 
     gl_FragColor = vec4(col, 1.0);
@@ -498,8 +611,10 @@ interface Palette {
   ramp: string[];
   horizon: string;
   near: string;
-  /** Ends of the per-cell tone spread. Sampled off neighbouring cells in the
-   *  reference: #103068 to #205880 in open water, #006098 to #1088B0 inshore. */
+  /** Ends of the block-tone spread, and of the painted swell bands. Both are
+   *  used at small weights: the reference's neighbouring blocks sit within
+   *  about ten RGB of each other, so these are the direction the tone moves in
+   *  and not colours the water is ever expected to reach. */
   deep: string;
   crest: string;
   glintDim: string;
@@ -509,29 +624,50 @@ interface Palette {
 }
 
 const PALETTES: Record<WaterPalette, Palette> = {
-  // Shallow water around the home island: cyan-dominant, bright.
+  // Shallow water around the home island.
+  //
+  // Fitted to a reference scanline running out from the beach, which is the only
+  // honest way to get a ramp this long right. Their tones, in order:
+  //
+  //   surf   #E4F0E1 #CEECDF     the collar, drawn separately
+  //   mint   #A0D4C8 #8FD2CB     first world unit of shelf
+  //   cyan   #7DCAC9 #6AC2C6 #58C1C8 #49B7C3
+  //   teal   #35B1C5 #2490B0 #1A7DA4 #1A769D #1E6E95
+  //   blue   #124F87 #075990 #04518C #065F95
+  //   navy   #044987 #034382 #033D7D #033878
+  //
+  // The six stops below sit ON that sequence once read through the ramp curve
+  // (1 - exp(-d/5.2)) — they are lighter than the tones they have to produce,
+  // because the block grain and the view sweep both darken what comes out. The
+  // stops that matter most are 2 and 3: they land at three and four units out,
+  // which is where the shelf either reads as a lagoon or does not.
+  //
+  // Past the last stop the view sweep takes over: #0878A8 at the far edge of the
+  // frame, #03215E..#021B54 at the near one.
   lagoon: {
-    ramp: ['#35B1C5', '#2DA7C2', '#2898B6', '#1D92B7', '#0E7AA9', '#066C9D'],
-    horizon: '#0A74A2',
+    ramp: ['#9EDDD0', '#74CBCE', '#4CC0CB', '#2B9AB8', '#16719B', '#073C68'],
+    horizon: '#0A78A8',
     near: '#02205A',
-    deep: '#001439',
-    crest: '#5CCBDD',
-    glintDim: '#A6E1EA',
-    glintBright: '#F4FCFF',
-    foamBright: '#DCF6E8',
+    deep: '#03235B',
+    crest: '#3EB8CE',
+    // The reference's open-water chips are a light steel blue on navy, not
+    // white: #64879D with a #9EB7BC core. White is the shore's business.
+    glintDim: '#7FA3BC',
+    glintBright: '#BDD4DF',
+    foamBright: '#E8F5E4',
     foamDim: '#8FD2CB',
   },
   // Open sea: blue-dominant, resolving into the sky at the horizon.
   ocean: {
-    ramp: ['#2E7B90', '#20577E', '#1B4A74', '#163A6B', '#102F63', '#0C255F'],
+    ramp: ['#5B9AA0', '#3B7D8B', '#2E5578', '#22547D', '#1B4372', '#143363'],
     horizon: '#82B0A7',
-    near: '#0C255F',
-    deep: '#05173F',
-    crest: '#4A97B4',
-    glintDim: '#9DC4D6',
-    glintBright: '#FFFFFF',
+    near: '#0E2450',
+    deep: '#0B2050',
+    crest: '#4A8FAE',
+    glintDim: '#7C9AB4',
+    glintBright: '#C6DAE4',
     foamBright: '#FEFFFE',
-    foamDim: '#4E7E93',
+    foamDim: '#7FA6B6',
   },
 };
 
@@ -540,7 +676,8 @@ export interface WaterOptions {
   /** World size of one water cell. Roughly 1/5 of a terrain block. */
   cell?: number;
   palette?: WaterPalette;
-  /** Gain on the sun glitter. 0 turns it off entirely. */
+  /** Gain on the open-water sparkle — the sparse dim dashes on the near sea,
+   *  not a glitter field. 0 turns it off entirely. */
   glitter?: number;
   /** Peak swell height in world units. 0 gives back the flat sea. */
   wave?: number;
@@ -554,6 +691,9 @@ export interface WaterOptions {
   /** World distance the SDF texture saturates at. */
   sdfRange?: number;
 }
+
+/** Scratch vector for the per-frame view-span solve, so it allocates nothing. */
+const FORWARD = new THREE.Vector3();
 
 export class Water {
   readonly mesh: THREE.Mesh;
@@ -597,15 +737,24 @@ export class Water {
         uSDFSize: { value: opts.sdfSize ?? size },
         uSDFRange: { value: opts.sdfRange ?? 8 },
         uHasShore: { value: opts.shoreSDF ? 1 : 0 },
-        uFoamFloor: { value: 0.004 },
+        // Zero, and it has to be zero. Shore foam draws on 6x2-cell plates —
+        // over a world unit long once the camera is close — so even a 0.4%
+        // floor puts a scatter of cream slabs across water the reference keeps
+        // completely clean. Whatever texture the open sea needs comes from the
+        // sparkle, which is sized and coloured for it.
+        uFoamFloor: { value: 0 },
         uCameraPos: { value: new THREE.Vector3() },
         uWaveAmp: { value: opts.wave ?? WAVE_AMPLITUDE },
         // Four steps either side of level. Fewer reads as a flag rippling;
         // more and the quantisation stops being visible at all, which loses the
         // whole point of stepping it.
         uWaveStep: { value: opts.waveStep ?? (opts.wave ?? WAVE_AMPLITUDE) / 4 },
-        uSurge: { value: 0.55 },
+        // How far the waterline runs up the beach and back. Kept below the
+        // width of the collar it moves, or the collar breaks into dashes at the
+        // top of each swash instead of sliding.
+        uSurge: { value: 0.38 },
         uCaps: { value: opts.caps ?? 1 },
+        uViewSpan: { value: new THREE.Vector2(0.2, 0.9) },
       },
     });
 
@@ -643,12 +792,18 @@ export class Water {
     const size = u.uSDFSize.value as number;
     const ux = (x - origin.x) / size;
     const uz = (z - origin.y) / size;
-    if (ux < 0 || ux > 1 || uz < 0 || uz > 1) return range;
+
+    // Clamped sample plus the distance back to the box, exactly as SHORE_GLSL
+    // continues the field outside the texture. Anything floating shoals against
+    // the same numbers the shader shades with.
+    const cx = Math.min(1, Math.max(0, ux));
+    const cz = Math.min(1, Math.max(0, uz));
+    const outside = Math.hypot((ux - cx) * size, (uz - cz) * size);
 
     const res = tex.image.width;
-    const px = Math.min(res - 1, Math.max(0, Math.floor(ux * res)));
-    const pz = Math.min(res - 1, Math.max(0, Math.floor(uz * res)));
-    return (data[(pz * res + px) * 4] / 255) * range;
+    const px = Math.min(res - 1, Math.max(0, Math.floor(cx * res)));
+    const pz = Math.min(res - 1, Math.max(0, Math.floor(cz * res)));
+    return (data[(pz * res + px) * 4] / 255) * range + outside;
   }
 
   setShoreSDF(texture: THREE.Texture, origin: THREE.Vector2, size: number, range: number): void {
@@ -662,6 +817,34 @@ export class Water {
   update(elapsed: number, camera: THREE.Camera): void {
     this.material.uniforms.uTime.value = elapsed;
     this.material.uniforms.uCameraPos.value.setFromMatrixPosition(camera.matrixWorld);
+    this.updateViewSpan(camera);
+  }
+
+  /**
+   * The two ends of the view-angle range the camera can actually see water at.
+   *
+   * A surface point seen down a ray that leaves the camera α below the horizon
+   * looks back up at the camera along a vector whose y is sin(α) — so the far
+   * edge of the frame is sin(pitch - fov/2) and the near edge sin(pitch + fov/2),
+   * and everything the player is looking at lies between them.
+   *
+   * The far/near colour sweep is the single largest thing separating our sea
+   * from theirs, and it is worth nothing if it is spent outside the frame.
+   * Solving the span here rather than nailing constants into the shader is what
+   * lets one set of numbers hold for the island's long lens, the sea scene's
+   * wider one, and every distance in between as the player pinches.
+   */
+  private updateViewSpan(camera: THREE.Camera): void {
+    const persp = camera as THREE.PerspectiveCamera;
+    if (!persp.isPerspectiveCamera) return;
+    FORWARD.set(0, 0, -1).applyQuaternion(camera.quaternion);
+    const pitch = Math.asin(Math.min(1, Math.max(-1, -FORWARD.y)));
+    const half = THREE.MathUtils.degToRad(persp.fov) / 2;
+    // A camera tipped up toward the horizon sees water at grazing angles it
+    // cannot resolve; clamped so the span never collapses or inverts.
+    const lo = Math.sin(Math.max(pitch - half, 0.03));
+    const hi = Math.sin(Math.min(pitch + half, Math.PI / 2));
+    this.material.uniforms.uViewSpan.value.set(lo, Math.max(hi, lo + 0.02));
   }
 
   dispose(): void {
