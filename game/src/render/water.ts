@@ -184,16 +184,16 @@ const fragmentShader = /* glsl */ `
     // sun back at the camera, which is why both frames go from sd 20 at the far
     // edge to sd 74 at the near one.
     //
-    // Keyed on toCam.y rather than on graze, because graze is squashed by its
-    // own exponent into 0.65..0.99 across this camera's frame and would spread
-    // the glitter evenly over all of it. toCam.y runs 0.35 at the top of the
-    // frame to 0.88 at the bottom, which is the range that needs resolving.
+    // Keyed on toCam.y rather than on graze, because graze is squashed by its own
+    // exponent into 0.65..0.99 across this camera's frame and would spread the
+    // glitter evenly over all of it. toCam.y runs 0.28 at the top of the frame to
+    // 0.81 at the bottom, which is the range that actually needs resolving.
     float glintZone = smoothstep(0.24, 0.70, max(toCam.y, 0.0)) * uGlitter;
 
-    // Everything below multiplies through glintZone, so the two noise samples and
-    // three hashes are skipped outright once the surface is too grazing to throw
-    // any light back. The whole 420-unit plane is drawn, and in an open-sea view
-    // most of it is past that angle.
+    // Everything below multiplies through glintZone, so ten hash evaluations are
+    // skipped outright once the surface is too grazing to throw any light back.
+    // The whole 420-unit plane is drawn, and in an open-sea view most of it is
+    // past that angle.
     float dimGlint = 0.0;
     float brightGlint = 0.0;
     if (glintZone > 0.002) {
