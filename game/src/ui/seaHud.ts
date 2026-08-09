@@ -1,6 +1,6 @@
 import './seaHud.css';
 import type { ResourceId } from '../sim';
-import { SHIPS, bearingHome, holdUsed, ringOf, SEA_CELL, type Voyage } from '../sim/sea';
+import { HARBOUR, SHIPS, bearingHome, holdUsed, ringOf, SEA_CELL, type Voyage } from '../sim/sea';
 import { HELM_STEER } from './stick';
 
 /**
@@ -398,7 +398,17 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
         arrow.style.setProperty('--sea-bearing', heading);
       }
       const distance = Math.hypot(voyage.x, voyage.y);
-      const inHomeWater = distance < SEA_CELL * 0.5;
+      // The SIMULATION'S harbour, not a number that looked about right.
+      //
+      // This read `SEA_CELL * 0.5` while sim/sea.ts banks the hold at
+      // `SEA_CELL * HARBOUR`, which is 0.45 — so there was a ring of water two
+      // and a half units wide where the compass said EN CASA and the voyage did
+      // not end. Played end to end that is what it looks like: the instrument
+      // announces the arrival, nothing happens, and the player sails on past the
+      // harbour with a full hold looking for the bit that counts. An instrument
+      // that is right about the direction and wrong about the arrival is worse
+      // than one that says nothing, because it is believed.
+      const inHomeWater = distance < SEA_CELL * HARBOUR;
       if (!voyage.departed) {
         setData(compass, 'compass', 'port');
         setText(homeOut, 'Puerto');

@@ -1,6 +1,6 @@
 import {
   MOBS, SEA_CELL, SEA_RANGE, SEA_STEP, SHIPS, bearingHome, cellsInRing, holdUsed, mobsAt,
-  ringOf, siteAt, startVoyage, steer, stepVoyage, type SeaEvent, type Voyage,
+  ringOf, siteAt, sitesNear, startVoyage, steer, stepVoyage, type SeaEvent, type Voyage,
 } from '../../src/sim/sea';
 import { landCargoInPlace, storeCap } from '../../src/sim';
 import { clone } from '../../src/sim/economy';
@@ -416,6 +416,38 @@ describe('the loop closes', () => {
     ok(!v.home, 'circling the harbour never counts as a return');
   });
 
+  /**
+   * The same bug, one layer down, and it was still live.
+   *
+   * The latch also arms on having taken anything, because carrying loot is
+   * proof you went somewhere — but it armed WHEREVER THE SHIP WAS. The nearest
+   * island in a seeded sea sits about forty-four units out and can be taken
+   * from twenty-odd units off its shore, so a ship collecting it from the near
+   * side is still inside the harbour when the latch arms, and the next step
+   * reads a departed ship in ring 0 and ends the run. Tap ¡Zarpar!, steer at
+   * the first island you can see, and two seconds later you are looking at an
+   * end-of-voyage card. Measured across four hundred seeded runs: five of them.
+   */
+  test('taking the first island you see does not end the voyage', () => {
+    for (const seed of ['instant-140', 'instant-158', 'instant-236', 'instant-238', 'instant-308']) {
+      // The nearest thing worth taking, driven at from a standing start.
+      const near = sitesNear(seed, 0, 0, SEA_CELL * 1.6)
+        .filter((s) => s.kind !== 'reef')
+        .sort((a, b) => Math.hypot(a.x, a.y) - Math.hypot(b.x, b.y))[0];
+      ok(near, `${seed} has something to sail at`);
+      let v = startVoyage(seed);
+      const course = Math.atan2(near.y, near.x);
+      let ended = 0;
+      for (let i = 0; i < 30 * 12; i++) {
+        const turn = ((course - v.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+        const out = stepVoyage(steer(v, { turn: Math.max(-1, Math.min(1, turn * 2.2)), throttle: 1 }));
+        v = out.voyage;
+        if (out.events.some((e) => e.kind === 'home')) { ended = i / 30; break; }
+      }
+      ok(!ended, `${seed} was still at sea after twelve seconds, not sent home at ${ended.toFixed(1)}s`);
+    }
+  });
+
   test('leaving arms the latch, and only then can you come back', () => {
     // Ten seconds out, which clears the latch radius with room to spare and is
     // short enough that the ring-1 mobs have not finished the ship off. Thirty
@@ -666,7 +698,15 @@ describe('a swarm is a swarm, not a pile', () => {
     const after = sail(v, 10, { throttle: 0 }).voyage;
     for (const mob of after.mobs) {
       const gap = Math.hypot(mob.x - after.x, mob.y - after.y);
-      ok(gap > MOBS.kelpling.radius, `a kelpling is ${gap.toFixed(1)} out, not inside the boat`);
+      // Its own radius is not enough of a bar, and the frame proved it: a
+      // kelpling draws five and a half units long against a skiff that draws
+      // eight, so anything much inside its reach is standing on the deck. It has
+      // to hold near the EDGE of what it can bite from, which costs the fight
+      // nothing — everything from here to `reach` bites at the same cadence.
+      ok(
+        gap > MOBS.kelpling.reach * 0.8,
+        `a kelpling is ${gap.toFixed(1)} out of a reach of ${MOBS.kelpling.reach}, not inside the boat`
+      );
     }
   });
 });

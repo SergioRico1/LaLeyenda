@@ -434,11 +434,16 @@ const CALM: number = SEA.ships.calm;
  *
  * Was 0.3 — sixteen units, less than a ship's turning circle. A player carrying
  * a full hold had to thread a needle to bank it, and a near miss meant going
- * round again with whatever was chasing them. The departure latch arms at 0.9
- * cells, so there is still half a cell of open water between "gone" and "back"
- * and no amount of bobbing at the harbour mouth can trip both in one breath.
+ * round again with whatever was chasing them. The departure latch arms outside
+ * this same radius and no closer than `DEPARTED` unless the ship is carrying
+ * loot, so no amount of bobbing at the harbour mouth can arm and trip it in one
+ * breath.
+ *
+ * EXPORTED because the HUD needs the same number. It kept its own 0.5, which is
+ * two and a half units of sea further out, and spent every voyage announcing an
+ * arrival the simulation had not made yet.
  */
-const HARBOUR: number = SEA.harbour;
+export const HARBOUR: number = SEA.harbour;
 
 /** How far out, in cells, counts as having left — see the latch at the foot of
  *  `stepVoyage`, which is where the reasoning is. */
@@ -729,7 +734,15 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
     // and the ship is invisible under a pile of fish. A mob in reach now holds
     // its distance and backs off if it is closer than it wants to be, which is
     // also what makes a swarm read as a swarm rather than as one object.
-    const keep = ms.reach * 0.78;
+    // 0.78 of reach was still INSIDE the ship. A kelpling wants seven units and
+    // was holding five and a half; it draws five and a half units long and the
+    // skiff draws eight, so on the glass the creature was standing in the middle
+    // of the deck. Read off a capture, a fight looked like the boat had grown a
+    // fish. Station-keeping only reads as station-keeping if the station is
+    // outside the hull, so it holds near the edge of its reach instead — which
+    // changes nothing about the trade, because everything from here to `reach`
+    // bites at exactly the same cadence.
+    const keep = ms.reach * 0.9;
     const closing = mob.state === 'attack'
       ? (distance < keep ? -0.6 : 0.15)
       : mob.state === 'chase' ? 1 : 0.45;
@@ -876,9 +889,22 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
   // to abandon the run. The measured fleet hit it on one first voyage in eight.
   //
   // So: far enough out, OR carrying something that is not from around here.
-  // Both are proof, and the radius keeps a comfortable margin over the arrival
-  // check so bobbing on the harbour mouth cannot arm and trip it in one breath.
-  if (!v.departed && (Math.hypot(v.x, v.y) > SEA_CELL * DEPARTED || v.taken.length > 0)) {
+  //
+  // The second half had a hole in it, and it is the SAME BUG as the one that
+  // shipped: a voyage announcing an arrival the player never made. Loot armed
+  // the latch wherever the ship happened to be, and the nearest island in a
+  // seeded sea sits about forty-four units out with a loot reach of twenty-odd
+  // — so a ship taking it from the near side is INSIDE the harbour at the
+  // moment it arms. The next step saw a departed ship in ring 0 and ended the
+  // run: tap ¡Zarpar!, sail at the first island you see, and two and a bit
+  // seconds later you are handed an end-of-voyage card with one site of cargo.
+  // Measured at five voyages in every four hundred before this line changed.
+  //
+  // Being outside the harbour is what "somewhere else" means, so both proofs
+  // now require it.
+  const out = Math.hypot(v.x, v.y);
+  if (!v.departed && out > SEA_CELL * HARBOUR
+      && (out > SEA_CELL * DEPARTED || v.taken.length > 0)) {
     v.departed = true;
   }
 

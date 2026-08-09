@@ -15,7 +15,7 @@ Status: `[x]` done and verified · `[~]` partly there, gap named · `[ ]` not st
 ## 0 · Gates that must stay green
 
 - [x] `npx tsc --noEmit` clean (strict, `noUnusedLocals`)
-- [x] `npm test` — the pure-sim suite, 125 cases
+- [x] `npm test` — the pure-sim suite, 194 cases
 - [x] `npm run test:roundtrip` — island → sea → island driven as a player
 - [x] `npm run build` produces a bundle
 - [x] `npm run shoot -- island --mobile --act <each act>` — every scripted
@@ -71,7 +71,11 @@ restarted mid-round and killed the workflow with two builders unstarted.
       broadsides, loot, sinking (27 cases)
 - [x] Sea scene streaming sites and mobs from the same `sitesNear` the sim uses
 - [x] One-thumb steering; the stick appears under the thumb and reports a world
-      direction, not a turn rate
+      direction, not a turn rate — and it can now be SEEN. It had no stylesheet
+      at all, so the control was a zero-by-zero div: the owner's phone
+      screenshot had no control on it because there was no control on it to
+      show. There is a helm sign at rest, a first-voyage coach mark, and the
+      stick itself is drawn.
 - [x] Automatic broadsides; the player plays positioning
 - [x] Cargo lands in the island economy, capped, overflow reported
 - [x] Cannon, hit, kill, loot and sinking audible; smoke, flash, hurt veil
@@ -79,8 +83,22 @@ restarted mid-round and killed the workflow with two builders unstarted.
       own — no phases, no tell, no reward moment.
 - [ ] Harvesting and boarding beats. A site is taken by sailing over it, which
       is the placeholder, not the design.
-- [ ] Balance. A capture at ring 3 with the throttle at zero had the hull nearly
-      gone in six seconds. Nobody has played this.
+- [x] Balance, measured rather than judged. `node tools/voyages.mjs` plays
+      fleets of seeded voyages with two models of player and prints survival,
+      time to sink, cargo landed and hull on arrival; the headline numbers are
+      asserted in the suite, so `npm test` fails if the sea stops being
+      playable. Ring 1 returns 100%, ring 3 99%, ring 4 85%, ring 5 48% — a
+      curve rather than a drowning. Thirty seconds of open throttle straight out
+      used to sink three ships in four; it now sinks one in a hundred.
+      *Weak:* at ring 5 a pilot who fights still lands less than one who runs.
+- [~] Played end to end by a person, not only by the harness: island → ¡Zarpar!
+      → steer → take a site → fight → sail home → land the cargo, in a browser
+      with the save cleared, both endings (arrival and sinking). Two things that
+      only a playthrough could find are fixed — the compass said EN CASA two and
+      a half units before the hold would bank, and taking the first island you
+      saw could end the voyage two seconds after leaving.
+      *Weak:* home is a point on empty water. It has a light over it now, but
+      the last thirty units of an approach are still steered on a needle.
 
 ## 4 · Island defence — PLAN.md Fase 3
 

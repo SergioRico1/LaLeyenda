@@ -7,7 +7,7 @@ import { createStick, type Stick } from '../ui/stick';
 import { createSeaHud, type SeaHud } from '../ui/seaHud';
 import { sfx } from '../ui/sfx';
 import {
-  MOBS, SEA_CELL, SEA_RANGE, SEA_STEP, SHIPS, sitesNear, startVoyage, steer, stepVoyage,
+  HARBOUR, MOBS, SEA_CELL, SEA_RANGE, SEA_STEP, SHIPS, sitesNear, startVoyage, steer, stepVoyage,
   type Mob, type MobKind, type SeaEvent, type Site, type Voyage,
 } from '../sim/sea';
 
@@ -744,21 +744,47 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
    * The frame is thirty-three units across. A wedge drawn to full range is
    * three quarters of it on each side, and what a player saw was a pale haze
    * with no shape — the two things a firing arc has to have are a boundary and
-   * a side, and at that size neither survived. Thirty-two units puts the whole
-   * wedge inside the picture with an edge the eye can find.
+   * a side, and at that size neither survived.
    *
    * The guns do shoot past it, and the shape is deliberately honest about that:
    * its two SIDES are hard lines, because crossing one really does change
-   * whether you are shot, and its far mouth is drawn at half their strength,
-   * because nothing happens there. What is being drawn is where the guns BEAR.
-   * How far they carry is said by the shots.
+   * whether you are shot, and its far mouth is barely drawn at all, because
+   * nothing happens there. What is being drawn is where the guns BEAR. How far
+   * they carry is said by the shots.
    */
-  const FAN_FAR = 32;
+  const FAN_FAR = 21;
+  /**
+   * How wide the boundary is drawn ON THE WATER, in world units.
+   *
+   * The number that had to exist. The limit lines were a fixed fraction of the
+   * ARC — a gaussian in `v` — so their width on the sea grew with the radius:
+   * one and a bit units at the muzzle and nearly four at the far end. Four
+   * units is a third of the ship's length, and four units of flat sandy orange
+   * laid on blue water is not a line, it is a beach. Read back off the frame,
+   * that is exactly what it was: I saw two sandbars either side of the ship and
+   * only then read them as gun arcs, which means every player would have steered
+   * to avoid their own broadside.
+   *
+   * Holding the width in world units instead makes it an instrument mark: the
+   * same line at the muzzle and at thirty units, about a foot of sea wide.
+   */
+  const EDGE_WIDTH = 1.15;
   /** The gauge is a band along the rail, where the guns are, and it is DELIBERATELY
    *  small: at 5.4 to 8.6 it drew a white collar the size of the ship and read
    *  as foam rather than as an instrument. */
-  const GAUGE_NEAR = 6.4;
-  const GAUGE_FAR = 8.5;
+  const GAUGE_NEAR = 5.7;
+  const GAUGE_FAR = 7.1;
+  /**
+   * And how far round the hull a full charge reaches.
+   *
+   * It used to be the firing arc itself — eighty degrees a side — so a loaded
+   * ship wore two amber crescents that between them went most of the way round
+   * it. On the spawn frame they were the brightest objects in the picture, on an
+   * empty sea, and dimming them only turned them brown: a big shape cannot be
+   * made quiet, it can only be made muddy. Half the arc is a BAR on the rail,
+   * about three units of sea long, which is a gauge rather than a garland.
+   */
+  const GAUGE_SPAN = 0.5;
 
   interface Broadside {
     fan: THREE.Mesh;
@@ -786,30 +812,39 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
   // this and you get shot". So the alpha carries two things at once: a thin
   // BRIGHT LINE down each limit of the arc, which is the edge a player reads
   // and steers against, and a weak fill between them that says which side of
-  // the line is the dangerous one. Both fade out with range, because the far
-  // end of fifty units is off the top of the screen and a line that runs to the
-  // frame edge reads as a scratch on the glass.
+  // the line is the dangerous one.
   //
-  // It also decays fast with range. The arc is fifty units long and the frame
-  // is thirty-three across, so a wedge that keeps its strength to the end is a
-  // pale slab over the whole picture — measured, in the first build of this,
-  // as a vertical band from the top of the screen to the bottom with no shape
-  // in it at all. Falling off as the cube of the remaining range puts the whole
-  // read in the near half, where the player is looking anyway, and lets the
-  // far end die out instead of hitting the edge of the glass.
-  // The two limits of the arc, and the line that closes them off at the far
-  // end. An OUTLINE, because that is the only thing that survives being laid
-  // over water this busy: a tint reads as haze at any alpha low enough to see
-  // the sea through, and the sea has to stay visible — it is where the enemies
-  // are. The fill inside is a whisper that says which side of the line the guns
-  // are on, strongest at the muzzle where the ship is.
+  // It also has to DECAY with range, and the comment that used to sit here said
+  // so while the code did nothing of the kind. The arc runs off the side of a
+  // thirty-three-unit frame long before it ends, so a limit line at full
+  // strength all the way out is a stripe from one edge of the glass to the
+  // other with no shape in it. Fading it out over the last third puts the whole
+  // read in the near water, where the player is looking anyway, and lets the
+  // shape end instead of hitting the frame.
+  //
+  // The columns went from 24 to 44 for one reason: a line held at a constant
+  // WIDTH ON THE WATER is about a unit across, and at the far end of the sector
+  // one column of a 24-wide lattice is a unit and a half. There was nothing to
+  // draw the line on.
   const fanGrid = lattice(
-    7, 24,
-    (u, v) => Math.max(
-      Math.exp(-Math.pow((1 - Math.abs(v)) * 9, 2)),
-      Math.exp(-Math.pow((1 - u) * 8, 2)) * 0.55
-    ),
-    (u, v) => Math.pow(Math.max(0, 1 - v * v), 0.9) * Math.pow(1 - u, 1.6)
+    6, 44,
+    (u, v) => {
+      const radius = FAN_NEAR + (FAN_FAR - FAN_NEAR) * u;
+      // How far off the limit this vertex sits, ON THE SEA rather than in the
+      // sector's own coordinates. This is the whole fix for the sandbars.
+      const off = (1 - Math.abs(v)) * spec.arc * radius;
+      const limit = Math.exp(-Math.pow(off / EDGE_WIDTH, 2));
+      // The mouth that closes the far end, at a fifth: it says the shape stops,
+      // it does not claim anything happens there.
+      const mouth = Math.exp(-Math.pow(((1 - u) * (FAN_FAR - FAN_NEAR)) / EDGE_WIDTH, 2)) * 0.22;
+      return Math.max(limit, mouth) * (0.18 + 0.82 * Math.pow(1 - u, 1.1));
+    },
+    // And the fill hugs the muzzle. It was a sector twenty-six units deep at a
+    // few percent of an orange, which sounds like nothing and is not: a wash
+    // that faint still has a HARD BOUNDARY, and a hard boundary over that much
+    // water is a shape whatever its alpha. Read off a nine-hundred-pixel frame
+    // it was a pale fog bank filling the bottom-left quarter of the picture.
+    (u, v) => Math.pow(Math.max(0, 1 - v * v), 1.4) * Math.pow(1 - u, 2.6)
   );
   // The gauge is solid across its width and softened only at its two ends, so
   // the charge sweeping into it has a clean leading edge to read.
@@ -1302,11 +1337,18 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
   /**
    * The arcs and the two gauges.
    *
-   * `heat` is the whole legibility argument in one number: with nothing in
-   * reach the wedges are barely there, so open water stays open water; the
-   * moment something is inside cannon range they lift, which makes the arcs
-   * appearing the first announcement that a fight has started. A player who has
-   * seen them once knows what the shape means for the rest of the game.
+   * `heat` is the whole legibility argument in one number, and it now goes all
+   * the way to ZERO. The version before this one kept a floor under it so the
+   * arcs were always faintly on, and the frame said what was wrong with that: a
+   * quiet arc is still two lines twenty-six units long lying on open water, and
+   * nothing on open water reads as an instrument — it reads as flotsam. There is
+   * no alpha at which a long line is unobtrusive; there is only an alpha at
+   * which it is dirty.
+   *
+   * So the sea is empty until something is in reach of the guns, and the arcs
+   * COMING UP is the announcement that a fight has started. It is also what
+   * frees the shape to be loud when it is drawn, which is the only way a warm
+   * line survives being laid on water this bright.
    */
   function drawBroadsides(elapsed: number, dt: number): void {
     arcs.position.set(voyage.x, SEA_Y, voyage.y);
@@ -1317,10 +1359,18 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
     for (const mob of voyage.mobs) {
       closest = Math.min(closest, Math.hypot(mob.x - voyage.x, mob.y - voyage.y));
     }
-    // Rising from a third past gun range and full at five sixths of it, so the
-    // arcs light as something comes INTO reach rather than whenever the sea has
-    // anything in it at all.
-    const engaged = Math.max(0, Math.min(1, (spec.range * 1.35 - closest) / (spec.range * 0.5)));
+    // Measured off the frame rather than off the gun: it used to rise from a
+    // third PAST gun range, so a blowfish forty-five units away — twelve units
+    // further than the whole width of the picture, invisible, doing nothing —
+    // lit both wedges to full. The player's first sight of the sea was two
+    // burning arcs with nothing in them.
+    //
+    // It now starts at the edge of the guns' reach and is SQUARED, which is what
+    // keeps the far half of that reach honest: a creature at forty-five units is
+    // off the screen and contributes a tenth, one at twenty-five is in the
+    // picture and coming for you and contributes nearly all of it.
+    const reach = Math.max(0, Math.min(1, (spec.range - closest) / (spec.range * 0.55)));
+    const engaged = reach * reach;
 
     for (const side of SIDES) {
       const gun = broadsides[side];
@@ -1330,40 +1380,47 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
       const ready = charge >= 1;
       const locked = lockedOn(side) !== null;
 
-      // A ready side that has nothing to shoot at still says so, quietly. A
-      // ready side WITH a target is the loudest thing on the water, because it
-      // is about to go off and the player should learn to expect it.
-      // The numbers are an ALPHA calculation, not a taste one. The wedge's own
-      // vertex alpha peaks at 0.34 down the middle of the beam, so an opacity
-      // of 0.3 puts a tenth of an orange over the water — which measured, on
-      // the capture, as a grey haze: at a tenth, hue does not survive, only
-      // lightness does. Engaged has to reach about half and a live lock has to
-      // reach one before the sea under the guns actually turns warm.
-      const want = 0.12 + engaged * (locked ? 0.88 : 0.34) + gun.flash * 1.4;
+      // A side that has nothing to shoot at draws NOTHING. A side with something
+      // in the water draws its boundary; a side that has actually chosen a
+      // target draws it hot, because it is about to go off and the player should
+      // learn to expect it.
+      const want = engaged * (locked ? 1 : 0.46) + gun.flash * 1.4;
       gun.heat += (want - gun.heat) * Math.min(1, dt * 9);
 
-      // COLOUR carries the state, alpha does not. Sixty percent of an orange
-      // laid on this blue is a blend that has left the orange behind — tan, and
-      // tan is what the arcs photographed as. So the boundary keeps a high
-      // alpha at all times and travels from a dark etched line, which is what
-      // an arc looks like when there is nothing to shoot, to a hot one when the
-      // guns have something. Quiet still means quiet; it just means quiet in
-      // ink rather than quiet in fog.
-      const t = Math.min(1, Math.max(0, (gun.heat - 0.12) / 0.32));
-      gun.fanMaterial.color.setRGB(
-        0.012 + 0.988 * t,
-        0.008 + ((locked ? 0.2 : 0.4) - 0.008) * t,
-        0.006 + ((locked ? 0.02 : 0.07) - 0.006) * t
-      );
+      // COLOUR says WHO, alpha says WHETHER. That split is the fix for the thing
+      // that defeated three earlier passes: a warm line dimmed by its alpha does
+      // not go quiet over this blue, it goes tan, and tan on water is sand. With
+      // the resting state gone the line is only ever drawn at a strength where
+      // its hue survives, so the colour is free to carry the one distinction
+      // that matters — a beam with a target on it is scarlet, a beam that is
+      // merely bearing on open water is amber.
+      //
+      // Both are SATURATED, and that is the lesson of the sandbars: this world
+      // has cream sand and blue water in it, so any warm colour that lands
+      // between them is read as a beach. There is no pale end of this ramp.
+      gun.fanMaterial.color.setRGB(1, locked ? 0.05 : 0.34, locked ? 0.01 : 0.05);
+      const lit = Math.min(1, gun.heat * 1.9);
+      // Nothing in reach is nothing drawn — four fewer draw calls on an empty
+      // sea as well, which on a phone is not nothing either.
+      gun.fan.visible = lit > 0.015;
+      gun.track.visible = lit > 0.015;
+      gun.gauge.visible = lit > 0.015;
       layArc(gun.fan, fanGrid, bearing, spec.arc, FAN_NEAR, FAN_FAR, 0.14, elapsed,
-        0.55 + 0.45 * gun.heat, 0.26 * gun.heat);
+        lit, 0.12 * gun.heat);
 
       // The gauge: an empty groove off the rail and a charge sweeping out from
       // the beam to fill it. A broadside that just went off reads as spent
       // because its groove is empty, and circling back onto a target while it
       // fills is the rhythm the whole fight is played on.
-      layArc(gun.track, trackGrid, bearing, spec.arc, GAUGE_NEAR, GAUGE_FAR, 0.16, elapsed);
-      layArc(gun.gauge, gaugeGrid, bearing, spec.arc * Math.max(0.02, charge), GAUGE_NEAR, GAUGE_FAR, 0.2, elapsed);
+      //
+      // On the same switch as the arcs, and for the same reason: a reload gauge
+      // on an empty sea is an instrument reading out a fight that is not
+      // happening. Both come up together the moment one does start, which is
+      // also how a player learns they are two halves of one idea.
+      const span = spec.arc * GAUGE_SPAN;
+      layArc(gun.track, trackGrid, bearing, span, GAUGE_NEAR, GAUGE_FAR, 0.16, elapsed, lit);
+      layArc(gun.gauge, gaugeGrid, bearing, span * Math.max(0.02, charge),
+        GAUGE_NEAR, GAUGE_FAR, 0.2, elapsed, lit);
       const pulse = ready ? 0.93 + 0.07 * Math.sin(elapsed * 5.5) : 0.82;
       gun.gaugeMaterial.opacity = Math.min(1, pulse + gun.flash * 3);
       gun.gaugeMaterial.color.setRGB(1, ready ? 0.34 : 0.14, ready ? 0.04 : 0.015);
@@ -1526,6 +1583,37 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
   /** Plumes over what is worth sailing to, and chevrons at what is hunting. */
   function drawHorizon(elapsed: number): void {
     let n = 0;
+
+    // HOME GETS A PLUME, and it is the one that was missing.
+    //
+    // Every place worth sailing to on this sea stands under a column of light,
+    // and the most important destination in the game — the only one that turns a
+    // hold into resources — had none. The compass says which way and how far and
+    // then goes quiet: played end to end, the last beat of a voyage was thirty
+    // seconds of circling an INVISIBLE POINT with a needle spinning through a
+    // hundred and eighty degrees, hull at four percent, hold full. That is the
+    // moment a run is won or lost and the screen was showing nothing at all.
+    //
+    // Taller and colder than any site, because it must be told apart from them
+    // at a glance and because it is a harbour light rather than a prize.
+    const homeDistance = Math.hypot(voyage.x, voyage.y);
+    // It holds its light right down to the harbour mouth. A site's plume steps
+    // aside once the player is on top of the island, because the island is then
+    // the thing they can see; home has nothing standing on it, so the light IS
+    // the harbour and it has to last until the ship is inside it.
+    const homeRise = Math.min(1, Math.max(0, (homeDistance - SEA_CELL * HARBOUR * 0.55) / 14));
+    const homeFall = Math.min(1, Math.max(0, (HORIZON * 1.6 - homeDistance) / (SEA_CELL * 0.9)));
+    const homeLight = homeRise * homeFall * (0.8 + 0.2 * Math.sin(elapsed * 2.2));
+    if (homeLight > 0.02) {
+      pose.position.set(0, SEA_Y + 0.4, 0);
+      pose.rotation.set(0, 0.4, 0);
+      pose.scale.set(6, 30, 6);
+      pose.updateMatrix();
+      beaconMesh.setMatrixAt(n, pose.matrix);
+      beaconMesh.setColorAt(n, tint.setRGB(0.62 * homeLight, 0.95 * homeLight, 1.0 * homeLight));
+      n++;
+    }
+
     for (const site of horizon) {
       if (n >= BEACON_CAP) break;
       const colour = BEACON_TINT[site.kind];
