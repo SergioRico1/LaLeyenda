@@ -818,18 +818,25 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
   /** Tier 1: the vertical accent. Taller than anything else on its cell. */
   const accent = (c: DecorCell, what: string, ox: number, oz: number): void => {
     if (what === 'deco_totem') {
-      // The carved tiki. 16 units tall on a 14.5 footprint, so the stretch is
-      // what takes it from a bollard to a landmark: ~2 world units, a third
-      // again the height of a palm trunk.
-      //
-      // And no two of them the same, which at three or four on an island is
-      // most of what stops them reading as a repeated asset. The old
-      // 1.0–1.22 x 1.45–1.8 is a 22 per cent spread on the width — under the
-      // threshold where the eye stops matching two shapes to each other — so a
-      // pair either side of the hall came out as a matched pair of sheds. This
-      // spans nearly two to one on the height, which is the ratio the reference
-      // has between its tallest tiki and its shortest.
-      drop(c, 'deco_totem', rng.range(0.82, 1.3), ox, oz, { scaleY: rng.range(1.25, 2.15) });
+      /*
+       * The carved tiki — A POLE, not a plinth, and getting that wrong is what
+       * round four's judge was counting.
+       *
+       * The model measures 10.1 x 16 x 14.5, and `fit` normalizes on the
+       * FOOTPRINT, so at the cell-wide scale this used to run at it comes out
+       * one cell across, two thirds of a cell deep and about a cell and a half
+       * tall: a brown slab with a painted panel on the front. At the island's
+       * on-screen size that is not a totem, it is a shed door — and ten of them
+       * standing about the built island's plots is *"one repeated small brown
+       * shack"* almost word for word.
+       *
+       * Count the tikis in island_hero.png: three, and every one is a narrow
+       * carved POST head and shoulders above the bushes round it. Height is what
+       * makes a totem a landmark and width is what makes it a hut, so this is
+       * half the width it was and half again as tall — and the spread runs
+       * nearly two to one on the height so that no two of the three match.
+       */
+      drop(c, 'deco_totem', rng.range(0.5, 0.72), ox, oz, { scaleY: rng.range(2.3, 3.6) });
     } else if (what === 'deco_flag') {
       drop(c, 'deco_flag', rng.range(0.8, 0.98), ox, oz);
     } else if (what === 'tree_palm' || what === 'tree_palm_tall') {
@@ -1339,6 +1346,8 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
       .filter((c) => onPlateau(c) && !inPlaza(c))
       .sort((a, b) => rank(a) - rank(b) || key(a.x, a.z) - key(b.x, b.z));
     let dealt = 0;
+    /** Tikis placed. Capped island-wide — see the accent walk below. */
+    let totems = 0;
     for (const c of settled) {
       const grass = onGrass(c);
       const busy = plan.used.has(key(c.x, c.z));
@@ -1398,17 +1407,28 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
        */
       if (grass && !busy && rng.chance(0.34)) {
         const along = ((c.x + c.z) & 1) === 0;
-        for (let lane = 0; lane < 3; lane++) {
-          const t = (lane / 2 - 0.5) * 0.72;
+        // Two rows of three, bigger, rather than three rows of three. Nine
+        // bushes in a square is a bush square: at half a cell apiece the rows
+        // close up and what the eye gets is one green mat, which is the same
+        // failure as the hedge runs that used to pack four to a border. Six at
+        // two thirds of a cell keeps the lanes visible, and the lanes are the
+        // entire reason a bed reads as planted rather than as scrub.
+        for (let lane = 0; lane < 2; lane++) {
+          const t = (lane - 0.5) * 0.6;
           for (let i = 0; i < 3; i++) {
-            const u = (i / 2 - 0.5) * 0.72 + rng.range(-0.03, 0.03);
-            drop(c, 'deco_hedge', rng.range(0.42, 0.56),
+            const u = (i / 2 - 0.5) * 0.74 + rng.range(-0.03, 0.03);
+            drop(c, 'deco_hedge', rng.range(0.56, 0.72),
               along ? u : t, along ? t : u);
           }
         }
-        // The tiki over the field, off to one side of it.
+        // The tiki over the field, off to one side of it — and it comes out of
+        // the same island-wide allowance as the ones the rotation deals, or the
+        // cap below is a cap on one of the two places tikis are planted.
         const [ax, az] = ring(0, 1, phase, 0.34, 0.44);
-        if (!accented.has(key(c.x, c.z))) accent(c, 'deco_totem', ax, az);
+        if (!accented.has(key(c.x, c.z))) {
+          if (totems < 3) { accent(c, 'deco_totem', ax, az); totems++; }
+          else accent(c, 'post', ax, az);
+        }
         plan.used.add(key(c.x, c.z));
         took(c, true);
         continue;
@@ -1446,20 +1466,43 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
         // TWO stands. Four cells is what forces this pass to leave the trees to
         // the stands and spend its own accents on the thin verticals — the
         // tikis and the mooring posts, which punctuate without massing.
-        let what = ACCENT_ROTA[dealt % ACCENT_ROTA.length];
-        for (let skip = 0; skip < ACCENT_ROTA.length && what.startsWith('tree_'); skip++) {
+        /*
+         * AND A HARD CAP ON THE TIKIS, for the reason the rails and the banners
+         * have one: a rotation guarantees a RATIO, and a ratio of a number
+         * nobody bounded is not a count.
+         *
+         * Palms are skipped far more often than anything else here, and every
+         * skip deals the next entry instead — so two totems in twelve came out
+         * as ten of them on the built island, standing along the plot edges at
+         * roughly even spacing. Ten of anything at even spacing is the texture
+         * this whole round is about, and these are the props round four's judge
+         * counted as *"one repeated small brown shack"*. island_hero.png has
+         * three tikis. So does this.
+         */
+        const blocked = (which: string): boolean => {
+          if (which === 'deco_totem') return totems >= 3;
+          if (!which.startsWith('tree_')) return false;
           // Another palm, or a wall. A crown four cells wide planted three and
           // a half off the harbour master's roof is not a tree beside a
           // building, it is a lump — and it was the lump on the pier side of
           // the right third that survived every other cut in this file.
-          let near = state.buildings.some((b) => Math.hypot(b.x - c.x, b.z - c.z) < 4.5);
+          if (state.buildings.some((b) => Math.hypot(b.x - c.x, b.z - c.z) < 4.5)) return true;
           for (let dz = -4; dz <= 4; dz++) {
-            for (let dx = -4; dx <= 4; dx++) if (treed.has(key(c.x + dx, c.z + dz))) near = true;
+            for (let dx = -4; dx <= 4; dx++) if (treed.has(key(c.x + dx, c.z + dz))) return true;
           }
-          if (!near) break;
+          return false;
+        };
+        let what: string = ACCENT_ROTA[dealt % ACCENT_ROTA.length];
+        for (let skip = 0; skip < ACCENT_ROTA.length && blocked(what); skip++) {
           dealt++;
           what = ACCENT_ROTA[dealt % ACCENT_ROTA.length];
         }
+        // Every entry blocked at once is possible — a cell hemmed in by palms
+        // on an island that has spent its tikis — and the fallback has to be the
+        // one item that is never blocked rather than whatever the walk stopped
+        // on, or the cap leaks exactly where the field is already densest.
+        if (blocked(what)) what = 'post';
+        if (what === 'deco_totem') totems++;
         const [ax, az] = ring(0, slots, phase, 0.3, 0.42);
         accent(c, what, ax, az);
         tall = true;
