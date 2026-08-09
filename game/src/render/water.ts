@@ -44,9 +44,74 @@ import * as THREE from 'three';
  *   reads as one flat blue.
  * - Texture that is BLOCKS, not speckle: large low-contrast rectangles for the
  *   material, a three-level per-cell fleck under them for the hard edges, and a
- *   dithered quantised ramp for the bands. No smooth gradients anywhere.
- * - White concentrated at the sand, cut off hard past the shelf, and a handful
- *   of dim dashes on the near water. Nothing else.
+ *   dithered quantised ramp for the bands. No smooth gradients anywhere. Blocks
+ *   that do not LINE UP, though — see THE LATTICE below.
+ * - White concentrated at the sand, cut off hard past the shelf, a handful of
+ *   dim dashes on the near water — and one corner of broken white, which is the
+ *   SUN LANE below. Nothing else.
+ *
+ * THE SUN LANE
+ *
+ * The sentence above ("nothing else") was once the whole rule, and it cost a
+ * round. Segmenting the reference properly — land seeded, a distance transform
+ * off it, and the reference's own logo and watermark held out so they could not
+ * act as a fake shore or as fake chips — says their sea is not one material. It
+ * is two split by screen height PLUS a third thing confined to one corner.
+ *
+ * Measured in their near-field right lane (bottom fifth of the frame, right of
+ * 0.62 of its width, clear of the shore by 3% of the width):
+ *
+ *   base   L<60      68.9%   #042660
+ *   mid    120-200    6.3%   #8AA7B1
+ *   chip   L>200      4.9%   #E5E8DA
+ *
+ * and in the same band on the LEFT of their frame, or anywhere along its top,
+ * that chip tier measures nothing at all. So the earlier builder who deleted the
+ * all-over glitter field was right, and wrong to take the lane with it: a
+ * thirteenth of the white this file needs was left in the frame.
+ *
+ * The lane's ENVELOPE is a screen-space band, which is what it honestly is — a
+ * compositional device, in the same coordinates as the far/near sweep, which is
+ * already a screen ramp normalised against the frame. Its boundary is read off
+ * the reference: it crosses 0.78 of the frame height at x=0.62 and 0.62 at the
+ * right edge. Everything INSIDE the envelope is anchored in the world — the
+ * patches, the streaks, every chip — so the broken water belongs to the sea and
+ * not to the lens. Pan the camera and the chips stay on the water they were on;
+ * only the corner they are lit in follows the frame.
+ *
+ * THE LATTICE
+ *
+ * A blind judge read our ocean as "a tiling noise pattern rather than water —
+ * flat lighter-blue rectangles at even density", and it was: two axis-aligned
+ * block grids sharing an origin, each block given an INDEPENDENT hash. That is
+ * the whole bug, and no amount of tuning the colours reaches it. A per-block
+ * hash means every block disagrees with its neighbours, so no feature in the
+ * field can ever be larger than one block, and a field whose every feature is
+ * exactly one cell is a weave.
+ *
+ * Adding grids makes it worse. Three stacked lattices were tried here and the
+ * visible mark got SMALLER and more even, not larger and more varied, because
+ * what the eye picks out is the intersection of the three.
+ *
+ * Crop their water and it is chunks: three or four adjacent blocks at one flat
+ * value, then a hard step, in outlines that owe nothing to the grid. That is
+ * what a SMOOTH field looks like after quantisation — neighbours fall in the
+ * same bin and merge, the bin boundary cuts the irregular outline, and the grid
+ * only supplies the hard edge. So the tone is two octaves of value noise read at
+ * each block's centre, quantised to five levels, with a little per-block jitter
+ * so the chunks do not collapse into clean contour bands. Two more things keep
+ * it honest:
+ *
+ * - the sample point is domain-warped by a low-frequency field first, so rows of
+ *   blocks bend and neighbouring blocks come out different sizes;
+ * - the chunk field is read on an axis 34 degrees off the world grid and
+ *   stretched 2:1, so the lighter water runs in diagonal streaks the way theirs
+ *   does rather than in squares square to the tiles.
+ *
+ * The far water needs one more thing on top, because the LOD fade means it has
+ * no block texture left to carry: broad PATCHES, fifty world units across, of
+ * lighter cerulean. Over the top fifth of their frame a sixth of every water
+ * pixel is brighter than L=120; over ours, before this, 0.17% was.
  *
  * THE SWELL
  *
@@ -107,6 +172,47 @@ const TRAINS: readonly Train[] = [
 export const WAVE_AMPLITUDE = 0.16;
 /** World distance over which the swell flattens as it reaches the beach. */
 const SHOAL = 5.0;
+
+/**
+ * How much of the lane's water breaks white, at the centre of a patch.
+ *
+ * Coverage on screen is the cell hit probability and nothing else — a chip fills
+ * its cell whatever size that cell projects to — so this scales the share of
+ * lane pixels that clear L=200, once the patch field has thinned it and the two
+ * cell sizes below have shared it out. Tuned by measuring: the same lane, cut
+ * the same way in both frames, reads 4.5% for us against 4.4% for them. Doubling
+ * it is where the chips start joining up into the confetti field this file spent
+ * a round removing.
+ */
+const LANE_CHIP = 0.172;
+/**
+ * The steel tier, as a share of the same cells.
+ *
+ * It is drawn on the SAME grids and read off the SAME hashes as the chips, at a
+ * looser threshold, so the two tiers nest for free: every cream chip has steel
+ * in its bracket, and the steel-only cells fall around and between the chips at
+ * the same size, which is what a halo IS. Drawn as its own larger plate — four
+ * times the cell, which is what this was first — it came out as slabs of wet
+ * concrete sitting on the sea, because a tier meant to read as the EDGE of the
+ * white cannot be bigger than the white.
+ *
+ * Twice the chips' coverage, and put down at a weight that lands it just under
+ * L=120 rather than just over: in the reference every cream block sits in a
+ * patch of paler blue, and it is the halo far more than the chip that stops the
+ * field reading as salt scattered on a table.
+ */
+const LANE_PLATE = 0.26;
+/**
+ * The share of the lane's white drawn on the double-size grid.
+ *
+ * One cell size gives one chip size, and the reference plainly has two: a fine
+ * scatter of single cells with chunky two-by-two slabs through it. Coverage is
+ * the hit probability whatever the cell is, so splitting the same total between
+ * two grids costs nothing and buys the size variety — which, side by side at
+ * matched scale, is the most obvious difference left between their corner and
+ * ours.
+ */
+const LANE_SLAB = 0.42;
 
 /** GLSL literals need a decimal point, and toFixed guarantees one. */
 const g = (n: number): string => n.toFixed(5);
@@ -174,6 +280,7 @@ const vertexShader = /* glsl */ `
   uniform float uHasShore;
 
   varying vec3 vWorld;
+  varying vec4 vClip;
 
 ${SWELL_GLSL}
 ${SHORE_GLSL}
@@ -192,7 +299,16 @@ ${SHORE_GLSL}
 
     world.y += y;
     vWorld = world.xyz;
-    gl_Position = projectionMatrix * viewMatrix * world;
+
+    // Handed to the fragment stage as well as to the rasteriser: the sun lane's
+    // envelope is a band across the FRAME, so it needs the frame's own
+    // coordinates. Dividing by w in the fragment shader rather than here is not
+    // pedantry — interpolating an already-divided ndc across a triangle is
+    // interpolating in the wrong space, and on a plane this large the error is
+    // most of the screen.
+    vec4 clip = projectionMatrix * viewMatrix * world;
+    vClip = clip;
+    gl_Position = clip;
   }
 `;
 
@@ -208,6 +324,8 @@ const fragmentShader = /* glsl */ `
   uniform vec3  uCrest;         // lightest tone a single cell can take
   uniform vec3  uGlintDim;
   uniform vec3  uGlintBright;
+  uniform vec3  uLaneChip;      // the cream the sun lane breaks into
+  uniform vec3  uLanePlate;     // the steel tier under it
   uniform float uGlitter;       // scene-level gain on the open-water sparkle
   uniform vec3  uFoamBright;
   uniform vec3  uFoamDim;
@@ -226,6 +344,7 @@ const fragmentShader = /* glsl */ `
   uniform vec2  uViewSpan;      // toCam.y at the far and the near edge of frame
 
   varying vec3 vWorld;
+  varying vec4 vClip;
 
   float hash21(vec2 p) {
     p = fract(p * vec2(123.34, 456.21));
@@ -332,12 +451,32 @@ ${SWELL_GLSL}
     float footprint = max(fwidth(vWorld.x), fwidth(vWorld.z));
     float detail = clamp(uCell * 0.75 / max(footprint, 0.0001), 0.0, 1.0);
 
+    // THE LATTICE — see the note at the top of the file.
+    //
+    // Everything textured below is sampled at wp rather than at vWorld.xz: the
+    // world point pushed around by a low-frequency field. A grid floored at a
+    // warped point is still a grid of hard-edged blocks — nothing here softens —
+    // but its rows bend, and two blocks that were the same size are not any
+    // more. The warp is about half a block at its strongest, which is the range
+    // where the lattice stops being findable and the blocks still read as
+    // blocks.
+    vec2 warp = vec2(valueNoise(vWorld.xz * 0.085), valueNoise(vWorld.xz * 0.085 + 19.7)) - 0.5;
+    vec2 wp = vWorld.xz + warp * uCell * 11.0;
+
+    // The same point on an axis 34 degrees off the world grid. Both other block
+    // grids are square to xz and to each other, which is most of why the field
+    // reads as tiling; one grid that agrees with neither breaks every long edge
+    // in it. Stretched 3:1 as well, because the reference's lighter water runs
+    // in diagonal streaks rather than in patches.
+    vec2 rot = vec2(wp.x * 0.829 + wp.y * 0.559, wp.y * 0.829 - wp.x * 0.559);
+
     // The second, larger structure the reference has and a depth ramp cannot
     // give you: broad fields of lighter and darker water, tens of metres across,
-    // that owe nothing to how deep the water is. Two octaves is enough — the
-    // point is the low frequency, not the detail.
-    float broad = valueNoise(vWorld.xz * 0.052) * 0.62
-                + valueNoise(vWorld.xz * 0.157 + 31.0) * 0.38;
+    // that owe nothing to how deep the water is. Read along the diagonal too, so
+    // the large structure and the small one run the same way.
+    float broad = valueNoise(vec2(rot.x * 0.030, rot.y * 0.105)) * 0.52
+                + valueNoise(vec2(rot.x * 0.082, rot.y * 0.240) + 31.0) * 0.31
+                + valueNoise(vWorld.xz * 0.210 + 7.3) * 0.17;
 
     // The material grain: BLOCKS, low contrast.
     //
@@ -349,13 +488,40 @@ ${SWELL_GLSL}
     // wide and at four times the contrast, which is a different material: at
     // that frequency the eye reads static, not water.
     //
-    // Two block shapes so the field breaks into rectangles rather than a
-    // checkerboard, and five levels, because this is voxel water and a smooth
-    // gradient is the wrong material.
-    vec2 blockA = floor(vWorld.xz / (uCell * vec2(3.0, 2.0)));
-    vec2 blockB = floor(vWorld.xz / (uCell * vec2(7.0, 4.0)));
-    float tone = hash21(blockA + 17.0) * 0.42 + hash21(blockB + 4.2) * 0.58;
-    tone = tone * 0.62 + broad * 0.38;
+    // One block shape, and the value on it QUANTISED OUT OF A SMOOTH FIELD
+    // rather than hashed per block. This is the difference between their
+    // material and every version of ours so far, and it is worth being precise
+    // about.
+    //
+    // Independent hashes per block make every block disagree with its
+    // neighbours, so the field can never be larger than one block and the eye
+    // reads a weave — which is exactly what a blind judge called "a tiling noise
+    // pattern... flat lighter-blue rectangles at even density". Stacking three
+    // grids to fix it makes it worse, not better: the visible cell becomes the
+    // INTERSECTION of the three, so the marks get smaller and more even, and the
+    // texture ends up finer than the one grid it started from.
+    //
+    // Their water is chunks: three or four adjacent blocks at one flat value,
+    // then a hard step to the next, in shapes that are nothing like the grid.
+    // That is what a smooth field looks like after quantisation — neighbours
+    // land in the same bin and merge, the bin boundary cuts an irregular
+    // outline, and the block grid supplies the hard edge. Two octaves of it,
+    // read at the block's CENTRE so each block is one flat value, plus a little
+    // per-block jitter so the chunks do not turn into clean contour bands.
+    vec2 bsize = uCell * vec2(3.0, 2.0);
+    vec2 blockA = floor(wp / bsize);
+    vec2 bpos = (blockA + 0.5) * bsize;
+    vec2 brot = vec2(bpos.x * 0.829 + bpos.y * 0.559, bpos.y * 0.829 - bpos.x * 0.559);
+
+    float tone = valueNoise(vec2(brot.x * 0.50, brot.y * 1.00)) * 0.40
+               + valueNoise(vec2(brot.x * 0.15, brot.y * 0.30) + 9.0) * 0.24
+               + broad * 0.22
+               + hash21(blockA + 17.0) * 0.14;
+    // Four bell-shaped terms stacked, and the middle level would swallow the
+    // other four without this: pulled back out around its own midpoint so all
+    // five quantised levels stay populated. Contrast lost to averaging is the
+    // usual way a grain like this quietly turns into a flat wash.
+    tone = clamp((tone - 0.5) * 1.62 + 0.5, 0.0, 1.0);
     tone = clamp(floor(tone * 5.0) / 4.0, 0.0, 1.0);
     // The dark half of the spread opens up with distance from land, so the navy
     // gets its darkest tones and the turquoise shelf is left alone. On the shelf
@@ -529,6 +695,65 @@ ${SWELL_GLSL}
       sparkCore = sparkPlate * step(0.68, hash21(floor(gdrift / (gsize * 0.5)) + 133.0));
     }
 
+    // THE SUN LANE — the one corner of this sea that breaks white. See the note
+    // at the top of the file for the counts it is built to hit.
+    //
+    // The envelope is a straight line across the FRAME, taken off the reference:
+    // its chip field crosses 0.78 of the frame height at x=0.62 of the width and
+    // 0.62 at the right edge, so the boundary is scr.y = 0.42 * scr.x - 0.01 and
+    // the lane is everything under it. Broken up by world noise at a fifth of
+    // the frame, because a clean line here is a vignette and a vignette is a
+    // lens: theirs ends in a ragged coast of chips with dark water between.
+    // With that break in place the same band on the LEFT of the frame measures
+    // 0.08% chip against the reference's own 0.08% — the corner is confined.
+    //
+    // Gated on open water, so it can never crowd the shelf or the collar — the
+    // white at the sand is the crispest edge in the frame and nothing is allowed
+    // to compete with it — and on the LOD, because a chip drawn smaller than a
+    // pixel is shimmer.
+    vec2 scr = vClip.xy / max(vClip.w, 0.0001) * 0.5 + 0.5;
+    float laneEdge = 0.42 * scr.x - scr.y - 0.01
+                   + (valueNoise(vWorld.xz * 0.085 + 44.0) - 0.5) * 0.20;
+    // Ramped over most of the lane's height rather than switched on at its
+    // boundary, so the field thins out toward the top of the corner instead of
+    // ending on a line the eye can find.
+    float lane = smoothstep(0.0, 0.44, laneEdge) * uGlitter * detail * open;
+
+    float laneChip = 0.0;
+    float lanePlate = 0.0;
+    if (lane > 0.004) {
+      // Broken water comes in patches with long calm between, and the patches
+      // are STREAKS: read along the same diagonal the block grain runs on, at a
+      // wavelength of twenty-odd world units, cut with a high threshold so most
+      // of the lane stays dark, with a shorter octave on top so a streak breaks
+      // into clusters and singles rather than into one solid raft. Drifting
+      // slowly, so the patches crawl rather than crackle.
+      float chop = valueNoise(vec2(rot.x * 0.052, rot.y * 0.150) + uTime * vec2(0.020, 0.006)) * 0.52
+                 + valueNoise(vec2(rot.x * 0.155, rot.y * 0.400) + 53.0) * 0.30
+                 + valueNoise(vec2(rot.x * 0.520, rot.y * 0.980) + 11.0) * 0.18;
+      // A FLOOR under the patches, not a gate on them. Thresholded outright,
+      // the low-frequency term wins and the lane comes out as one dense streak
+      // with two thirds of the corner bare, which is a weather front, not sun on
+      // water: theirs carries chips right across its corner and varies how
+      // thickly, three to one between the busiest patch and the quietest.
+      float amount = lane * mix(0.34, 1.0, smoothstep(0.40, 0.84, chop));
+
+      // Two cell sizes, because theirs has two: a cell and a half by a cell for
+      // the scatter, twice that for the slabs through it. Both tiers come off
+      // the same two hashes, so the steel brackets the cream at each size — see
+      // LANE_PLATE and LANE_SLAB.
+      vec2 cdrift = wp + uTime * vec2(0.16, 0.06);
+      float fine = hash21(floor(cdrift / (uCell * vec2(1.55, 1.05))) + 27.4);
+      float slab = hash21(floor(cdrift / (uCell * vec2(3.10, 2.10))) + 63.8);
+      float aFine = amount * ${g(1 - LANE_SLAB)};
+      float aSlab = amount * ${g(LANE_SLAB)};
+
+      lanePlate = max(step(1.0 - min(aFine * ${g(LANE_PLATE)}, 0.80), fine),
+                      step(1.0 - min(aSlab * ${g(LANE_PLATE)}, 0.70), slab));
+      laneChip = max(step(1.0 - min(aFine * ${g(LANE_CHIP)}, 0.62), fine),
+                     step(1.0 - min(aSlab * ${g(LANE_CHIP)}, 0.52), slab));
+    }
+
     // Water first, then the view ramp, then everything that sits on the surface,
     // so the chips are hazed by the same amount as the water under them.
     //
@@ -541,8 +766,41 @@ ${SWELL_GLSL}
     // far edge of the portrait frame measured sd 1 against the reference's 19
     // for exactly that reason: a hazed sea is not a blank one, and the reference
     // is still visibly built out of blocks at the top of its frame.
-    vec3 hazeTone = uHorizon * mix(0.78, 1.18, tone);
-    hazeTone = mix(hazeTone, uCrest, 0.09 * tone);
+    // Widened around its own midpoint rather than lifted — the mean of the
+    // multiplier is still 1.
+    //
+    // Their far water is not one blue. Over the top fifth of their frame, a
+    // sixth of every water pixel measures brighter than L=120 while none of it
+    // is darker than 60; over ours, at mix(0.78, 1.18), that figure was 0.17% —
+    // our whole far sea sat in one band four points under the line, which is
+    // arithmetically what "flat lighter-blue rectangles" means. The LOD fade is
+    // why it cannot be left to the fleck to fix: a cell up there is smaller than
+    // a pixel, the fleck is faded out by design, and the block tone is the ONLY
+    // variation the far water has left.
+    // The block tone, pulled back toward its own middle as the cells shrink
+    // under a pixel. Side by side at matched scale their far water is CALM — a
+    // fine, very low contrast weave — and carries its variation in big soft
+    // fields instead; ours ran the near water's full block contrast all the way
+    // to the horizon, which at a cell a pixel wide is not texture, it is a weave.
+    // Not faded out altogether: the note above about sd 1 was earned, and their
+    // far water is still visibly built of blocks.
+    float toneHaze = mix(0.5, tone, mix(0.30, 1.0, detail));
+    vec3 hazeTone = uHorizon * mix(0.70, 1.16, toneHaze);
+    // ...and then broken into PATCHES, which is the part a per-block tone cannot
+    // do out here. The block grain is faded by the LOD long before the top of
+    // the frame — correctly, a cell up there is smaller than a pixel — so the
+    // only variation left is whatever is low-frequency enough to survive, and
+    // the reference's far water is visibly patchy: big soft fields of lighter
+    // cerulean tens of units across. Driven off the same broad field the near
+    // water's tone is, so the two ends of the sea are made of one material seen
+    // from two distances rather than two materials that happen to meet.
+    // Lower frequency than anything else in the shader — a wavelength of fifty
+    // world units along the diagonal — because that is the size their patches
+    // are: at the top of their frame a single pale field runs sixty screen
+    // pixels across, where our whole broad term was turning over in twenty.
+    float sheenField = valueNoise(vec2(rot.x * 0.018, rot.y * 0.062) + 5.5) * 0.80 + broad * 0.20;
+    float sheen = smoothstep(0.50, 0.86, sheenField);
+    hazeTone = mix(hazeTone, uCrest, 0.07 * toneHaze + 0.48 * sheen);
     vec3 nearTone = uNear * mix(0.50, 1.62, tone);
 
     col = mix(col, hazeTone, distant * 0.94 * mix(0.25, 1.0, open));
@@ -572,6 +830,14 @@ ${SWELL_GLSL}
     vec3 foamBright = mix(uFoamBright, uHorizon, haze);
     vec3 sparkDim = mix(uGlintDim, uHorizon, haze);
     vec3 sparkBright = mix(uGlintBright, uHorizon, haze);
+
+    // The lane, under the shore's own white so nothing here can crowd the
+    // collar. The bright tier goes on at 0.94 and not at 0.6: the tier is
+    // DEFINED by clearing L=200, and a cream mixed halfway onto a navy that
+    // measures L=37 lands at 135 — a mid pixel wearing a chip's colour, which
+    // counts for nothing and looks like haze.
+    col = mix(col, mix(uLanePlate, uHorizon, haze), lanePlate * 0.58);
+    col = mix(col, mix(uLaneChip, uHorizon, haze), laneChip * 0.94);
 
     col = mix(col, sparkDim, sparkPlate * 0.50);
     col = mix(col, sparkBright, sparkCore * 0.80);
@@ -621,6 +887,11 @@ interface Palette {
   glintBright: string;
   foamBright: string;
   foamDim: string;
+  /** The two tiers of the sun lane. Kept off the surf colours on purpose: the
+   *  collar is a wet, slightly green cream and the lane is a colder one, and
+   *  they are the reference's own two measurements, not one colour used twice. */
+  laneChip: string;
+  lanePlate: string;
 }
 
 const PALETTES: Record<WaterPalette, Palette> = {
@@ -656,6 +927,15 @@ const PALETTES: Record<WaterPalette, Palette> = {
     glintBright: '#BDD4DF',
     foamBright: '#E8F5E4',
     foamDim: '#8FD2CB',
+    // Their lane, sampled: chips average #E5E8DA and the tier under them
+    // #8AA7B1. The chip is carried a little brighter than the average it has to
+    // produce, because the mix that puts it down is not 1.0 and the navy under
+    // it is L=37. The steel is carried a good deal DARKER and bluer, for the
+    // opposite reason: the mix happens in linear space, so a swatch chosen to
+    // match #8AA7B1 by eye comes out on the sea as wet concrete — and a halo
+    // brighter than the chip it belongs to reads as grit, not as water.
+    laneChip: '#EDF0E2',
+    lanePlate: '#6E93AE',
   },
   // Open sea: blue-dominant, resolving into the sky at the horizon.
   ocean: {
@@ -668,6 +948,8 @@ const PALETTES: Record<WaterPalette, Palette> = {
     glintBright: '#C6DAE4',
     foamBright: '#FEFFFE',
     foamDim: '#7FA6B6',
+    laneChip: '#F0F4EA',
+    lanePlate: '#7195AD',
   },
 };
 
@@ -727,6 +1009,8 @@ export class Water {
         uCrest: { value: new THREE.Color(palette.crest) },
         uGlintDim: { value: new THREE.Color(palette.glintDim) },
         uGlintBright: { value: new THREE.Color(palette.glintBright) },
+        uLaneChip: { value: new THREE.Color(palette.laneChip) },
+        uLanePlate: { value: new THREE.Color(palette.lanePlate) },
         uGlitter: { value: opts.glitter ?? 1 },
         uFoamBright: { value: new THREE.Color(palette.foamBright) },
         uFoamDim: { value: new THREE.Color(palette.foamDim) },

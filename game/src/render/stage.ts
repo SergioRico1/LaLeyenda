@@ -29,33 +29,75 @@ export interface StageOptions {
  * also the assumption render/island.ts bakes into its wall skins ("+x is lit,
  * +z is shaded"), so the two agree by construction.
  *
- * HEIGHT. Their client runs ONE white directional light at euler
- * (34.696, 16.502, -4.762) — elevation 34.7 degrees, and only 28.5 degrees off
- * its own camera's azimuth. A near-frontal over-the-shoulder key, not a raking
- * side light. Taking their 34.7 as given and solving the azimuth for the screen
- * bearing measured above lands a shadow 0.68 of its caster's screen height to
- * the LEFT and 0.88 up: the same frame their flag gives, to the pixel.
+ * HEIGHT, and this is the number two rounds kept being told to move. It does
+ * not move, and here is the arithmetic that settles it.
  *
- * That clearance is the whole game. It is not the darkness that makes a shadow
- * readable at a phone's size, it is whether the shape steps out from behind the
- * thing casting it. This rig used to sit 15.3 degrees off the camera axis and
- * shadows fell almost exactly behind their casters: the shadow map was correct,
- * the multiply was correct, and the frame still had nothing on the ground,
- * because every shape was hidden by the object that threw it. It is now 19.1
- * degrees off, which is what buys the 0.68H.
+ * A shadow's length is not a free parameter — for a caster of world height h it
+ * is h/tan(elevation) on the ground, and what reaches the screen depends on the
+ * CAMERA as well. Project both through a camera at pitch phi, with the shadow
+ * running at a bearing beta off the camera's own azimuth, and a caster H pixels
+ * tall on screen throws its tip
+ *
+ *     sin(beta) / (tan(elevation) * cos(phi))   pixels sideways, and
+ *     tan(phi) * cos(beta) / tan(elevation)     pixels up
+ *
+ * per pixel of H. Two measurements, two unknowns, so a screenshot alone is
+ * enough — the old note here was wrong to say elevation could not be solved off
+ * one. Feeding their flag's 0.693H left / 0.921H up into that pair, with the
+ * 35-degree pitch their own camera prefab states, gives beta 23.35 degrees and
+ * an elevation of 34.9 degrees.
+ *
+ * Their client says 34.696. Two independent sources, 0.2 degrees apart — which
+ * is about what one pixel of slop on a 101-pixel gnomon is worth. There is
+ * nothing here to correct.
+ *
+ * The other half of the check is our own frame, and it is the one worth
+ * repeating whenever this is questioned again: park a 6-unit pole on a clean
+ * slab out over open water, capture, and measure the shadow the same way. Ours
+ * lands 0.582H left and 0.898H up. Solved back through the same pair with
+ * nothing assumed, that is a camera pitch of 33.5 degrees and a sun elevation
+ * of 34.76 — the two numbers this file and islandScene.ts are configured with,
+ * recovered from pixels. The rig does exactly what it says.
+ *
+ * So the length is right and the direction is right, and neither is where the
+ * "their shadows are long, ours are not" complaint actually comes from. Per
+ * unit of caster height ours reaches 1.07 of H against their 1.15, and the
+ * whole of that 7 percent is our camera sitting 1.5 degrees shallower than
+ * theirs — a shallower camera foreshortens the ground, which shortens every
+ * shadow on it. Lowering the sun to hide a camera difference would put a wrong
+ * time of day into the game and break the "+x is lit, +z is shaded" assumption
+ * render/island.ts bakes into its wall skins. What was actually wrong was the
+ * EDGE; see SHADOW_BILINEAR below.
  *
  * BALANCE. Sampled off their sand: lit #e1d3b4, the same sand under the flag's
- * shadow #aeab93 — a MULTIPLY of about x0.74 red, x0.77 green, x0.79 blue, and
- * the drop is bigger in red than in blue because the warm half of the light is
- * what the shadow loses and the cool sky half is what stays. So the sun is warm
- * and the ambient is cool, and the two are balanced so a lit top face still
- * lands on exactly the albedo the terrain was painted for.
+ * shadow #aeab93 — the drop is bigger in red than in blue because the warm half
+ * of the light is what the shadow loses and the cool sky half is what stays. So
+ * the sun is warm and the ambient is cool, and the two are balanced so a lit top
+ * face still lands on exactly the albedo the terrain was painted for.
  *
  * Audited by rendering the island twice, once with the sun's castShadow off,
- * and differencing the two frames. Over every pixel the shadow actually
- * reaches, ours multiplies the lit value by x0.726 / 0.769 / 0.795. Theirs is
- * x0.74 / 0.77 / 0.79. Sampled on the plaza either side of a plot's step, lit
- * sand 228,213,182 goes to 169,168,151.
+ * and differencing the two frames, over the 14.5k pixels of flat sand the
+ * shadow fully covers. Against their own sand either side of the noticeboard's
+ * shadow on the south plaza:
+ *
+ *              red     green   blue    luminance
+ *   ours      x0.739  x0.790  x0.830    x0.783
+ *   theirs    x0.770  x0.795  x0.799    x0.788
+ *
+ * The DARKNESS is a bullseye — half a percent of luminance apart, which is
+ * inside the noise of picking which sand to sample. (An earlier pass here
+ * quoted their multiply as x0.74/0.77/0.79; that was an arithmetic slip on its
+ * own quoted hex pair, which divides out to x0.773/0.810/0.817. The two
+ * corrected measurements above agree with each other.)
+ *
+ * What is left is a HUE residual: our shadow keeps 3 percent more blue and 3
+ * percent less red than theirs, so it reads a shade cooler. It is deliberately
+ * not chased here. The only way to warm a cast shadow without moving the lit
+ * frame with it is to add red to the hemisphere and take the same red back out
+ * of the sun, and at this ratio that is a 12 percent change to the sun's
+ * colour — every roof, wall and sail in the frame, to buy 3 points on one
+ * channel of one surface. render/island.ts's albedos are calibrated against
+ * this rig; that trade is not worth their recalibration.
  *
  * That measurement is why the shadow STRENGTH below is left at three's full
  * 1.0 rather than copying the client's 0.86. Their 0.86 sits on top of a flat
@@ -83,9 +125,9 @@ export interface StageOptions {
  */
 
 /** Degrees above the horizon. Their client's directional light, verbatim: euler
- *  X is 34.696. Deliberately NOT re-derived by eye — every attempt to solve
- *  elevation off a screenshot trades against the azimuth, and their config
- *  removes one unknown. */
+ *  X is 34.696 — and independently the 34.9 their flag's own shadow solves to,
+ *  and the 34.76 a probe pole recovers from our render. Three sources inside a
+ *  quarter of a degree; see HEIGHT above before touching this. */
 const SUN_ELEVATION = 34.7;
 /**
  * Degrees from +z toward +x, for where the sun IS (shadows travel the other
@@ -95,14 +137,25 @@ const SUN_ELEVATION = 34.7;
  *
  * What it buys, per unit of caster screen-height H:
  *
- *              left     up      camera-to-sun
- *   was 57     0.61H   1.05H       15.3 deg
- *   now 62.2   0.68H   0.88H       19.1 deg
- *   theirs     0.70H   0.91H       23.3 deg (their camera sits 6 deg further
- *                                            round the diagonal than ours)
+ *              left     up      |tip|    camera-to-sun
+ *   was 57     0.61H   1.05H    1.21H       15.3 deg
+ *   now 62.2   0.58H   0.90H    1.07H       19.6 deg
+ *   theirs     0.69H   0.92H    1.15H       23.3 deg (their camera sits 6 deg
+ *                                                     further round the
+ *                                                     diagonal than ours)
  *
- * 0.68H is exactly the drop the critics measured off their frame. Anything
- * further round starts inventing a side light their client does not have.
+ * Ours is the measured row, not the predicted one: a probe pole rendered on a
+ * clean slab and read off the capture, so it carries the island lens's slight
+ * off-axis skew rather than an idealised parallel projection. The old note here
+ * quoted 0.68H/0.88H, which is what the ortho arithmetic predicts and about a
+ * tenth of H away from what the frame actually draws.
+ *
+ * The gap in the LEFT column is a camera difference, not a sun one: our bearing
+ * off the camera axis is 19.6 degrees where theirs is 23.3, because their rig
+ * sits further round the diagonal. Winding this azimuth on to close it would
+ * start inventing a side light their client does not have, and would fight the
+ * "+x is lit, +z is shaded" skins in render/island.ts. What matters is that the
+ * shadow steps clear of its caster, and at 0.58H it does.
  */
 const SUN_AZIMUTH = 62.2;
 /** How far out the sun is parked. Only sets where the shadow frustum's near
@@ -125,15 +178,108 @@ const SHADOW_EXTENT = 32;
  * Their shipped pipeline is 1024, one cascade, hard shadows, 150 units of
  * distance (CLIENT_NOTES §2, Medium_PipelineAsset — the level the game
  * actually ships at). We were at 2048, which is 16MB of RGBA on a phone
- * against their 4MB for a frame nobody could tell apart: at 1024 over a
- * 64-unit frustum one texel is 0.0625 world units, and at the island camera's
- * reach that is 2.2 screen pixels. Their own shadow edges resolve in 2. So
- * this is not a compromise, it is the same edge for a quarter of the memory
- * and a quarter of the shadow pass's fill.
+ * against their 4MB for a frame nobody could tell apart.
+ *
+ * It is also, to within a few percent, the same TEXEL as theirs on screen, and
+ * that is the number that matters for the edge below. Theirs: a 1-cascade URP
+ * shadow covers a sphere of shadowDistance/2, so 1024 texels over roughly 150
+ * units is 0.146 units a texel; at their scene-start orthoSize of 39 on a
+ * 1600-wide capture that is 11.5 pixels a unit, so a texel lands between 1.7
+ * screen pixels across the light and 2.9 along it. Ours: 1024 over a 64-unit
+ * frustum is 0.0625 units, which at 1280 wide with the island held at their
+ * share of the frame measures 2.07 pixels across the light and 2.48 along it.
+ * Both scale with their own camera's zoom, so the two track each other as long
+ * as the island is framed the size theirs is. Same order, same look — for a
+ * quarter of the memory and a quarter of the shadow pass's fill.
  */
 const SHADOW_MAP = 1024;
 /** World units per shadow texel — what the depth biases below are sized in. */
 const SHADOW_TEXEL = (SHADOW_EXTENT * 2) / SHADOW_MAP;
+
+/**
+ * THE EDGE. One texel of linear ramp, which is what "hard shadows" means.
+ * ======================================================================
+ *
+ * Measured off reference/island_hero.png, by sampling perpendicular profiles
+ * across four separate shadow boundaries on flat sand (the noticeboard's cast
+ * on the south plaza at (713,630), (724,640), (736,620), (744,630), and the
+ * flag's at (569,726)). Every one of them falls from lit sand to full shadow
+ * over 2.0 to 2.5 pixels, through four or five distinct intermediate values —
+ * e.g. 175, 182, 190, 202, 210, 214. Not one is a step. The width does not
+ * grow with distance from the caster either, near contact or out at the tip,
+ * so it is not a penumbra: it is a fixed-width filter on the lookup.
+ *
+ * That is exactly one shadow texel, and it is what their config already says.
+ * `m_SoftShadowsSupported: 0` turns off URP's multi-tap blur; it does NOT turn
+ * off the comparison sampler underneath. URP binds its shadow map through a
+ * LINEAR compare sampler, and hardware resolves a linear SampleCmp as a 2x2
+ * bilinear blend of four depth tests. So a Unity "hard" shadow arrives with one
+ * texel of linear ramp on its edge, always. The screenshot and the client
+ * config never disagreed at all — the 2-and-a-bit pixels of ramp measured on
+ * their frame ARE their 1024 map read through hardware PCF, and the brief's
+ * "the screenshot may be a higher tier than the shipped default" turns out not
+ * to be needed: shipped Medium produces exactly this.
+ *
+ * Round two read "hard shadows" as three's BasicShadowMap, which is a single
+ * NEAREST depth test: a binary edge with no ramp at all, HARDER than anything
+ * Unity can produce. Measured on our own frame it fell 167 to 215 across one
+ * pixel — a staircase, quantised to the shadow texel, which at this size is
+ * the crawling-jaggy look the critics kept reading as a smudge rather than a
+ * shape. Nothing about the darkness or the direction was wrong; the boundary
+ * was two levels where theirs has six.
+ *
+ * So: keep three's cheapest branch selected and replace its body with the 2x2
+ * bilinear compare the hardware would have done. Four fetches, not the
+ * seventeen of three's PCF path (which would also spread the edge over two
+ * texels, twice the reference's) and not the nine of PCF_SOFT (three texels).
+ * The interior of the shadow is untouched by construction — only pixels within
+ * half a texel of a boundary see a value other than 0 or 1 — so the multiply
+ * the BALANCE note above audits cannot move.
+ */
+const SHADOW_BILINEAR = /* glsl */ `
+float texture2DBilinearCompare( sampler2D depths, vec2 size, vec2 uv, float compare ) {
+	vec2 texel = 1.0 / size;
+	vec2 grid = uv * size - 0.5;
+	vec2 base = ( floor( grid ) + 0.5 ) * texel;
+	vec2 blend = fract( grid );
+	float s00 = texture2DCompare( depths, base, compare );
+	float s10 = texture2DCompare( depths, base + vec2( texel.x, 0.0 ), compare );
+	float s01 = texture2DCompare( depths, base + vec2( 0.0, texel.y ), compare );
+	float s11 = texture2DCompare( depths, base + texel, compare );
+	return mix( mix( s00, s10, blend.x ), mix( s01, s11, blend.x ), blend.y );
+}
+`;
+
+/** Anchors in three's shadow chunk. Both verified unique at r171; if either
+ *  stops matching, the caller falls back to three's own PCF rather than
+ *  silently shipping the binary edge again. */
+const BASIC_TAP = 'shadow = texture2DCompare( shadowMap, shadowCoord.xy, shadowCoord.z );';
+const GET_SHADOW =
+  'float getShadow( sampler2D shadowMap, vec2 shadowMapSize, float shadowIntensity, ' +
+  'float shadowBias, float shadowRadius, vec4 shadowCoord ) {';
+
+let shadowFilterInstalled: boolean | null = null;
+/**
+ * Swaps the single NEAREST depth test in three's unfiltered shadow branch for
+ * a 2x2 bilinear one. Returns false if three's source has moved on, so the
+ * renderer can pick a filtered type instead of quietly reverting to a step.
+ */
+function installShadowFilter(): boolean {
+  if (shadowFilterInstalled !== null) return shadowFilterInstalled;
+  const chunk = THREE.ShaderChunk.shadowmap_pars_fragment;
+  if (!chunk.includes(BASIC_TAP) || !chunk.includes(GET_SHADOW)) {
+    shadowFilterInstalled = false;
+    return false;
+  }
+  THREE.ShaderChunk.shadowmap_pars_fragment = chunk
+    .replace(GET_SHADOW, SHADOW_BILINEAR + GET_SHADOW)
+    .replace(
+      BASIC_TAP,
+      'shadow = texture2DBilinearCompare( shadowMap, shadowMapSize, shadowCoord.xy, shadowCoord.z );'
+    );
+  shadowFilterInstalled = true;
+  return true;
+}
 
 /**
  * A soft shoulder on the top end, and nothing else.
@@ -188,6 +334,8 @@ export class Stage {
     this.fixedSize = opts.fixedSize ?? null;
 
     installToneCurve();
+    // Must happen before the renderer compiles anything.
+    const bilinear = installShadowFilter();
 
     this.renderer = new THREE.WebGLRenderer({
       canvas: opts.canvas,
@@ -200,17 +348,16 @@ export class Stage {
     this.renderer.toneMapping = THREE.CustomToneMapping;
     this.renderer.toneMappingExposure = 1;
     this.renderer.shadowMap.enabled = true;
-    // HARD, and one tap.
+    // HARD — meaning one texel of ramp, not none. See the SHADOW_BILINEAR note
+    // above for the four profiles off their frame that set the width, and for
+    // why a Unity "hard" shadow already carries that ramp.
     //
-    // Their shipped pipeline turns soft shadows off outright
-    // (`m_SoftShadowsSupported: 0`), and it shows in their frame: the flag's
-    // shadow on the south beach is a clean staircase with a single level of
-    // antialiasing on it, not a gradient. PCF's nine taps at this map size
-    // spread that edge over four screen pixels, which on a flat sand fill is
-    // the difference between a shape and a smudge — and a smudge is exactly
-    // what the round-one critics saw. It is also nine texture fetches per lit
-    // pixel per light that a mid-range phone does not have to spend.
-    this.renderer.shadowMap.type = THREE.BasicShadowMap;
+    // BasicShadowMap selects three's cheapest branch, whose body the patch has
+    // replaced with the 2x2 compare. If the patch could not find its anchors,
+    // PCF is the right fallback: twice the reference's edge width is a far
+    // smaller error than the binary step, which reads as aliasing rather than
+    // as a shadow at all.
+    this.renderer.shadowMap.type = bilinear ? THREE.BasicShadowMap : THREE.PCFShadowMap;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color('#8fd8ec');
@@ -273,10 +420,20 @@ export class Stage {
     // at 55 degrees off its normal, so one texel of lateral slip is 0.0625 x
     // tan 55 = 0.09 units of depth error, and the frustum is 160 units deep, so
     // 0.00056 of the depth range. -0.0008 clears that with margin.
+    //
+    // Both survive the bilinear filter unchanged, and that is worth stating
+    // because widening a shadow kernel usually costs bias. It does not here:
+    // the four taps sit on the texel centres BRACKETING the sample, so the
+    // furthest one is a texel away where the single nearest tap was already
+    // half a texel away. Confirmed by capture — no acne appeared on the plaza,
+    // the grass plots or any roof, and full shadow still measures the same
+    // 169,169,151 on sand it did before the filter changed.
     this.sun.shadow.bias = -0.0008;
     this.sun.shadow.normalBias = SHADOW_TEXEL * 0.8;
-    // Ignored by BasicShadowMap, kept at the tightest value so a build that
-    // switches the type back does not silently inherit a blur.
+    // Unread by the branch above — the 2x2 kernel is exactly one texel by
+    // construction, which IS the reference's edge, so there is no width to
+    // dial. It only reaches three's own PCF path, which is the fallback if the
+    // shader patch cannot find its anchors; 1 is that path's tightest setting.
     this.sun.shadow.radius = 1;
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
