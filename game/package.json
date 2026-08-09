@@ -16,7 +16,7 @@
     "audit:layers": "node tools/audit-layers.mjs",
     "audit:sea": "npm run shoot -- island --mobile --hud 0 --out shots/sea.png && node tools/sea-metrics.mjs reference/island_hero.png shots/sea.png --bands",
     "test:roundtrip": "node tools/roundtrip.mjs",
-    "deploy": "cd .. && npx vercel@latest --prod --yes --scope sergiorico1-s-team"
+    "deploy": "cd .. && VERCEL_ORG_ID=team_AJv516WEUzoN5kxHzVKhqoiC VERCEL_PROJECT_ID=prj_cwAZ4E8WKcpmPNAtAfCJuY0cz8jq npx vercel@latest --prod --yes --scope sergiorico1-s-team"
   },
   "dependencies": {
     "three": "^0.171.0"
