@@ -1,6 +1,7 @@
 import { BALANCE, RESOURCE_IDS, buildingSpec, type ResourceId } from './balance';
 import { finishWorkInPlace } from './build';
-import { emptyStore, isFull, producerResource, produceInPlace } from './economy';
+import { emptyStore, grantInPlace, isFull, producerResource, produceInPlace } from './economy';
+import { finishClearInPlace } from './obstacles';
 import { awardChestInPlace, readyCount } from './chests';
 import { addXpInPlace, dailyAvailable, noteInPlace, questDayIndex, rollQuestsInPlace } from './progression';
 import { withRng } from './rng';
@@ -28,6 +29,8 @@ export interface OfflineSummary {
   /** Everything sitting in producers right now, waiting for a tap. */
   pending: Record<ResourceId, number>;
   finished: Array<{ buildingId: number; type: string; toLevel: number }>;
+  /** Obstacles a builder finished clearing while the player was away. */
+  obstaclesCleared: number;
   chestsReady: number;
   freeChestsBanked: number;
   fullProducers: number;
@@ -86,6 +89,21 @@ export function advanceInPlace(state: GameState, to: number): { events: SimEvent
       if (levelled !== null) events.push({ type: 'level-up', level: levelled });
     }
 
+    // --- obstacles ----------------------------------------------------------
+    // Taken from a snapshot: `finishClearInPlace` rebuilds the array, so
+    // iterating the live one would skip the entry after each removal.
+    for (const o of [...state.obstacles]) {
+      if (!o.work || o.work.endsAt > at) continue;
+      const paid = finishClearInPlace(state, o, (madera) => grantInPlace(state, { madera }).madera ?? 0);
+      const levelled = addXpInPlace(state, BALANCE.xp.perObstacle);
+      noteInPlace(state, 'obstacles');
+      events.push({
+        type: 'obstacle-cleared', obstacleId: o.id, kind: o.kind, x: o.x, z: o.z,
+        madera: paid.madera, gems: paid.gems, at,
+      });
+      if (levelled !== null) events.push({ type: 'level-up', level: levelled });
+    }
+
     // --- chests -------------------------------------------------------------
     state.chests.forEach((slot, i) => {
       if (slot.state !== 'unlocking' || slot.endsAt === null || slot.endsAt > at) return;
@@ -101,8 +119,13 @@ export function advanceInPlace(state: GameState, to: number): { events: SimEvent
     }
 
     // --- Cofre Libre at the Muelle, stacking to 2 ---------------------------
+    // Gated on the dock actually standing. It never mattered while every island
+    // began with a Muelle; with OPENING.md's opening it does, and an island with
+    // no harbour quietly posting harbour chests would be the game paying out for
+    // a building the player has not built yet.
     if (state.freeChestAt <= at) {
-      if (state.freeChestsBanked < BALANCE.chests.freeChest.stack) {
+      const dock = state.buildings.some((b) => b.type === BALANCE.chests.freeChest.building && b.level >= 1);
+      if (dock && state.freeChestsBanked < BALANCE.chests.freeChest.stack) {
         state.freeChestsBanked++;
         freeGranted++;
       }
@@ -118,7 +141,8 @@ export function advanceInPlace(state: GameState, to: number): { events: SimEvent
     withRng(state, (rng) => rollQuestsInPlace(state, to, rng));
   }
 
-  return { events, summary: summarise(state, from, before, finished, freeGranted) };
+  const cleared = events.reduce((n, e) => n + (e.type === 'obstacle-cleared' ? 1 : 0), 0);
+  return { events, summary: summarise(state, from, before, finished, freeGranted, cleared) };
 }
 
 /** Produces over one uninterrupted slice and reports producers hitting cap. */
@@ -140,6 +164,9 @@ function nextEventTime(state: GameState, to: number): number | null {
   for (const b of state.buildings) {
     if (b.work && b.work.endsAt <= to) best = Math.min(best, b.work.endsAt);
   }
+  for (const o of state.obstacles) {
+    if (o.work && o.work.endsAt <= to) best = Math.min(best, o.work.endsAt);
+  }
   for (const slot of state.chests) {
     if (slot.state === 'unlocking' && slot.endsAt !== null && slot.endsAt <= to) best = Math.min(best, slot.endsAt);
   }
@@ -155,7 +182,8 @@ function summarise(
   from: number,
   before: Map<number, number>,
   finished: OfflineSummary['finished'],
-  freeChestsBanked: number
+  freeChestsBanked: number,
+  obstaclesCleared: number
 ): OfflineSummary {
   const produced = emptyStore();
   const pending = emptyStore();
@@ -179,6 +207,7 @@ function summarise(
     produced,
     pending,
     finished,
+    obstaclesCleared,
     chestsReady: readyCount(state),
     freeChestsBanked,
     fullProducers,

@@ -63,6 +63,11 @@ describe('the save envelope', () => {
     // first real migration exists rather than the day it is needed.
     const envelope = JSON.parse(serialize(game(), T0)) as SaveEnvelope;
     const older = { ...envelope, version: SAVE_VERSION - 2, state: { ...envelope.state, marks: [] as string[] } };
+    // Saved and restored rather than deleted: MIGRATIONS[SAVE_VERSION - 1] is a
+    // REAL step now, and a `finally` that deletes it left the suite running
+    // against a table with a hole in it — which the next test then read as a
+    // missing migration.
+    const shadowed = { ...MIGRATIONS };
     MIGRATIONS[SAVE_VERSION - 2] = (s) => ({ ...s, marks: [...((s.marks as string[]) ?? []), 'a'] });
     MIGRATIONS[SAVE_VERSION - 1] = (s) => ({ ...s, marks: [...((s.marks as string[]) ?? []), 'b'] });
     try {
@@ -70,15 +75,39 @@ describe('the save envelope', () => {
       eq(out.version, SAVE_VERSION, 'ends at the current version');
       eq(JSON.stringify((out.state as unknown as { marks: string[] }).marks), '["a","b"]', 'both steps ran, in order');
     } finally {
-      delete MIGRATIONS[SAVE_VERSION - 2];
-      delete MIGRATIONS[SAVE_VERSION - 1];
+      for (const key of Object.keys(MIGRATIONS)) delete MIGRATIONS[Number(key)];
+      Object.assign(MIGRATIONS, shadowed);
     }
+  });
+
+  test('a version-1 save loads, and does not grow a wilderness through its roofs', () => {
+    // The first real migration. A v1 island has no `obstacles` at all, and the
+    // sim reads that array on every tick — so without this the save does not
+    // fail to load, it loads and then throws on frame 1.
+    const envelope = JSON.parse(serialize(game(), T0)) as SaveEnvelope;
+    const { obstacles, nextObstacleId, ...withoutTheField } =
+      JSON.parse(JSON.stringify(envelope.state)) as Record<string, unknown>;
+    ok(obstacles !== undefined && nextObstacleId !== undefined, 'the current save does carry them');
+    const v1 = { ...envelope, version: 1, state: withoutTheField };
+
+    const out = migrate(v1 as unknown as SaveEnvelope);
+    eq(out.version, SAVE_VERSION, 'brought up to date');
+    eq(out.state.obstacles.length, 0, 'with an EMPTY field — an old island has already had its opening');
+    eq(out.state.nextObstacleId, 1, 'and a usable id counter');
+    // The real proof: it survives a tick, which is what actually broke.
+    ok(tick(out.state, T0 + HOUR).state.now === T0 + HOUR, 'and it ticks');
   });
 
   test('a version with no migration fails loudly instead of loading a broken state', () => {
     const envelope = JSON.parse(serialize(game(), T0)) as SaveEnvelope;
+    // The lowest version below the current one that has no step. It used to be
+    // written as SAVE_VERSION - 1, which stopped being a gap the day the first
+    // real migration was written.
+    let gap = SAVE_VERSION - 1;
+    while (gap >= 0 && MIGRATIONS[gap]) gap--;
+    ok(gap >= 0, 'there is a version with no migration to test with');
     let message = '';
-    try { migrate({ ...envelope, version: SAVE_VERSION - 1 }); } catch (err) { message = String(err); }
+    try { migrate({ ...envelope, version: gap }); } catch (err) { message = String(err); }
     ok(message.includes('no migration'), `named the gap (got: ${message})`);
   });
 

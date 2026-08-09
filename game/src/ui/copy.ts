@@ -111,6 +111,7 @@ export const t = (key: CopyKey): string => COPY[key];
  */
 export type RefusalKey =
   | 'unknown-building' | 'busy' | 'no-builders' | 'max-level' | 'max-count' | 'cell-occupied'
+  | 'too-close' | 'obstacle' | 'unknown-obstacle'
   | 'town-hall-too-low' | 'not-enough-resources' | 'not-enough-gems' | 'store-full'
   | 'nothing-to-collect' | 'slot-busy' | 'another-chest-unlocking' | 'not-ready' | 'already-claimed';
 
@@ -121,6 +122,11 @@ const REFUSAL: Record<RefusalKey, string> = {
   'max-level': 'Nivel máximo',
   'max-count': 'Ya tienes el máximo',
   'cell-occupied': 'Aquí no cabe',
+  // reference/SPACING.md: nothing abuts. The line names the fix, not the rule —
+  // the player does not need to know the number, only which way to drag.
+  'too-close': 'Demasiado pegado',
+  'obstacle': 'Despeja el terreno',
+  'unknown-obstacle': 'Ya está despejado',
   'town-hall-too-low': 'Requiere Ayuntamiento',
   'not-enough-resources': 'Recursos insuficientes',
   'not-enough-gems': 'Gemas insuficientes',

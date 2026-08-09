@@ -81,7 +81,12 @@ export async function createIslandScene(
   const params = new URLSearchParams(location.search);
   const shot = params.get('shot') === '1';
 
-  const shape = generateIsland(seed, 26);
+  // The grid comes from balance.json, not from a number typed here: the sim
+  // seeds its obstacle field against `island.grid` and the renderer generates
+  // the ground under it, so the two disagreeing by one cell would put trees in
+  // the sea. OPENING.md fixes it at 44 for the life of a save — large from day
+  // one, Clash-style, never growing under a player's feet.
+  const shape = generateIsland(seed, BALANCE.island.grid);
   const mixers: THREE.AnimationMixer[] = [];
 
   const terrain = buildIslandMesh(shape, `${seed}:grain`);

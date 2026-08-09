@@ -32,6 +32,13 @@ export function townHallLevel(state: GameState): number {
   return hall ? Math.max(1, hall.level) : 1;
 }
 
+/** What the hall itself can hold, once it is standing (level ≥ 1). */
+export function townHallStorage(state: GameState, resource: ResourceId): number {
+  const hall = state.buildings.find((b) => buildingSpec(b.type).kind === 'townhall');
+  if (!hall || hall.level < 1) return 0;
+  return BALANCE.townHall.baseStorage[resource] ?? 0;
+}
+
 /* --------------------------------------------------------------------------
  * cap #1 — the producer's own internal capacity
  * ----------------------------------------------------------------------- */
@@ -69,10 +76,20 @@ export function fillTimeMs(building: Building): number {
  * cap #2 — the store
  * ----------------------------------------------------------------------- */
 
-/** The sum of every built store of this resource. Zero before one exists,
- *  which is why a resource with no store cannot be banked at all. */
+/**
+ * The sum of every built store of this resource, plus the Ayuntamiento's own
+ * strongroom.
+ *
+ * That second term exists because of OPENING.md: a day-one island is the
+ * Ayuntamiento and NOTHING else, and a cap summed over store buildings alone is
+ * therefore zero — every obstacle payout, every daily, every chest would land as
+ * nothing and the game could not be started. The hall holds oro and madera only,
+ * and only a little (1 200 madera against the first Almacén's 2 000), so the
+ * store buildings still have a job. Ron and metal still have to earn theirs,
+ * which is the whole point of a store.
+ */
 export function storeCap(state: GameState, resource: ResourceId): number {
-  let cap = 0;
+  let cap = townHallStorage(state, resource);
   for (const b of state.buildings) {
     const spec = buildingSpec(b.type);
     if (spec.kind !== 'store' || spec.resource !== resource || b.level < 1) continue;

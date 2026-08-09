@@ -13,7 +13,12 @@ import type { Cost, ResourceId } from './balance';
  * src/sim/ ever reads a clock.
  */
 
-export const SIM_VERSION = 1;
+/**
+ * 2 — OPENING.md added `obstacles` / `nextObstacleId`. A version-1 save has
+ * neither, and `state.obstacles.some(…)` on `undefined` throws before the first
+ * frame, so this is a bump rather than a defensive default in ten call sites.
+ */
+export const SIM_VERSION = 2;
 
 export type BuildingId = number;
 
@@ -38,6 +43,34 @@ export interface Building {
   stock: number;
   /** Non-null while this building occupies a builder. */
   work: Work | null;
+}
+
+/**
+ * OPENING.md part 3: the empty land is covered in things you clear.
+ *
+ * An obstacle is A CELL PROPERTY, not a scene object — it lives in the save
+ * next to the buildings, it occupies buildable ground on purpose, and it is
+ * removed by the player rather than by a seed. That is the whole difference
+ * from `src/scenes/decor.ts`, which scatters props for looks on ground no
+ * building could ever claim.
+ *
+ * The payout is rolled ONCE, when the field is seeded, and stored. Two reasons:
+ * the tick path stays free of randomness (`advanceInPlace` runs several times a
+ * second on a clone), and the UI can promise the number before the player
+ * spends a builder on it, which is what Clash does.
+ */
+export interface Obstacle {
+  id: number;
+  /** Which balance row times and prices it. */
+  tier: 'small' | 'large';
+  /** The model family the renderer draws — 'palmera', 'roca', 'pecio', … */
+  kind: string;
+  x: number;
+  z: number;
+  /** What clearing it pays, rolled at seed time. */
+  pays: { madera: number; gems: number };
+  /** Non-null while a builder is clearing it. Occupies that builder. */
+  work: { startedAt: number; endsAt: number } | null;
 }
 
 export interface ChestSlot {
@@ -105,6 +138,11 @@ export interface GameState {
   buildings: Building[];
   nextBuildingId: BuildingId;
 
+  /** The uncleared wilderness. Seeded from `seed` so an island is the player's
+   *  own, and shrinking only — nothing regrows it. */
+  obstacles: Obstacle[];
+  nextObstacleId: number;
+
   /** The STORE totals. Capped by the store buildings, not by the producers. */
   store: Record<ResourceId, number>;
   gems: number;
@@ -146,6 +184,7 @@ export type SimEvent =
   | { type: 'quest-complete'; questId: string }
   | { type: 'daily-claimed'; day: number }
   | { type: 'builder-expired'; at: number }
+  | { type: 'obstacle-cleared'; obstacleId: number; kind: string; x: number; z: number; madera: number; gems: number; at: number }
   | { type: 'level-up'; level: number };
 
 export interface SimResult {
@@ -164,6 +203,15 @@ export type Refusal =
   | 'max-count'
   /** §3.15 — the footprint under the finger overlaps something already built. */
   | 'cell-occupied'
+  /** reference/SPACING.md — it fits, but it would abut its neighbour. Buildings
+   *  keep a gap on the order of their own width, because empty ground is what
+   *  makes built ground legible. */
+  | 'too-close'
+  /** OPENING.md — there is a palm, a rock or a wreck standing on that ground.
+   *  Clear it first; that is the tutorial's whole first instruction. */
+  | 'obstacle'
+  /** No obstacle by that id — it was already cleared, probably in another tab. */
+  | 'unknown-obstacle'
   | 'town-hall-too-low'
   | 'not-enough-resources'
   | 'not-enough-gems'

@@ -38,7 +38,9 @@ export interface InvariantRow {
 
 /** Everything the island can bank in `resource` once fully upgraded at `hall`. */
 export function reachableCapacity(resource: ResourceId, hall: number): number {
-  let total = 0;
+  // The hall's own strongroom counts: it is real capacity, and on a day-one
+  // island it is the only capacity there is.
+  let total = BALANCE.townHall.baseStorage[resource] ?? 0;
   for (const [type, spec] of Object.entries(BALANCE.buildings)) {
     if (spec.kind !== 'store' || spec.resource !== resource) continue;
     if (hall < spec.unlockAtTownHall) continue;

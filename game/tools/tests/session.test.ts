@@ -3,7 +3,7 @@ import {
   isProducer, nextAction, openChest, startChest, tick,
 } from '../../src/sim';
 import { describe, eq, ok, test } from './harness';
-import { T0, TZ, find, game } from './fixtures';
+import { T0, TZ, game } from './fixtures';
 
 /**
  * The session loop itself — UI_SPEC §7's "Loop" checklist, as assertions.
@@ -11,12 +11,17 @@ import { T0, TZ, find, game } from './fixtures';
  * the player simply opens a dead island and does not come back.
  */
 
-describe('§4.10 the first session', () => {
-  test('a brand-new island has a bubble waiting in frame 1', () => {
+describe('OPENING.md — the first session', () => {
+  test('frame 1 is one building and a wilderness, and something to tap in both', () => {
+    // The bubble the old opening pre-seeded is gone with the producer that held
+    // it. What replaces it is the thing OPENING.md says is load-bearing: a field
+    // of obstacles, so the first thirty seconds cost nothing and still teach the
+    // builder-and-timer loop.
     const state = createNewGame('first', T0, TZ);
-    const saw = find(state, 'aserradero');
-    ok(saw.stock >= 1, `the first producer is pre-seeded (${saw.stock}) — no bubble is ever empty`);
-    eq(state.gems, 5, 'and the five gems beat 1:32 spends exactly one of');
+    eq(state.buildings.length, 1, 'the Ayuntamiento and nothing else');
+    ok(state.obstacles.length > 40, `and ${state.obstacles.length} obstacles to clear`);
+    ok(state.obstacles.some((o) => !o.work), 'at least one of them free to start on');
+    eq(state.gems, 5, 'and the five gems §4.4 golden rule is written for');
   });
 
   test('the staged reveal starts at three pills, not five', () => {

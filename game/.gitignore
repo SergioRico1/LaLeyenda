@@ -18,3 +18,4 @@ shots/
 
 # Agent scratch scripts
 tools/.tmp_*
+tools/tmp/

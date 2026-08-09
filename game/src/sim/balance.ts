@@ -112,10 +112,22 @@ interface RawBuilding {
   waterfront?: boolean;
 }
 
+interface RawObstacleTier {
+  kinds: string[];
+  time: string;
+  madera: [number, number];
+  gemChance: number;
+  gems: [number, number];
+}
+
 const data = raw as unknown as {
   version: number;
   resources: Record<string, { label: string; store: string; revealAtTownHall: number; pillRow: number }>;
-  townHall: { building: string; levels: Array<{ level: number; cost?: Record<string, number>; time: string; maxBuildingLevel: number; unlocks: string[] }> };
+  townHall: {
+    building: string;
+    baseStorage: Record<string, number>;
+    levels: Array<{ level: number; cost?: Record<string, number>; time: string; maxBuildingLevel: number; unlocks: string[] }>;
+  };
   buildings: Record<string, RawBuilding>;
   builders: {
     start: number; max: number;
@@ -129,7 +141,7 @@ const data = raw as unknown as {
   chests: {
     slots: number; concurrentUnlocks: number;
     types: Record<string, { label: string; rarity: string; time: string; loot: Record<string, [number, number]>; guaranteedSkin?: boolean }>;
-    freeChest: { every: string; stack: number; type: string };
+    freeChest: { every: string; stack: number; type: string; building: string };
     crownChest: { at: number; type: string };
   };
   daily: {
@@ -143,10 +155,11 @@ const data = raw as unknown as {
     targetScalePerTownHall: number;
   };
   obstacles: {
-    maxOnIsland: number; respawnEvery: string;
-    small: { time: string; madera: [number, number]; gemChance: number; gems: [number, number] };
-    large: { time: string; madera: [number, number]; gemChance: number; gems: [number, number] };
+    coverage: number; largeShare: number; clearingRadius: number; thinRadius: number; shoreFeather: number;
+    small: RawObstacleTier;
+    large: RawObstacleTier;
   };
+  island: { grid: number; exponent: number; obstacleRadius: number };
   ranks: {
     perDivisionOfflineBonus: number; divisionsPerRank: number;
     tiers: Array<{ id: string; label: string; at: number }>;
@@ -155,7 +168,7 @@ const data = raw as unknown as {
   xp: { perBuildSecondsSqrt: number; perObstacle: number; perQuest: number; levelCurve: { base: number; growth: number } };
   offline: { graceDays: number; beyondGraceMultiplier: number; longAbsence: string; longAbsenceGiftChest: string };
   invariant: { storageHeadroom: number };
-  placement: { plotFactor: number };
+  placement: { plotFactor: number; clearance: number };
 };
 
 const asCost = (cost: Record<string, number> | undefined): Cost => (cost ?? {}) as Cost;
@@ -195,6 +208,23 @@ for (const [id, b] of Object.entries(data.buildings)) {
   };
 }
 
+export interface ObstacleTier {
+  /** What the renderer may draw for this tier. The sim only stores the id. */
+  kinds: readonly string[];
+  timeMs: number;
+  madera: readonly [number, number];
+  gemChance: number;
+  gems: readonly [number, number];
+}
+
+const obstacleTier = (t: RawObstacleTier): ObstacleTier => ({
+  kinds: t.kinds,
+  timeMs: parseDuration(t.time),
+  madera: t.madera,
+  gemChance: t.gemChance,
+  gems: t.gems,
+});
+
 const chests: Record<string, ChestSpec> = {};
 for (const [id, c] of Object.entries(data.chests.types)) {
   chests[id] = {
@@ -212,6 +242,10 @@ export const BALANCE = {
 
   townHall: {
     building: data.townHall.building,
+    /** The hall's own strongroom — what an island with no store buildings can
+     *  hold. Without it a day-one island (OPENING.md: the Ayuntamiento and
+     *  nothing else) has a capacity of zero and every payout evaporates. */
+    baseStorage: data.townHall.baseStorage as Cost,
     levels: townHallLevels,
     maxLevel: townHallLevels.length,
   },
@@ -246,6 +280,8 @@ export const BALANCE = {
       everyMs: parseDuration(data.chests.freeChest.every),
       stack: data.chests.freeChest.stack,
       type: data.chests.freeChest.type,
+      /** The Cofre Libre is this building's, and only pays while it stands. */
+      building: data.chests.freeChest.building,
     },
     crownChest: data.chests.crownChest,
   },
@@ -276,11 +312,16 @@ export const BALANCE = {
   },
 
   obstacles: {
-    maxOnIsland: data.obstacles.maxOnIsland,
-    respawnEveryMs: parseDuration(data.obstacles.respawnEvery),
-    small: { ...data.obstacles.small, timeMs: parseDuration(data.obstacles.small.time) },
-    large: { ...data.obstacles.large, timeMs: parseDuration(data.obstacles.large.time) },
+    coverage: data.obstacles.coverage,
+    largeShare: data.obstacles.largeShare,
+    clearingRadius: data.obstacles.clearingRadius,
+    thinRadius: data.obstacles.thinRadius,
+    shoreFeather: data.obstacles.shoreFeather,
+    small: obstacleTier(data.obstacles.small),
+    large: obstacleTier(data.obstacles.large),
   },
+
+  island: data.island,
 
   ranks: data.ranks,
   xp: data.xp,

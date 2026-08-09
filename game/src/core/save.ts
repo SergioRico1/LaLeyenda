@@ -52,7 +52,17 @@ export interface SaveEnvelope {
  * rather than an archaeology project.
  */
 export const MIGRATIONS: Record<number, (state: Record<string, unknown>) => Record<string, unknown>> = {
-  // 1: (state) => ({ ...state, newField: 0 }),
+  /**
+   * 1 → 2: OPENING.md's obstacles.
+   *
+   * The field arrives EMPTY rather than seeded, and that is the whole decision
+   * here. A version-1 island is a six-building 26-grid layout with a running
+   * economy; growing a 44-grid wilderness across it would drop palms through
+   * roofs the player already paid for, to hand them a tutorial they are five
+   * hours past. The wilderness is what a NEW island opens on, and an old save
+   * has already had its opening.
+   */
+  1: (state) => ({ ...state, obstacles: [], nextObstacleId: 1 }),
 };
 
 export function migrate(envelope: SaveEnvelope): SaveEnvelope {

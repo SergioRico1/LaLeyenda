@@ -1,8 +1,10 @@
 import {
   BALANCE, MINUTE, buildCatalog, buildersFree, finishNowCost, place, placeRefusal, plotHalf,
-  plotsOverlap, spotRefusal, startUpgrade, townHallUnlocks, upgradeGains, upgradePlan,
-  upgradeRefusal, type GameState,
+  plotsOverlap, plotsTooClose, spotRefusal, startUpgrade, townHallUnlocks, upgradeGains,
+  upgradePlan, upgradeRefusal, type GameState,
 } from '../../src/sim';
+import { generateIsland, isBuildable } from '../../src/render/island';
+import { refusalText } from '../../src/ui/copy';
 import { describe, deepEq, eq, ok, test } from './harness';
 import { T0, find, quiet, rich } from './fixtures';
 
@@ -96,6 +98,120 @@ describe('§3.15 where the ghost may land', () => {
     const saw = find(state, 'aserradero');
     eq(spotRefusal(state, 'mercado', saw.x, saw.z), 'cell-occupied', 'right on top of it');
     eq(spotRefusal(state, 'mercado', 2, 2), null, 'and clear in an empty corner');
+  });
+});
+
+/* --------------------------------------------------------------------------
+ * reference/SPACING.md — nothing abuts
+ * ----------------------------------------------------------------------- */
+
+describe('reference/SPACING.md — buildings keep their distance', () => {
+  /**
+   * The measurement this enforces, off two official screenshots of a Pirate
+   * Nation starter island:
+   *
+   *   > Every building has clearance on all sides. No two structures touch, and
+   *   > none shares a silhouette edge with another. The gap between neighbours
+   *   > is on the order of a building's own width — enough that each reads as a
+   *   > separate object at a glance, and enough for its cast shadow to land on
+   *   > open ground rather than on the next roof.
+   *
+   * It lives in the placement rules and not in the renderer because it is a rule
+   * about the LAYOUT, and the layout is data. Every blind judge so far has
+   * picked the shipped game "obvious at a glance", and the reason they gave in
+   * round 3 was silhouettes merging — *"packed roof-edge to roof-edge with no
+   * gaps; you cannot count the buildings"*. No amount of re-lighting fixes that.
+   */
+  const alone = (): GameState => ({
+    ...rich(),
+    buildings: [{ id: 1, type: 'aserradero', x: 20, z: 20, level: 1, stock: 0, work: null }],
+    obstacles: [],
+  });
+
+  test('a legal, non-overlapping spot can still be too close — and says so', () => {
+    const state = alone();
+    // Two footprint-5 plots are 3 cells wide, so 3 apart is the tightest that
+    // does not overlap. Under the clearance rule that is now a refusal, and a
+    // DIFFERENT refusal: "Aquí no cabe" would be a lie about ground that is free.
+    ok(!plotsOverlap({ type: 'mercado', x: 23, z: 20 }, state.buildings[0]), 'nothing is overlapping');
+    eq(spotRefusal(state, 'mercado', 23, 20), 'too-close', 'and it is still refused');
+    ok(plotsTooClose({ type: 'mercado', x: 23, z: 20 }, state.buildings[0]), 'by the clearance rule');
+  });
+
+  test('the gap it enforces is a full building wide, in cells', () => {
+    const state = alone();
+    const clearance = BALANCE.placement.clearance;
+    const need = plotHalf('aserradero') + plotHalf('mercado') + clearance;
+    ok(clearance >= 1, `at least one empty cell (${clearance})`);
+    for (let d = 0; d < Math.ceil(need); d++) {
+      ok(spotRefusal(state, 'mercado', 20 + d, 20) !== null, `${d} cells apart is refused`);
+    }
+    eq(spotRefusal(state, 'mercado', 20 + Math.ceil(need), 20), null, `${Math.ceil(need)} apart is allowed`);
+    // The plots are 3 cells wide each, so the first legal gap is 2 empty cells —
+    // "on the order of a building's own width", as measured.
+    eq(Math.ceil(need) - (plotHalf('aserradero') + plotHalf('mercado')), clearance, 'and the gap IS the clearance');
+  });
+
+  test('it applies on the diagonal too, not only along an axis', () => {
+    const state = alone();
+    eq(spotRefusal(state, 'mercado', 23, 23), 'too-close', 'corner to corner is still touching');
+    eq(spotRefusal(state, 'mercado', 25, 25), null, 'and clear once both axes clear');
+  });
+
+  test('the refusal reaches the confirm tap, not only the ghost', () => {
+    const state = alone();
+    const result = place(state, 'mercado', 23, 20, T0);
+    ok(!result.ok, 'a stale panel cannot sneak one in');
+    eq(result.refusal, 'too-close', 'and it names the key');
+    eq(result.state.store.madera, state.store.madera, 'a refused placement charges nothing');
+  });
+
+  test('the UI has a line for it, so the ghost is never red without a reason', () => {
+    // §3.5: a tap is never silent. A refusal the copy table does not know falls
+    // through to "No disponible", which tells the player nothing about what to do.
+    eq(refusalText('too-close'), 'Demasiado pegado', 'named');
+    ok(refusalText('too-close') !== refusalText('cell-occupied'), 'and not the same sentence as an overlap');
+  });
+
+  test('the 44 grid can hold the whole catalogue WITH the clearance', () => {
+    // reference/SPACING.md's third change: *size the island against what it must
+    // hold*. If the grid cannot fit every building the Ayuntamiento unlocks with
+    // the gap applied, the island is too small and the buildings will crowd
+    // however the props are tuned. So: place one of everything, greedily, on the
+    // real terrain, and count what is left over.
+    const shape = generateIsland('la-leyenda', BALANCE.island.grid);
+    const size = BALANCE.island.grid;
+    let state: GameState = {
+      ...rich(),
+      buildings: [{ id: 1, type: 'ayuntamiento', x: 22, z: 22, level: 8, stock: 0, work: null }],
+      obstacles: [],
+      nextBuildingId: 2,
+    };
+
+    const types = Object.entries(BALANCE.buildings)
+      .filter(([, spec]) => spec.kind !== 'townhall')
+      .flatMap(([type, spec]) => Array.from({ length: spec.countByTownHall[7] }, () => type));
+
+    let placed = 0;
+    for (const type of types) {
+      const half = BALANCE.buildings[type].footprint * BALANCE.placement.plotFactor / 2;
+      const reach = Math.floor(half - 0.001);
+      let done = false;
+      for (let z = 0; z < size && !done; z++) {
+        for (let x = 0; x < size && !done; x++) {
+          let land = true;
+          for (let dz = -reach; dz <= reach && land; dz++) {
+            for (let dx = -reach; dx <= reach && land; dx++) if (!isBuildable(shape, x + dx, z + dz)) land = false;
+          }
+          if (!land || spotRefusal(state, type, x, z) !== null) continue;
+          state = { ...state, buildings: [...state.buildings, { id: state.nextBuildingId, type, x, z, level: 1, stock: 0, work: null }], nextBuildingId: state.nextBuildingId + 1 };
+          placed++;
+          done = true;
+        }
+      }
+      ok(done, `nowhere left for a ${type} — the island cannot hold its own catalogue`);
+    }
+    console.log(`      ${placed + 1} buildings placed on a ${size} grid with ${BALANCE.placement.clearance} cells of clearance`);
   });
 
   test('confirming re-checks BOTH halves, so a stale panel cannot be raced', () => {

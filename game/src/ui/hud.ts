@@ -55,7 +55,11 @@ export interface ResourceState {
 /** §4.8's next-action resolver, resolved in the sim and handed to the HUD so
  *  there is exactly one implementation of it. `recoger` deliberately cues no
  *  tile: the collect bubbles on the island are already the affordance. */
-export type HudCue = 'construir' | 'cofres' | 'diario' | 'pills' | 'zarpar' | 'recoger' | 'none';
+// 'obras' and 'recoger' both deliberately cue no chrome: the timer bars and the
+// bubbles over the island are already saying it. They exist so that 'none' keeps
+// meaning "the loop is genuinely broken" rather than "the list is short".
+export type HudCue =
+  | 'construir' | 'cofres' | 'diario' | 'pills' | 'zarpar' | 'recoger' | 'obras' | 'none';
 
 export interface HudState {
   level: number;

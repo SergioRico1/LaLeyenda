@@ -41,8 +41,19 @@
     "$doc": [
       "maxBuildingLevel is the Clash rule 'no building outranks the Town Hall'. It is what",
       "keeps the storage invariant (§4.2) satisfiable: without it a level-1 island can reach",
-      "an upgrade whose cost is ten times any storage it can build."
+      "an upgrade whose cost is ten times any storage it can build.",
+      "",
+      "baseStorage is the hall's OWN strongroom, and OPENING.md is why it exists: a day-one",
+      "island is the Ayuntamiento and nothing else, and `storeCap` sums store BUILDINGS — so",
+      "without this the first island can hold zero of everything and every payout, chest and",
+      "daily lands as nothing. Flat rather than a ladder: past the first Almacén (2 000) it is",
+      "noise, and its only job is to make the opening possible. Oro and madera only — ron and",
+      "metal still have to earn their store, which is the whole point of a store."
     ],
+    "baseStorage": {
+      "oro": 600,
+      "madera": 1200
+    },
     "levels": [
       {
         "level": 1,
@@ -494,13 +505,13 @@
           "time": "3d"
         }
       ],
-      "$modelNote": "Was bldg_foundry. That asset is pathological: its clips place parts so far apart in the armature's local space that the model's rendered extent differs four-fold between them, and it stays roughly 20 units across whatever footprint it is normalized to. Every other model in the library normalizes correctly through the same path. A smithy reads as a metal producer just as well, so the asset was swapped rather than the engine bent around one broken export."
+      "$modelNote": "Not bldg_foundry, and re-tested rather than taken on trust. The foundry now normalizes correctly in the model scene — SkeletonUtils rebinding fixed that — but ONLY under its 'action' clip. The island instantiates every building with clip 'idle', and the foundry's idle clip drives the very node carrying its 23x normalizing scale, so the fit is cancelled and it draws at 116 units across a 5-cell footprint. Verified from a [place] log, not inferred. A smithy reads as a metal producer, so the asset stays swapped."
     },
     "almacen": {
       "label": "Almacén",
       "kind": "store",
       "resource": "madera",
-      "model": "bldg_tailor",
+      "model": "bldg_workshop",
       "footprint": 5,
       "unlockAtTownHall": 1,
       "$decision": "count ladder, and levels 7–8 — §4.2's store table stops at 6, which walls the player at Ayto 7 (see the invariant test)",
@@ -588,7 +599,7 @@
       "label": "Banco",
       "kind": "store",
       "resource": "oro",
-      "model": "bldg_tailor",
+      "model": "bldg_bank",
       "footprint": 4,
       "unlockAtTownHall": 1,
       "$decision": "count ladder, and levels 7–8 — same reason as the Almacén",
@@ -676,7 +687,7 @@
       "label": "Bodega",
       "kind": "store",
       "resource": "ron",
-      "model": "bldg_distillery",
+      "model": "bldg_tikibar",
       "footprint": 4,
       "unlockAtTownHall": 2,
       "$decision": "§4.2 gives the Bodega capacities but no costs or times — these mirror the Almacén ladder shifted one rung cheaper",
@@ -742,7 +753,7 @@
       "label": "Depósito",
       "kind": "store",
       "resource": "metal",
-      "model": "bldg_blacksmith",
+      "model": "bldg_tailor",
       "footprint": 4,
       "unlockAtTownHall": 4,
       "$decision": "§4.2 gives the Depósito capacities but no costs or times",
@@ -1094,10 +1105,11 @@
       }
     },
     "freeChest": {
-      "$doc": "Cofre Libre at the Muelle",
+      "$doc": "The Cofre Libre is the MUELLE's, and only pays while the dock stands. It never mattered while every island began with one; OPENING.md's opening is the Ayuntamiento and nothing else, so it does now.",
       "every": "4h",
       "stack": 2,
-      "type": "bronce"
+      "type": "bronce",
+      "building": "muelle"
     },
     "crownChest": {
       "at": 10,
@@ -1240,28 +1252,56 @@
     "targetScalePerTownHall": 0.35
   },
   "obstacles": {
-    "$doc": "§4.7 — cost 0, one builder, and their real job is making the player look at their island.",
-    "maxOnIsland": 12,
-    "respawnEvery": "8h",
+    "$doc": [
+      "§4.7 and OPENING.md part 3, which is the one everybody forgets and is load-bearing:",
+      "without obstacles a day-one island is a vast void with a single building in the middle.",
+      "They cost 0 to clear, occupy one builder for a short timer, and pay a little madera —",
+      "so a brand-new player has something to do in their first thirty seconds that costs",
+      "nothing and teaches the builder-and-timer loop before any building is affordable.",
+      "",
+      "The payout is sized off the opening it has to buy: a fresh island holds 250 madera and",
+      "an Aserradero Nv1 costs 300, so ONE cleared palm always tips the player over it. That is",
+      "the tutorial's first instruction — clear that tree, then put your Aserradero on the",
+      "ground it freed — and it has to be true rather than nearly true.",
+      "",
+      "There is no respawn. Clash regrows them; we do not, because a field that grows back",
+      "into ground the player deliberately cleared is a system fighting the layout they made.",
+      "The field is the wilderness they tame once."
+    ],
+    "coverage": 0.85,
+    "largeShare": 0.2,
+    "clearingRadius": 7.5,
+    "thinRadius": 12,
+    "shoreFeather": 2.5,
     "small": {
+      "$doc": "Palms and loose rock. Thirty seconds is a real timer and no wait at all, which is exactly what a first tap should be. The FLOOR of 50 is load-bearing: a fresh island holds 250 madera against a 300-madera Aserradero, so the very worst roll on the very first palm still buys it, exactly.",
+      "kinds": [
+        "palmera",
+        "roca"
+      ],
       "time": "30s",
       "madera": [
-        5,
-        15
+        50,
+        90
       ],
-      "gemChance": 0.25,
+      "gemChance": 0.15,
       "gems": [
-        0,
-        3
+        1,
+        2
       ]
     },
     "large": {
+      "$doc": "Wrecks and boulders. Fifteen minutes and a real payout — the first thing on the island worth planning around.",
+      "kinds": [
+        "pecio",
+        "penasco"
+      ],
       "time": "15m",
       "madera": [
-        20,
-        40
+        220,
+        380
       ],
-      "gemChance": 0.25,
+      "gemChance": 0.4,
       "gems": [
         2,
         6
@@ -1336,7 +1376,27 @@
     "storageHeadroom": 0.25
   },
   "placement": {
-    "$doc": "§3.15 build mode. `footprint` is how wide the MODEL is fitted, which is deliberately larger than the plot it stands on — the reference islands have roofs and jetties overhanging their neighbours. `plotFactor` is the fraction of that footprint two buildings may not share. 0.6 is the tightest value the shipped layouts already satisfy (the Fundición/Muelle pair sits at 0.667), so it rejects genuine overlaps without invalidating an island the renderer was tuned against.",
-    "plotFactor": 0.6
+    "$doc": "§3.15 build mode. `footprint` is how wide the MODEL is fitted, which is deliberately larger than the plot it stands on — the reference islands have roofs and jetties overhanging their neighbours. `plotFactor` is the fraction of that footprint two buildings may not share. 0.6 is the tightest value the shipped layouts already satisfy (the Fundición/Muelle pair sits at 0.667), so it rejects genuine overlaps without invalidating an island the renderer was tuned against. `clearance` is reference/SPACING.md's measurement made enforceable: on the shipped starter island no two structures touch and the gap between neighbours is on the order of a building's own width, because empty ground is what makes built ground legible. Two cells on top of the plots' own half-widths puts a full building-width of sand between two footprint-5 neighbours (centres 5 cells apart, plots 3 wide) while still letting the catalogue fit the 44 grid twice over.",
+    "plotFactor": 0.6,
+    "clearance": 2
+  },
+  "island": {
+    "$doc": [
+      "OPENING.md: the map is LARGE AND FIXED from day one, Clash-style — it never grows under",
+      "a player's feet, so there is no save migration and no plateau that moves.",
+      "reference/SPACING.md measured the size: the eleven buildings need 283 cells for their",
+      "footprints alone, a 26 grid offers 255, and a 44 grid offers ~911 — 31% coverage, which",
+      "is where the shipped game sits.",
+      "",
+      "obstacleRadius is a MEASURED number, not a taste. src/sim/ owns no terrain (render/",
+      "island.ts generates it, and the sim may not import three.js), so the obstacle field is",
+      "seeded inside the largest superellipse that is buildable for EVERY seed. 0.49 is that",
+      "radius, measured over twenty seeds at grid 44 and re-checked by",
+      "tools/tests/obstacles.test.ts against the real generator. A scene that knows its own",
+      "terrain can widen the field with `reseedObstaclesInPlace`."
+    ],
+    "grid": 44,
+    "exponent": 3.2,
+    "obstacleRadius": 0.62
   }
 }

@@ -1,8 +1,9 @@
 import { BALANCE, type ResourceId } from './balance';
 import {
-  buildersFree, finishNowCost, placeInPlace, placeRefusal, spotRefusal, startUpgradeInPlace,
+  buildersFree, finishNowCost, placeInPlace, placeRefusal, spotRefusalNow, startUpgradeInPlace,
   upgradeRefusal,
 } from './build';
+import { clearRefusal, startClearInPlace } from './obstacles';
 import {
   awardChestInPlace, openChestInPlace, skipCost, startChestInPlace, startRefusal,
 } from './chests';
@@ -27,9 +28,14 @@ export { advanceInPlace, applyLongAbsenceGiftInPlace, type OfflineSummary } from
 export {
   buildersFree, buildersTotal, buildersBusy, gemSpeedupCost, finishNowCost, upgradePlan, placeable,
   buildCatalog, upgradeGains, upgradeRefusal, townHallUnlocks, placeRefusal, spotRefusal,
-  plotHalf, plotsOverlap,
+  spotRefusalNow, plotHalf, plotsOverlap, plotsTooClose,
   type CatalogEntry, type UpgradeGain, type UpgradePlan,
 } from './build';
+export {
+  obstacleAt, obstacleUnder, obstacleTier, obstaclesBusy, clearRefusal,
+  seedObstaclesInPlace, reseedObstaclesInPlace, islandCentreCell, islandRadius,
+  type SeedOptions,
+} from './obstacles';
 export {
   storeCap, storeCaps, producerCapacity, producerRate, producerResource, isProducer, isFull,
   landCargoInPlace,
@@ -128,9 +134,26 @@ export function startUpgrade(state: GameState, buildingId: number, now: number):
  */
 export function place(state: GameState, type: string, x: number, z: number, now: number): ActionResult {
   const next = clone(state);
-  const refusal = placeRefusal(next, type, now) ?? spotRefusal(next, type, x, z);
+  const refusal = placeRefusal(next, type, now) ?? spotRefusalNow(next, type, x, z);
   if (refusal) return fail(next, refusal);
   placeInPlace(next, type, x, z, now);
+  return { state: next, events: [], ok: true };
+}
+
+/**
+ * OPENING.md part 3 — taking a palm, a rock or a wreck off a buildable cell.
+ *
+ * Costs nothing, occupies a builder for a short timer, and pays a little madera
+ * when it finishes. It is the one action a brand-new player can always afford,
+ * which is why it is what the first thirty seconds are made of; the payout does
+ * not land here but in the tick, exactly like a build does, so a clear that
+ * finishes while the app is shut pays the same as one watched.
+ */
+export function clearObstacle(state: GameState, obstacleId: number, now: number): ActionResult {
+  const next = clone(state);
+  const refusal = clearRefusal(next, obstacleId, buildersFree(next, now));
+  if (refusal) return fail(next, refusal);
+  startClearInPlace(next.obstacles.find((o) => o.id === obstacleId)!, now);
   return { state: next, events: [], ok: true };
 }
 
@@ -217,7 +240,7 @@ export function claimQuest(state: GameState, index: number): ActionResult {
  * §4.8 — the next-action resolver, as a mechanism rather than an intention
  * ----------------------------------------------------------------------- */
 
-export type NextAction = 'construir' | 'cofres' | 'diario' | 'pills' | 'zarpar' | 'recoger' | 'none';
+export type NextAction = 'construir' | 'cofres' | 'diario' | 'pills' | 'zarpar' | 'recoger' | 'obras' | 'none';
 
 /**
  * Evaluated on every session start and after every state change; the first hit
@@ -263,6 +286,15 @@ export function nextAction(state: GameState, now: number): NextAction {
   // saying so, so this hit surfaces no chrome. It exists so that 'none' keeps
   // meaning "the loop is genuinely broken" rather than "the list is short".
   if (producers.some((b) => b.stock >= 1)) return 'recoger';
+
+  // ✎ OPENING.md's island opens a second hole in §4.8's five rules, and it is
+  // the mirror of the first: every builder out clearing obstacles, no producer
+  // built yet, so there is no bubble to point at and nothing claimable. The loop
+  // is emphatically NOT broken there — two carpenters are working and the timers
+  // on them are the reason to come back — so 'none' would be a lie. Like
+  // 'recoger' it surfaces no chrome; the timer bars over the island are already
+  // saying it. It is last so it can never mask a hook that is actually tappable.
+  if (state.buildings.some((b) => b.work) || state.obstacles.some((o) => o.work)) return 'obras';
 
   return 'none';
 }

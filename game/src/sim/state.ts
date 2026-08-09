@@ -3,6 +3,7 @@ import { BALANCE, levelSpec } from './balance';
 import { HOUR, MINUTE } from './duration';
 import { emptyStore } from './economy';
 import { newChestTray } from './chests';
+import { islandCentreCell, seedObstaclesInPlace } from './obstacles';
 import { rollQuestsInPlace } from './progression';
 import { initialRngState } from './rng';
 import { SIM_VERSION, type Building, type GameState } from './types';
@@ -12,10 +13,10 @@ import { SIM_VERSION, type Building, type GameState } from './types';
  *
  * Two constructors, and the difference matters:
  *
- *   createNewGame()   the real first launch and THE DEFAULT BOOT. It returns
- *                     §4.10's **exit state at 3:00** — the beat sheet already
- *                     walked — with the beats that are a tap left live, so the
- *                     player performs them instead of finding them spent.
+ *   createNewGame()   the real first launch and THE DEFAULT BOOT. OPENING.md,
+ *                     decided by the user on 9 Aug: **the Ayuntamiento and
+ *                     nothing else**, standing in the middle of a large fixed
+ *                     island covered in obstacles the player clears.
  *
  *   createDemoIsland() a mid-game island at Ayuntamiento 4 with every producer
  *                     and store standing, kept for framing screenshots and for
@@ -32,18 +33,6 @@ function building(id: number, type: string, x: number, z: number, level: number,
   return { id, type, x, z, level, stock, work: null };
 }
 
-/** Puts a job on a building that is `remaining` ms from finishing. */
-function working(b: Building, toLevel: number, now: number, remaining: number): Building {
-  const total = levelSpec(b.type, toLevel).timeMs;
-  b.work = {
-    kind: b.level === 0 ? 'build' : 'upgrade',
-    toLevel,
-    startedAt: now - Math.max(0, total - remaining),
-    endsAt: now + remaining,
-  };
-  return b;
-}
-
 function baseState(seed: string, now: number, tzOffsetMinutes: number): GameState {
   return {
     version: SIM_VERSION,
@@ -54,6 +43,8 @@ function baseState(seed: string, now: number, tzOffsetMinutes: number): GameStat
     rngState: initialRngState(seed),
     buildings: [],
     nextBuildingId: 1,
+    obstacles: [],
+    nextObstacleId: 1,
     store: emptyStore(),
     gems: 0,
     xp: 0,
@@ -81,100 +72,65 @@ function seedQuests(state: GameState): void {
 }
 
 /* --------------------------------------------------------------------------
- * the real first launch — §4.10
+ * the real first launch — OPENING.md
  * ----------------------------------------------------------------------- */
 
 /**
- * §4.10, as state rather than as a script.
+ * Day one, the Clash way. OPENING.md, decided by the user on 9 Aug:
  *
- * The beat sheet ends by naming its own deliverable: *"Exit state at 3:00 — the
- * real deliverable of the session. Six reasons to return across three time
- * scales."* That list, not the 0:00 island, is what a save has to contain,
- * because the loop has to already be turning the first time anyone looks at it.
- * The previous constructor shipped the 0:00 island — five buildings, no Muelle,
- * no chest, no temp builder — and an honest playthrough hit a wall five minutes
- * in with nothing affordable and every timer stopped.
+ *   > **the player starts with the Ayuntamiento and nothing else.** Everything
+ *   > on the island after that, they built.
  *
- * So this returns the 3:00 state, with one rule about which beats are spent:
+ * What that replaces is §4.10's beat sheet, which seeded six buildings and
+ * choreographed an opening onto a working economy — a timer already running, a
+ * producer already full, a chest already brewing. Every one of those was
+ * something the player found rather than did, and the ownership Clash trades on
+ * comes from the opposite: a mature base is entirely the player's own placements.
  *
- *   • Beats that are *scenery* are pre-consumed (the Muelle stands, the tutorial
- *     grants are banked, the hall upgrade is already running).
- *   • Beats that are *a tap* are left live, because a tutorial beat the player
- *     never performs has taught nothing. The chest still has to be opened, the
- *     daily still has to be claimed, and the third builder still has to be
- *     given a job.
+ * Three parts, and they only work together (OPENING.md's own framing):
  *
- * Reason to return, by number, exactly as §4.10 lists them:
- *   1. Ayuntamiento Nv1→2 building, 8m 12s left.
- *   2. Muelle finished; its Cofre Libre cadence started.
- *   3. Aserradero bubble at 35% of its cap and visibly rising.
- *   4. A chest brewing in the tray.
- *   5. Tomorrow's daily named and unclaimed (day 1 of the chain).
- *   6. ¡Zarpar! still shut, with the Astillero named as its key.
+ *  1. **The map is large and FIXED.** 44 cells from the first frame, never
+ *     growing, so there is no plateau moving under anyone's feet and no save to
+ *     migrate. The hall stands in the middle of it.
+ *  2. **One building.** This one.
+ *  3. **The empty land is covered in obstacles.** Part 3 is the one everybody
+ *     forgets and it is load-bearing: without it this island is a void with a
+ *     single building in it. With it, the emptiness is wilderness being tamed,
+ *     and a player with nothing affordable still has something to do in their
+ *     first thirty seconds — which is also where their first 300 madera comes
+ *     from.
+ *
+ * What the player finds, and every number is doing a job:
+ *
+ *   · 250 madera, against an Aserradero Nv1 at 300. Deliberately just short:
+ *     the tutorial's first instruction is *clear that palm, then put your
+ *     Aserradero on the ground it freed*, and the smallest obstacle payout (40)
+ *     always closes the gap. Being handed enough would make the first clear
+ *     optional, and an optional tutorial beat is one nobody performs.
+ *   · Two builders, both idle, so the very first frame has a free carpenter and
+ *     §4.8's rule 1 fires on it. No 24h loan — that was beat 2:25 paying for a
+ *     builder wall this opening does not have.
+ *   · Five gems, the same five §4.4's golden rule is written for.
+ *   · An empty tray and an unclaimed daily. There is no Muelle yet, so there is
+ *     no Cofre Libre cadence to start — the harbour is something to build.
+ *   · `tutorialDone` FALSE. The beat sheet is no longer pre-walked, because the
+ *     tutorial finally has a job that is obvious and physical.
  */
 export function createNewGame(seed: string, now: number, tzOffsetMinutes: number): GameState {
   const state = baseState(seed, now, tzOffsetMinutes);
 
-  const hall = building(1, 'ayuntamiento', 13, 11, 1);
-  // Reason 1. Beat 0:45 hands the player 950 of the 1 000 madera on purpose and
-  // 1:05 starts the job; 8m 12s of the 10m timer is what is left at 3:00.
-  working(hall, 2, now, 8 * MINUTE + 12 * 1000);
-
-  // Reason 3. Beat 0:20's pre-seeded producer, three minutes older: 35% of the
-  // 600 it can hold. The very first bubble is never empty — the one-second
-  // payoff for opening the app is not negotiable.
-  const saw = building(2, 'aserradero', 8, 9, 1, Math.round((levelSpec('aserradero', 1).capacity ?? 600) * 0.35));
-  // Beat 1:15's second timer. §3.11 is written for two bars on screen at once,
-  // and beat 2:25 cannot expose a builder wall with one carpenter still idle —
-  // so both permanent builders are out, and the loan is what frees the player.
-  // It keeps producing at Nv1 while it works, so the bubble above it is real.
-  working(saw, 2, now, 3 * MINUTE + 40 * 1000);
-
-  state.buildings = [
-    hall,
-    saw,
-    building(3, 'mercado', 18, 9, 1, 40),   // beat 0:32, and its own bubble
-    building(4, 'almacen', 13, 7, 1),
-    building(5, 'banco', 14, 17, 1),
-    // Reason 2. Beat 1:15 — placed for a 1m timer, long finished by 3:00.
-    building(6, 'muelle', 22, 18, 1),
-  ];
+  // The middle of the island, derived from the one grid constant rather than
+  // written down twice — so the hall and the obstacle field cannot disagree
+  // about where the centre is.
+  const centre = islandCentreCell();
+  state.buildings = [building(1, 'ayuntamiento', centre, centre, 1)];
   state.nextBuildingId = nextId(state.buildings);
 
-  // Pre-financed (§4.10's own words). The oro is beat 0:32's grant; the madera
-  // is what beat 2:25's gifted carpenter is meant to spend — an Almacén Nv2 at
-  // 1 000 madera is the one job available at Ayuntamiento 1, and a third
-  // builder with no affordable job would be a gift that mocks the player.
-  state.store.oro = 250;
-  state.store.madera = 1000;
+  state.store.madera = 250;
   state.gems = 5;
 
-  // Beat 2:25 — the builder wall is exposed on purpose, then a 24h carpintero
-  // de guardia is gifted. Two permanent builders are on the two timers above,
-  // so the loan is the free one and §4.8's rule 1 fires on the first frame.
-  state.builders.tempUntil = now + BALANCE.builders.tempBuilderMs;
-
-  // Reason 4 and beat 1:32 in one object: a Cofre de Madera already unlocking,
-  // PRE-AGED to inside §4.4's golden-rule window so "Abrir ahora" costs exactly
-  // one of the five gems. That price is the whole lesson — gems buy time, at a
-  // number that cannot hurt, on the session where the player is happiest.
-  const chest = BALANCE.chests.types.madera;
-  state.chests[0] = {
-    type: chest.id,
-    state: 'unlocking',
-    endsAt: now + 4 * MINUTE,
-    totalMs: chest.timeMs,
-  };
-  // The Muelle is standing, so its 4h Cofre Libre clock is already ticking.
-  state.freeChestAt = now + BALANCE.chests.freeChest.everyMs;
-
-  // Beat 0:20 and 0:45 were two taps on a bubble. Nothing else has been done:
-  // the daily is unclaimed (reason 5) and no chest has been opened yet.
-  state.stats.collects = 2;
+  seedObstaclesInPlace(state);
   seedQuests(state);
-
-  // §4.10 has been walked. A guide layer reads this rather than replaying it.
-  state.flags.tutorialDone = true;
   return state;
 }
 
@@ -186,6 +142,15 @@ export function createNewGame(seed: string, now: number, tzOffsetMinutes: number
  * Ayuntamiento 4: five pills (§4.1), every producer and store standing, one
  * builder busy and one free so the free-builder hook is live, and a chest tray
  * mid-cycle. Cells match the layout render/ was tuned against.
+ *
+ * ✎ These cells are a 26-grid layout and they PRE-DATE both the 44 grid and the
+ * clearance rule, so this fixture packs tighter than `place()` would now allow.
+ * That is left alone on purpose: reference/SPACING.md's own measurement is that
+ * eleven buildings need 283 cells and a 26 grid offers 255, so there is no
+ * re-spacing of this layout that would satisfy the rule — the fix is the bigger
+ * island, and the fixture is a framing prop rather than an island anyone plays.
+ * It carries no obstacles for the same reason: a mid-game island has been
+ * cleared, and a field seeded for a 44 grid would not land on this one.
  */
 export function createDemoIsland(seed: string, now: number, tzOffsetMinutes: number): GameState {
   const state = baseState(seed, now, tzOffsetMinutes);

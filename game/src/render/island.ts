@@ -160,6 +160,29 @@ function wallSkin(material: Material): WallSkin {
 const STEP = 0.66; // world height of one terrain step
 
 /**
+ * The shoulder a grass plot rolls over on its way down to the plaza.
+ *
+ * Quoted in world units, not in cells, because it is a property of the STEP —
+ * how far grass spills over a soil edge before the edge goes vertical — and a
+ * step is 0.66 units whatever the grid is. Two of the eleven pixels the step
+ * measures on a 1280 frame, against five of wall under it: enough to be a
+ * surface, not so much that the terrace stops being a terrace. See the note at
+ * the top face for why the shoulder is what answers "no slope or blend".
+ */
+const BEVEL_RUN = 0.28; // how far in the top face is pulled from a dropping edge
+const BEVEL_RISE = 0.2; // how far down the shoulder carries before the wall
+
+/** Blends two packed sRGB colours, `t` of the way from `a` to `b`. */
+function mix(a: number, b: number, t: number): number {
+  const lerp = (shift: number) => {
+    const av = (a >> shift) & 0xff;
+    const bv = (b >> shift) & 0xff;
+    return Math.round(av + (bv - av) * t) & 0xff;
+  };
+  return (lerp(16) << 16) | (lerp(8) << 8) | lerp(0);
+}
+
+/**
  * Sea level, in world units — islandScene parks the water plane here.
  *
  * Mirrored rather than imported because the tiers below are all quoted as
@@ -234,9 +257,34 @@ const T_SHORE = 1;
 const T_BEACH = 2;
 const T_PLATEAU = 3;
 
-/** Generates the home island: a rounded landmass with a beach ring, a raised
- *  grass interior and sand paths carved through it. Deterministic per seed. */
-export function generateIsland(seed: string, size = 40): IslandShape {
+/**
+ * Generates the home island: a rounded landmass with a beach ring, a raised
+ * grass interior and sand paths carved through it. Deterministic per seed.
+ *
+ * SIZE IS 44, AND IT IS FIXED FOR THE LIFE OF A SAVE. OPENING.md chose the
+ * Clash shape — one large map from day one, never growing under a player's
+ * feet — and reference/SPACING.md measured what large has to mean: the eleven
+ * buildings in balance.json need 283 cells for their FOOTPRINTS ALONE, and the
+ * 26 grid this shipped with offers 255. They did not fit even packed edge to
+ * edge, which is why every previous round's crowding survived every previous
+ * round's art fix. 44 measures out at 911 buildable cells on the default seed —
+ * footprints at 31% of the plateau, which is where the shipped game sits.
+ *
+ * Everything below is written in one of two currencies and it matters which:
+ *
+ *   CELLS scale with the grid. The coast's wobble bands, the wet lip's width,
+ *   the beach's depth and the grass plots' sizes are all quoted as a share of
+ *   the radius or of `size`, so the coast profile that was tuned at 26 arrives
+ *   at 44 the same number of cells deep — a bigger plateau ringed by the same
+ *   beach, not a 26-cell island scaled up with a 1.7x-wide shoreline.
+ *
+ *   WORLD UNITS do not. The tiers, the step and the skirt are clearances above
+ *   the sea in metres, and the sea does not care how wide the island is.
+ *
+ * The caller passes `BALANCE.island.grid` so the sim and the renderer cannot
+ * disagree about how big the island is; this default exists for tools.
+ */
+export function generateIsland(seed: string, size = 44): IslandShape {
   const rng = new Rng(seed);
   const c = (size - 1) / 2;
 
@@ -265,7 +313,11 @@ export function generateIsland(seed: string, size = 40): IslandShape {
    * their own tables, or the two lines jog together and the beach stays a
    * constant-width ribbon — which is the one thing the reference's never is.
    */
-  const bands = Math.max(8, size); // ~3.5 cells of coast each, on a 26 grid
+  // One band per cell of grid buys about three and a half cells of rim each at
+  // any size — the rim of a superellipse this square runs roughly 3.5·size
+  // cells — so the jog keeps its pitch as the island grows instead of
+  // stretching into a coast that wobbles once a corner.
+  const bands = Math.max(8, size);
   const notch = (count: number, odds: readonly number[]): number[] =>
     Array.from({ length: count }, () => rng.pick(odds) / c);
   const rimNotch = notch(bands, [0, 0, 0, 1, -1]);
@@ -441,21 +493,36 @@ function stampGrassPlots(cells: TerrainCell[], size: number, rng: Rng): void {
 
   /** Lane of sand kept between two plots. This is what reads as the paths. */
   const GAP = 2;
-  const PLOTS = 14;
 
-  // Down to 3 on a side, but never 3 BY 3. The big rectangles go in first and
-  // leave strips three, four and five cells wide behind them; without something
-  // small enough to take those strips the packer stops after two plots and
-  // calls the plateau full — which is exactly what it started doing when the
-  // coast grew its third tier and took a cell of plateau radius with it. Two
-  // plots on a plateau this size leaves the plaza reading as a desert, and half
-  // of the reference's plateau is green.
-  //
-  // 3x3 is the one shape excluded: the corner clip below takes a cell off each
-  // corner, and on a three-by-three that leaves a plus sign.
+  /*
+   * The plots are sized against the ISLAND, not in absolute cells.
+   *
+   * Count the reference's own fields: the big one behind their town hall runs
+   * about a third of the island's width and a quarter of its depth, and there
+   * are five or six of them on a plateau that is half green. A fixed 9x7 was
+   * that proportion on a 26 grid; left alone on a 44 grid it is confetti —
+   * twenty small rectangles scattered over a plateau, which is precisely the
+   * "raised rectangles pasted on" read, because at that size the eye stops
+   * seeing terraces and starts seeing a repeated object.
+   *
+   * So the largest plot is 0.30 of the grid across by 0.23 deep, the smallest
+   * is a quarter of that, and the number of attempts scales with the area the
+   * packer has to fill. The packer stops itself when nothing fits, so an
+   * over-generous count costs a few thousand table lookups and nothing else.
+   */
+  const wide = Math.max(5, Math.round(size * 0.3));
+  const deep = Math.max(4, Math.round(size * 0.23));
+  /** Never smaller than this on a side. The big rectangles go in first and
+   *  leave strips behind them; something has to be able to take a strip, or the
+   *  packer calls a half-empty plateau full. Excluding the square of the
+   *  smallest side is the one exclusion: the corner clip below takes a cell off
+   *  each corner, and on the smallest square that leaves a plus sign. */
+  const least = size >= 34 ? 4 : 3;
+  const PLOTS = Math.max(12, Math.round(size * 0.5));
+
   const shapes: Array<[number, number]> = [];
-  for (let w = 9; w >= 3; w--) {
-    for (let h = 7; h >= 3; h--) if (w > 3 || h > 3) shapes.push([w, h]);
+  for (let w = wide; w >= least; w--) {
+    for (let h = deep; h >= least; h--) if (w > least || h > least) shapes.push([w, h]);
   }
   shapes.sort((a, b) => b[0] * b[1] - a[0] * a[1]);
 
@@ -484,10 +551,16 @@ function stampGrassPlots(cells: TerrainCell[], size: number, rng: Rng): void {
   for (let n = 0; n < PLOTS; n++) {
     rebuild();
 
-    // Start the size search a little way down the list so the plots are not all
-    // the same rectangle. Largest-first alone tiles the plateau like a
-    // spreadsheet; theirs are visibly different sizes.
-    const from = rng.int(0, Math.min(4, shapes.length - 1));
+    // Start the size search further down the list with every plot placed, so
+    // the fields come out in a HIERARCHY rather than as a set. Largest-first
+    // alone tiles the plateau like a spreadsheet — and on a 44 grid it did
+    // something worse than that: four fields within twenty cells of each other
+    // in area, one backed into each corner of the plateau, which reads as a
+    // four-leaf clover and not as land. Theirs is one big field, a couple of
+    // middling ones and a small one tucked into what is left, and the size
+    // order is most of how the eye tells them apart.
+    const taper = Math.min(shapes.length - 1, n * 3);
+    const from = rng.int(taper, Math.min(shapes.length - 1, taper + 4));
     let best: { ox: number; oz: number; w: number; h: number } | null = null;
     let bestScore = -1;
 
@@ -519,11 +592,45 @@ function stampGrassPlots(cells: TerrainCell[], size: number, rng: Rng): void {
     if (!best) break;
 
     const { ox, oz, w, h } = best;
+
+    /*
+     * The outline is RAGGED, and that is half the answer to "raised rectangles
+     * pasted on".
+     *
+     * A plot is chosen as a rectangle because a rectangle is what a packer can
+     * reason about, but nothing in the reference is one: blow up any of their
+     * grass fields and its edge jogs in and out by a single cell every few
+     * cells, exactly like their coastline does, and for the same reason — the
+     * eye reads a stepped edge as ground that was cut and a ruled edge as a
+     * decal. A rectangle with its four corners nicked, which is what this used
+     * to stamp, still has four straight sides several cells long, and at 44 the
+     * plateau carries twenty of them.
+     *
+     * So each side is pulled in by one cell over runs of about three, off its
+     * own table — four tables, or opposite sides jog together and the plot
+     * stays a rectangle that has merely moved. Removing cells can never make a
+     * plot overlap its neighbour, so the packer's own reservation still holds.
+     */
+    const jog = (n: number): number[] => {
+      const table: number[] = [];
+      let run = 0;
+      for (let i = 0; i < n; i++) {
+        if (i % 3 === 0) run = rng.pick([0, 0, 0, 1]);
+        table.push(run);
+      }
+      return table;
+    };
+    const north = jog(w), south = jog(w), west = jog(h), east = jog(h);
+    // The corner clip grows with the plot: one cell off a small plot reads as a
+    // rounded corner, one cell off a thirteen-wide field reads as a rectangle
+    // with a chip out of it.
+    const round = Math.min(w, h) >= 6 ? 2 : 1;
+
     for (let z = 0; z < h; z++) {
       for (let x = 0; x < w; x++) {
-        // Clip the corners so the plot reads as a rounded rectangle.
-        const corner = Math.min(x, w - 1 - x) + Math.min(z, h - 1 - z);
-        if (corner < 1) continue;
+        if (Math.min(x, w - 1 - x) + Math.min(z, h - 1 - z) < round) continue;
+        if (z < north[x] || z >= h - south[x]) continue;
+        if (x < west[z] || x >= w - east[z]) continue;
         const cell = cells[idx(ox + x, oz + z)];
         cell.height = PLOT;
         cell.material = 'grass';
@@ -631,12 +738,54 @@ export function buildIslandMesh(shape: IslandShape, seed = 'terrain'): THREE.Gro
           : cell.height <= BEACH + 1e-6
             ? SAND_BEACH
             : PALETTE.sand;
+      /*
+       * THE GRASS ROLLS OVER ITS EDGE. It does not stop at one.
+       *
+       * The complaint this answers, in full: "the grass plateaus are raised
+       * rectangles with vertical walls and no slope or blend — they look pasted
+       * on at the wrong Y." Two of those three words were literally true. A
+       * plot was a flat quad at PLOT height with a dead vertical wall dropped
+       * from its outline, and the ONLY thing between the green and the sand was
+       * a hairline where two quads met at 90 degrees. Nothing in the world
+       * ends like that, and the eye reads a shape that does as a sticker.
+       *
+       * So a grass cell whose neighbour is lower has its top face INSET by
+       * `BEVEL_RUN` on that side, and a sloped shoulder carries the grass from
+       * the inset edge out and down to where the wall now starts. Three things
+       * fall out of it and all three are the fix:
+       *
+       *   The silhouette gains a break. A bank has a shoulder, a wall does not,
+       *   and at this scale the shoulder is four screen pixels of grass tilted
+       *   toward the sky against five of near-vertical soil.
+       *
+       *   It catches the light differently, for free. The shoulder's normal
+       *   sits 36 degrees off vertical, so with the sun at elevation 34.7 it
+       *   takes MORE light than either the flat top or the wall under it — a
+       *   lit rim right where the two surfaces used to butt. That is the
+       *   "blend": not a gradient, a third surface.
+       *
+       *   The corners mitre themselves. Each shoulder is a trapezoid whose top
+       *   edge is the inset one and whose bottom edge is the full cell edge, so
+       *   where two sides both drop, the two trapezoids meet exactly along the
+       *   diagonal with no gap to patch and no overlap to z-fight.
+       *
+       * Grass only. The coast's tiers are meant to read as carved blocks — the
+       * reference's do, crisply — and softening the shoreline would also blur
+       * the line the surf breaks on.
+       */
+      const drops = (n: TerrainCell | null) => (n ? n.height : 0) < cell.height;
+      const rolls = cell.material === 'grass';
+      const inXm = rolls && drops(at(x - 1, z)) ? BEVEL_RUN : 0;
+      const inXp = rolls && drops(at(x + 1, z)) ? BEVEL_RUN : 0;
+      const inZm = rolls && drops(at(x, z - 1)) ? BEVEL_RUN : 0;
+      const inZp = rolls && drops(at(x, z + 1)) ? BEVEL_RUN : 0;
+
       const topStrength = cell.material === 'grass' ? 0.022 : 0.01;
       quad(cell.material, [
-        [x0, y, z0],
-        [x0, y, z1],
-        [x1, y, z1],
-        [x1, y, z0],
+        [x0 + inXm, y, z0 + inZm],
+        [x0 + inXm, y, z1 - inZp],
+        [x1 - inXp, y, z1 - inZp],
+        [x1 - inXp, y, z0 + inZm],
       ], [0, 1, 0], jitter(topAlbedo, x, z, topStrength));
 
       /*
@@ -647,17 +796,41 @@ export function buildIslandMesh(shape: IslandShape, seed = 'terrain'): THREE.Gro
        * finished quad, so a band of it can be cut out laterally as well as
        * vertically. That is what lets the rind below break across a cell
        * instead of ruling one straight line the whole width of it.
+       *
+       * `ia`/`ib` are the same edge pulled in by the shoulder above, in the
+       * same a-to-b direction, and are the shoulder's top edge where there is
+       * one. They carry the OTHER two sides' insets as well, which is what
+       * mitres the corner.
        */
       const sides: Array<{
         n: TerrainCell | null;
         a: [number, number];
         b: [number, number];
+        ia: [number, number];
+        ib: [number, number];
+        roll: boolean;
         normal: [number, number, number];
       }> = [
-        { n: at(x, z - 1), a: [x0, z0], b: [x1, z0], normal: [0, 0, -1] },
-        { n: at(x, z + 1), a: [x1, z1], b: [x0, z1], normal: [0, 0, 1] },
-        { n: at(x - 1, z), a: [x0, z1], b: [x0, z0], normal: [-1, 0, 0] },
-        { n: at(x + 1, z), a: [x1, z0], b: [x1, z1], normal: [1, 0, 0] },
+        {
+          n: at(x, z - 1), a: [x0, z0], b: [x1, z0],
+          ia: [x0 + inXm, z0 + inZm], ib: [x1 - inXp, z0 + inZm],
+          roll: inZm > 0, normal: [0, 0, -1],
+        },
+        {
+          n: at(x, z + 1), a: [x1, z1], b: [x0, z1],
+          ia: [x1 - inXp, z1 - inZp], ib: [x0 + inXm, z1 - inZp],
+          roll: inZp > 0, normal: [0, 0, 1],
+        },
+        {
+          n: at(x - 1, z), a: [x0, z1], b: [x0, z0],
+          ia: [x0 + inXm, z1 - inZp], ib: [x0 + inXm, z0 + inZm],
+          roll: inXm > 0, normal: [-1, 0, 0],
+        },
+        {
+          n: at(x + 1, z), a: [x1, z0], b: [x1, z1],
+          ia: [x1 - inXp, z0 + inZm], ib: [x1 - inXp, z1 - inZp],
+          roll: inXp > 0, normal: [1, 0, 0],
+        },
       ];
 
       /** One band of a wall face: the slice of it between two fractions along
@@ -698,6 +871,36 @@ export function buildIslandMesh(shape: IslandShape, seed = 'terrain'): THREE.Gro
         const lit = side.normal[0] > 0;
 
         /*
+         * The shoulder, where this cell's grass rolls over the edge. Emitted
+         * before the wall because the wall now starts underneath it.
+         *
+         * Its albedo is the grass's own, carried a third of the way to the dark
+         * rind under it: a bank is grass thinning over soil, not a separate
+         * green. The normal is the real one — perpendicular to the slope — so
+         * the shading is done by the sun rather than by another hand-solved
+         * pair of constants, which is why this face needs no sun/shade variant
+         * of its own the way the vertical skins do.
+         */
+        const rolled = side.roll ? BEVEL_RISE : 0;
+        const yWall = y - rolled;
+        if (side.roll) {
+          const nx = side.normal[0] * BEVEL_RISE;
+          const nz = side.normal[2] * BEVEL_RISE;
+          const len = Math.hypot(nx, BEVEL_RUN, nz);
+          quad(
+            'grass',
+            [
+              [side.ia[0], y, side.ia[1]],
+              [side.ib[0], y, side.ib[1]],
+              [side.b[0], yWall, side.b[1]],
+              [side.a[0], yWall, side.a[1]],
+            ],
+            [nx / len, BEVEL_RUN / len, nz / len],
+            jitter(mix(PALETTE.grass, lit ? skin.lipSun : skin.lipShade, 0.34), x, z, 0.02)
+          );
+        }
+
+        /*
          * Lip on top, body under it — the two-part edge that makes a step read
          * as a carved block.
          *
@@ -724,11 +927,11 @@ export function buildIslandMesh(shape: IslandShape, seed = 'terrain'): THREE.Gro
          * It costs three quads a face instead of one and buys the only texture
          * on the island that does not need a texture.
          */
-        const seen = Math.max(0.06, y - (coastal ? WATERLINE : floor));
+        const seen = Math.max(0.06, yWall - (coastal ? WATERLINE : floor));
         const depth = coastal ? skin.coast : skin.lip;
         const RIBS = 4;
         for (let rib = 0; rib < RIBS; rib++) {
-          const lipBottom = Math.max(yBottom, y - seen * depth * grain.range(0.55, 1.45));
+          const lipBottom = Math.max(yBottom, yWall - seen * depth * grain.range(0.55, 1.45));
           const s = rib / RIBS;
           const e = (rib + 1) / RIBS;
           // Each rib takes its own roll of the albedo dither too. Their walls
@@ -739,7 +942,7 @@ export function buildIslandMesh(shape: IslandShape, seed = 'terrain'): THREE.Gro
           // see the note over `jitter` for why the tops must stay tight.
           quad(
             'dirt',
-            band(side, s, e, y, lipBottom),
+            band(side, s, e, yWall, lipBottom),
             side.normal,
             jitter(lit ? skin.lipSun : skin.lipShade, x, z, 0.05)
           );

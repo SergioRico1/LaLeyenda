@@ -103,38 +103,55 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
   // --- the sea -------------------------------------------------------------
   // No shore SDF: out here there is no island to break against, so the shader's
   // whole shoreline branch is switched off and the foam is all crest foam.
-  // Measured against reference/sea_combat.png, which is the open-sea frame and
-  // a completely different animal from the island one: it runs mean 97 with 18%
-  // of its pixels carrying any gradient and almost NO white at all (L>200 under
-  // 7% in every band, dark navy below). At the island's gains this scene came
-  // out at mean 129, 47% detail and up to 36% white — a bright flecked field
-  // where the reference has deep water. Foam out here is weather, not surf.
-  // A REAL swell out here.
   //
-  // WAVE_AMPLITUDE is 0.16 because the ISLAND needs a flat waterline: a beach,
-  // a surf collar and a shoreline SDF all assume the sea meets the sand at a
-  // known height. None of that exists in open water, and this scene had been
+  // THE SWELL, at the height it always wanted to be.
+  //
+  // WAVE_AMPLITUDE is 0.16 because the ISLAND needs a flat waterline: a beach, a
+  // surf collar and a shoreline SDF all assume the sea meets the sand at a known
+  // height. None of that exists in open water, and this scene had been
   // inheriting the constraint anyway — rocking an eight-unit hull by a sixth of
   // a unit, which is why the high seas read as a painted floor that drifts.
   //
-  // 0.55 is a compromise found by looking, not by taste. At 0.9 the hull rocked
-  // beautifully and the SURFACE went smooth: a steeper sea grows the world-space
-  // size of a pixel (fwidth) on every slope, the detail fade in water.ts reads
-  // that as "too far to resolve", and the chips and glitter fade out. So the
-  // swell and the texture trade against each other through the mip term, which
-  // nobody had noticed because the island's sea is nearly flat.
+  // It then sat at 0.55 for a round, and the note left here recorded why: at 0.9
+  // the hull rocked beautifully and the SURFACE went smooth, because water.ts
+  // sized a pixel with fwidth(worldPos) and a steeper sea puts more world under
+  // every pixel — so the detail fade read the swell as distance and dissolved
+  // the texture of the water that had the most going on. That fade now keys on
+  // the projection and the view depth and cannot see the surface slope at all,
+  // so the trade is gone and this is simply the amplitude the scene wants: a
+  // 0.95-unit swell under an 8-unit hull, which is weather you can feel from the
+  // deck and still a straight horizon.
   //
-  // Left here for round 4's water pass to resolve properly — the fade should
-  // key on distance rather than on surface slope, and then the amplitude can go
-  // back up.
+  // WHAT THE OPEN SEA GETS INSTEAD OF THE ISLAND'S CORNER.
+  //
+  // lane: 0. The sun lane is the island shot's composition — a wedge in the
+  // bottom-right of a 16:9 frame — and it was implemented in the shader, so this
+  // portrait frame inherited a corner of broken white and a flat wash over the
+  // other four fifths. Out here the same glare is spread over the whole frame
+  // and clumps on its own.
+  //
+  // reef: 1. With no island there is no shore distance to ramp against, so
+  // without the seabed field every pixel of this ocean takes the same stop of
+  // the same ramp. It is the only depth cue the open sea has.
+  //
+  // glitter: 0.42, and the number is a framing decision rather than a taste one.
+  // The shader's glare is weighted toward the near half of the frame, where the
+  // reference island shot puts nearly all of its white — and that shot is 16:9,
+  // so its near half is a strip. This one is a phone held upright: the bottom
+  // HALF of a 430x932 frame is all near water, and at the island's gain the same
+  // weighting laid a raft of chip over a third of the picture. Same sea, twice
+  // as much of it in the part of the ramp that breaks white.
   const water = new Water({
-    size: 620, palette: 'ocean', glitter: 0.2, caps: 0.22,
-    wave: 0.55, waveStep: 0.55 / 4,
+    size: 620, palette: 'ocean', glitter: 0.42, caps: 0.5, lane: 0, reef: 1,
+    wave: 0.95, waveStep: 0.95 / 4,
   });
   water.mesh.position.y = SEA_Y;
   stage.scene.add(water.mesh);
 
-  stage.scene.fog = new THREE.Fog(0x82b0a7, 150, 340);
+  // Matched to the ocean palette's horizon and to the stage's #8FD8EC sky. The
+  // old 0x82b0a7 agreed with neither: it pulled every distant islet, and the far
+  // water with them, toward sage.
+  stage.scene.fog = new THREE.Fog(0x6fbcd6, 150, 340);
 
   // --- the ship ------------------------------------------------------------
   // The hero object, so it is drawn a size larger than its collision radius
@@ -151,7 +168,14 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
   // quads either side of the stern, faded out at the far end.
   const wake = buildWake();
   ship.add(wake);
-  ship.add(blobShadow(5.2));
+  const hullShadow = blobShadow(5.2);
+  ship.add(hullShadow);
+  /** Everything flat that has to lie ON the swell rather than on a plane through
+   *  the ship. See followSea. */
+  const afloat: { mesh: THREE.Mesh; lift: number }[] = [
+    ...wake.children.map((quad) => ({ mesh: quad as THREE.Mesh, lift: 0.10 })),
+    { mesh: hullShadow, lift: 0.05 },
+  ];
 
   // --- pools ---------------------------------------------------------------
   // Sites and mobs come and go as the ship moves. Both are keyed by the id the
@@ -236,14 +260,19 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
    * it is the one drawn deliberately. Cheaper than a shadow map and, at this
    * art scale, more legible than one.
    */
-  function blobShadow(radius: number): THREE.Object3D {
+  function blobShadow(radius: number): THREE.Mesh {
+    // The rotation is baked into the geometry rather than set on the object, so
+    // local +y is world up and followSea can lift a vertex by writing one
+    // number. A disc rotated by its object transform has its normal along local
+    // z and "up" is not an axis of its own vertex data.
+    const geometry = new THREE.CircleGeometry(radius, 12);
+    geometry.rotateX(-Math.PI / 2);
     const disc = new THREE.Mesh(
-      new THREE.CircleGeometry(radius, 12),
+      geometry,
       new THREE.MeshBasicMaterial({
         color: 0x04203f, transparent: true, opacity: 0.34, depthWrite: false,
       })
     );
-    disc.rotation.x = -Math.PI / 2;
     disc.position.y = 0.05;
     disc.renderOrder = 0;
     return disc;
@@ -251,10 +280,13 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
 
   function buildWake(): THREE.Object3D {
     const group = new THREE.Group();
-    const geometry = new THREE.PlaneGeometry(1.6, 16, 1, 1);
-    geometry.rotateX(-Math.PI / 2);
-    geometry.translate(0, 0, -9);
     for (const side of [-1, 1]) {
+      // Its own geometry per quad, and segmented along its length: followSea
+      // rewrites these vertices every frame, so they cannot be shared, and a
+      // sixteen-unit strip needs joints to bend over a twenty-unit swell.
+      const geometry = new THREE.PlaneGeometry(1.6, 16, 1, 12);
+      geometry.rotateX(-Math.PI / 2);
+      geometry.translate(0, 0, -9);
       const material = new THREE.MeshBasicMaterial({
         color: 0xdff2ef, transparent: true, opacity: 0.34, depthWrite: false,
       });
@@ -264,6 +296,37 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
       group.add(quad);
     }
     return group;
+  }
+
+  /**
+   * Lays a flat mesh ON the swell instead of on a plane through the ship.
+   *
+   * At an amplitude of a sixth of a unit nothing needed this. At 0.95 everything
+   * does: a sixteen-unit wake drawn flat across a twenty-unit swell spends half
+   * its length buried in the water behind the ship — where the opaque sea
+   * simply occludes it — and the other half hovering over a trough. Same for a
+   * five-unit shadow disc under a hull that is riding one crest while its own
+   * shadow covers the next.
+   *
+   * Each vertex is lifted to the height of the water it lands on. The mesh's
+   * world matrix maps its local xz into the world for the lookup, and the answer
+   * comes back through the same offset — exact under the yaw and translation
+   * that dominate here, and a fraction of a degree out under the ship's heel,
+   * which is a fraction of a degree of a shadow.
+   */
+  const AFLOAT_PT = new THREE.Vector3();
+  function followSea(mesh: THREE.Mesh, lift: number, time: number): void {
+    const attr = mesh.geometry.getAttribute('position') as THREE.BufferAttribute;
+    mesh.updateWorldMatrix(true, false);
+    // Where the mesh's own origin plane sits in the world, so a world height can
+    // be written back as a local one.
+    const originY = AFLOAT_PT.set(0, 0, 0).applyMatrix4(mesh.matrixWorld).y;
+    for (let i = 0; i < attr.count; i++) {
+      AFLOAT_PT.set(attr.getX(i), 0, attr.getZ(i)).applyMatrix4(mesh.matrixWorld);
+      const sea = water.surfaceAt(AFLOAT_PT.x, AFLOAT_PT.z, time);
+      attr.setY(i, SEA_Y + sea.height + lift - originY);
+    }
+    attr.needsUpdate = true;
   }
 
   /**
@@ -296,18 +359,25 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
 
     // A shallow shelf, then the sand, then whatever the site is for. The shelf
     // is what stops an islet reading as a coin dropped on the water.
+    //
+    // Both are sunk far enough to survive a trough. The sea now drops most of a
+    // unit below its own level twice a second, and these were sized for a flat
+    // one: the shelf's top face sat at −0.09, so every trough lifted a bright
+    // cyan slab out of the water beside each islet, and the sand ended at −0.35,
+    // so anything that cleared the shelf showed daylight under the island. The
+    // shelf goes below the deepest trough and the sand runs down past it.
     const shelf = new THREE.Mesh(
-      new THREE.CylinderGeometry(site.radius * 1.5, site.radius * 1.6, 0.3, 9),
+      new THREE.CylinderGeometry(site.radius * 1.5, site.radius * 1.6, 3.0, 9),
       new THREE.MeshLambertMaterial({ color: 0x3fa8c4 })
     );
-    shelf.position.y = -0.24;
+    shelf.position.y = -2.7;
     group.add(shelf);
 
     const sand = new THREE.Mesh(
-      new THREE.CylinderGeometry(site.radius, site.radius * 1.12, 1.5, 9),
+      new THREE.CylinderGeometry(site.radius, site.radius * 1.12, 5.0, 9),
       new THREE.MeshLambertMaterial({ color: 0xe8d9b4 })
     );
-    sand.position.y = 0.4;
+    sand.position.y = -1.35;
     sand.castShadow = true;
     group.add(sand);
 
@@ -555,13 +625,22 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
       const sea = water.surfaceAt(voyage.x, voyage.y, elapsed);
       ship.position.set(voyage.x, SEA_Y + sea.height, voyage.y);
       ship.rotation.y = facing(voyage.heading);
-      // The slopes are six times steeper than the gains below were tuned for.
-      ship.rotation.z = -voyage.helm.turn * 0.13 - sea.dx * 0.45;
-      ship.rotation.x = -sea.dz * 0.45;
+      // Heel is the surface slope, not a fraction of it chosen by eye: a hull
+      // that rides a 0.95-unit swell without leaning into it reads as a lift,
+      // and the slope is the one number that is already right. Held back to
+      // about two thirds, because a real hull's mass lags the water it is on and
+      // because the mast is eight units long — at the full slope the topsail
+      // sweeps a quarter of the frame.
+      ship.rotation.z = -voyage.helm.turn * 0.13 - sea.dx * 0.68;
+      ship.rotation.x = -sea.dz * 0.68;
       const way = voyage.speed / SHIPS[voyage.shipType].speed;
       for (const quad of wake.children) {
         (quad as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>).material.opacity = 0.34 * way;
       }
+      // The wake and the hull's shadow are laid on the water itself. Without
+      // this they are flat planes through a ship on a 0.95-unit sea, and the
+      // sea eats whichever half of them is behind a crest.
+      for (const item of afloat) followSea(item.mesh, item.lift, elapsed);
 
       water.mesh.position.x = Math.round(voyage.x / 2) * 2;
       water.mesh.position.z = Math.round(voyage.y / 2) * 2;

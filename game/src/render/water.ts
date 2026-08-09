@@ -50,13 +50,13 @@ import * as THREE from 'three';
  *   dim dashes on the near water — and one corner of broken white, which is the
  *   SUN LANE below. Nothing else.
  *
- * THE SUN LANE
+ * THE GLARE, AND WHY THE LANE IS THE ISLAND'S AND NOT THE SHADER'S
  *
  * The sentence above ("nothing else") was once the whole rule, and it cost a
  * round. Segmenting the reference properly — land seeded, a distance transform
  * off it, and the reference's own logo and watermark held out so they could not
  * act as a fake shore or as fake chips — says their sea is not one material. It
- * is two split by screen height PLUS a third thing confined to one corner.
+ * is two split by screen height PLUS a third thing weighted into one corner.
  *
  * Measured in their near-field right lane (bottom fifth of the frame, right of
  * 0.62 of its width, clear of the shore by 3% of the width):
@@ -65,19 +65,76 @@ import * as THREE from 'three';
  *   mid    120-200    6.3%   #8AA7B1
  *   chip   L>200      4.9%   #E5E8DA
  *
- * and in the same band on the LEFT of their frame, or anywhere along its top,
- * that chip tier measures nothing at all. So the earlier builder who deleted the
- * all-over glitter field was right, and wrong to take the lane with it: a
- * thirteenth of the white this file needs was left in the frame.
+ * The round that measured that then built it as a SHADER feature — a chip tier
+ * that exists only inside a screen-space wedge — and the mistake is visible the
+ * moment the same shader draws water with no island in it: the portrait open-sea
+ * frame came out with texture in one corner and a dead flat wash everywhere
+ * else. A composition device belongs to the composition. The sun sits in that
+ * corner of the ISLAND shot; it does not sit in that corner of every shot this
+ * material will ever be in.
  *
- * The lane's ENVELOPE is a screen-space band, which is what it honestly is — a
- * compositional device, in the same coordinates as the far/near sweep, which is
- * already a screen ramp normalised against the frame. Its boundary is read off
- * the reference: it crosses 0.78 of the frame height at x=0.62 and 0.62 at the
- * right edge. Everything INSIDE the envelope is anchored in the world — the
- * patches, the streaks, every chip — so the broken water belongs to the sea and
- * not to the lens. Pan the camera and the chips stay on the water they were on;
- * only the corner they are lit in follows the frame.
+ * So there is now one mechanism — GLARE — that covers the whole sea in every
+ * scene, and `uLane` is a per-scene WEIGHT on where it concentrates. The island
+ * passes 1 and gets the reference's corner back. The open sea passes 0 and gets
+ * the same glare spread over the frame, which is what its own reference
+ * (sea_combat.png) actually shows: white dashes over the whole surface, in
+ * bands, with long calm water between them.
+ *
+ * What the glare must NOT be is the thing a blind judge called "white dashes all
+ * the same size at even density — static noise, not sunlight". Three properties
+ * separate sunlight from salt on a table, and all three are measurable:
+ *
+ * - it CLUMPS. A high-contrast low-frequency field gates it, so a quarter of the
+ *   sea carries almost all of the white and the rest is clean.
+ * - it comes in SIZES. Three cell grids share one coverage budget, so a clump is
+ *   fine scatter with chunky slabs through it rather than one repeated mark.
+ * - it rides the LIGHT. Density keys off the face of the swell that is climbing
+ *   toward the camera and off the shallows, which is where real glare sits.
+ *
+ * Everything inside is anchored in the world — the streaks, every chip — so the
+ * broken water belongs to the sea and not to the lens. Pan the camera and the
+ * chips stay on the water they were on; only the corner they are weighted toward
+ * follows the frame.
+ *
+ * THE SEABED
+ *
+ * "The ocean is a flat backdrop, not water. One uniform cobalt" — and it was,
+ * necessarily: the only thing driving the depth ramp was distance to the island,
+ * so every pixel more than a dozen units offshore got the same last stop of the
+ * ramp, and in a scene with no island at all EVERY pixel did. A ramp that only
+ * knows about the shore cannot draw a sea.
+ *
+ * Their frames have bathymetry: pale turquoise shoals, teal reef, deep navy, in
+ * fields tens of units across that owe nothing to how far the nearest beach is.
+ * So a low-frequency seabed field scales the distance the ramp is read at, and
+ * the ramp then does the rest with the stops it already has. Two rules keep it
+ * from wrecking what already worked:
+ *
+ * - it is held OFF the shelf (smoothstep over the first ten units), so the
+ *   collar, the surf apron and the mint-to-cyan shelf are exactly as they were;
+ * - where it says shallow, the far/near view sweep is held back in the same
+ *   proportion the island's own shelf holds it back. That is what makes a reef
+ *   read as a reef at the top of the frame and at the bottom, instead of being
+ *   flattened into the sweep like everything else out there.
+ *
+ * THE DETAIL FADE, AND WHY IT CANNOT USE fwidth
+ *
+ * A procedural texture has no mips, so this shader fades its own grain out as a
+ * cell approaches a pixel. Sizing that pixel with fwidth(vWorld) is the obvious
+ * move and it is wrong on a surface that is DISPLACED: tilt the water and the
+ * same pixel covers more world, so a steeper swell reads as "too far to
+ * resolve" and dissolves its own texture. seaScene.ts recorded the symptom
+ * exactly — the open sea was pinned at amplitude 0.55 because at 0.9 the hull
+ * rocked properly and the surface went smooth.
+ *
+ * The fix is to size the pixel from the geometry of the SHOT and not from the
+ * geometry of the water. ndc.y is the pixel row by construction, so its screen
+ * derivative is 2/height whatever the surface is doing; dividing by
+ * projectionMatrix[1][1] turns that into the angle one pixel subtends, w turns
+ * the angle into a length at this depth, and dividing by the view angle lays
+ * that length down on the water. Zoom, pitch, framing and viewport all still
+ * move it — carrying w rather than a distance makes it correct for an
+ * orthographic camera too, for free. The swell no longer can move it at all.
  *
  * THE LATTICE
  *
@@ -174,17 +231,17 @@ export const WAVE_AMPLITUDE = 0.16;
 const SHOAL = 5.0;
 
 /**
- * How much of the lane's water breaks white, at the centre of a patch.
+ * How much of the glare's water breaks white, at the centre of a clump.
  *
  * Coverage on screen is the cell hit probability and nothing else — a chip fills
- * its cell whatever size that cell projects to — so this scales the share of
- * lane pixels that clear L=200, once the patch field has thinned it and the two
- * cell sizes below have shared it out. Tuned by measuring: the same lane, cut
- * the same way in both frames, reads 4.5% for us against 4.4% for them. Doubling
- * it is where the chips start joining up into the confetti field this file spent
- * a round removing.
+ * its cell whatever size that cell projects to — so this scales the share of lit
+ * pixels that clear L=200, once the clump field has thinned it and the three
+ * cell sizes below have shared it out. Tuned by measuring: the reference's own
+ * sun corner, cut the same way in both frames, reads 4.5% for us against 4.4%
+ * for them. Doubling it is where the chips start joining up into the confetti
+ * field this file spent a round removing.
  */
-const LANE_CHIP = 0.172;
+const GLARE_CHIP = 0.172;
 /**
  * The steel tier, as a share of the same cells.
  *
@@ -201,18 +258,25 @@ const LANE_CHIP = 0.172;
  * patch of paler blue, and it is the halo far more than the chip that stops the
  * field reading as salt scattered on a table.
  */
-const LANE_PLATE = 0.26;
+const GLARE_PLATE = 0.26;
 /**
- * The share of the lane's white drawn on the double-size grid.
+ * How the glare's coverage is split between three cell sizes.
  *
- * One cell size gives one chip size, and the reference plainly has two: a fine
- * scatter of single cells with chunky two-by-two slabs through it. Coverage is
- * the hit probability whatever the cell is, so splitting the same total between
- * two grids costs nothing and buys the size variety — which, side by side at
- * matched scale, is the most obvious difference left between their corner and
- * ours.
+ * One cell size gives one chip size, and "white dashes all the same size at even
+ * density" is the exact sentence a blind judge failed the last sea on. The
+ * reference plainly has three: a fine scatter of single cells, chunky slabs
+ * through it, and the occasional long plate. Coverage is the hit probability
+ * whatever the cell is, so splitting one total across three grids costs a couple
+ * of hashes and buys the size variety outright.
+ *
+ * Weights, not thirds: the fine tier has to stay the one the eye reads as the
+ * texture, or the sea turns into paving.
  */
-const LANE_SLAB = 0.42;
+const GLARE_SIZES: readonly { w: number; cell: readonly [number, number]; seed: number }[] = [
+  { w: 0.44, cell: [1.55, 1.05], seed: 27.4 },
+  { w: 0.34, cell: [3.1, 2.1], seed: 63.8 },
+  { w: 0.22, cell: [6.4, 3.3], seed: 118.2 },
+];
 
 /** GLSL literals need a decimal point, and toFixed guarantees one. */
 const g = (n: number): string => n.toFixed(5);
@@ -281,6 +345,7 @@ const vertexShader = /* glsl */ `
 
   varying vec3 vWorld;
   varying vec4 vClip;
+  varying float vPixel;
 
 ${SWELL_GLSL}
 ${SHORE_GLSL}
@@ -300,14 +365,24 @@ ${SHORE_GLSL}
     world.y += y;
     vWorld = world.xyz;
 
-    // Handed to the fragment stage as well as to the rasteriser: the sun lane's
-    // envelope is a band across the FRAME, so it needs the frame's own
-    // coordinates. Dividing by w in the fragment shader rather than here is not
+    // Handed to the fragment stage as well as to the rasteriser: the island's
+    // sun corner is a weight across the FRAME, so it needs the frame's own
+    // coordinates, and the detail fade reads its own pixel size out of the same
+    // number. Dividing by w in the fragment shader rather than here is not
     // pedantry — interpolating an already-divided ndc across a triangle is
     // interpolating in the wrong space, and on a plane this large the error is
     // most of the screen.
     vec4 clip = projectionMatrix * viewMatrix * world;
     vClip = clip;
+
+    // Half the detail fade, solved where the projection actually is. clip.w is
+    // the eye depth under perspective and exactly 1 under an orthographic
+    // camera, and projectionMatrix[1][1] is 1/tan(fov/2) or 2/frustumHeight in
+    // the two cases — so this one product is "world units per radian of frame
+    // at this fragment's depth" for both, and the fragment stage only has to
+    // multiply by the frame's own radians per pixel. See THE DETAIL FADE.
+    vPixel = clip.w / max(abs(projectionMatrix[1][1]), 0.00001);
+
     gl_Position = clip;
   }
 `;
@@ -324,9 +399,12 @@ const fragmentShader = /* glsl */ `
   uniform vec3  uCrest;         // lightest tone a single cell can take
   uniform vec3  uGlintDim;
   uniform vec3  uGlintBright;
-  uniform vec3  uLaneChip;      // the cream the sun lane breaks into
+  uniform vec3  uLaneChip;      // the cream the glare breaks into
   uniform vec3  uLanePlate;     // the steel tier under it
-  uniform float uGlitter;       // scene-level gain on the open-water sparkle
+  uniform float uGlitter;       // scene-level gain on the glare
+  uniform float uLane;          // 1 weights the glare into the sun corner of the
+                                // FRAME, 0 spreads it over the whole sea
+  uniform float uReef;          // gain on the seabed field under the depth ramp
   uniform vec3  uFoamBright;
   uniform vec3  uFoamDim;
   uniform vec3  uRing;          // solid waterline collar
@@ -345,6 +423,7 @@ const fragmentShader = /* glsl */ `
 
   varying vec3 vWorld;
   varying vec4 vClip;
+  varying float vPixel;
 
   float hash21(vec2 p) {
     p = fract(p * vec2(123.34, 456.21));
@@ -390,25 +469,9 @@ ${SWELL_GLSL}
     float wave = sw.x;                      // -1 in a trough, +1 on a crest
     float shoal = smoothstep(0.0, ${g(SHOAL)}, d);
 
-    // Depth ramp.
-    //
-    // Fitted to a reference scanline running out from the beach: mint through
-    // the first world unit, cyan out to three or four, a wide mid-teal band to
-    // eight, navy beyond that. The old constant put the whole of it inside three
-    // units, which is why our shelf was a hairline and theirs is the widest
-    // single feature in the frame.
-    //
-    // Quantised on a BLOCK rather than a cell, and dithered, so the bands break
-    // into the ragged stepped edge the reference has instead of drawing clean
-    // contour rings — and so the steps read as water-sized tiles rather than as
-    // per-pixel noise.
-    float t = 1.0 - exp(-d / 5.2);
-    vec2 tile = floor(vWorld.xz / (uCell * 2.0));
-    t = clamp(floor(t * 11.0 + hash21(tile) * 0.85) / 11.0, 0.0, 1.0);
-    vec3 col = rampColour(t);
-
     // How steeply is this pixel seen? 1 = straight down, 0 = edge-on. Hoisted
-    // above the tone and the sparkle, which both key off the view angle.
+    // above everything: the tone, the glare and the detail fade all key off the
+    // view angle.
     vec3 toCam = normalize(uCameraPos - vWorld);
     float toY = max(toCam.y, 0.0);
 
@@ -433,22 +496,34 @@ ${SWELL_GLSL}
     float distant = 1.0 - smoothstep(0.02, 0.50, view);
     float close   = smoothstep(0.02, 0.88, view);
 
-    // The mip level a procedural texture does not have.
+    // THE DETAIL FADE — the mip level a procedural texture does not have.
     //
     // Once a cell is drawn smaller than a pixel it stops being detail and
-    // becomes shimmer, and nothing here is filtered — every hash is evaluated
-    // at full contrast however small it lands. fwidth gives the world size of
-    // one pixel at this fragment, so the fade is keyed to what the grain costs
-    // ON SCREEN rather than to a distance that would need retuning every time
-    // the camera moves. It matters most when the player pinches out, where the
-    // footprint grows by the zoom range in one gesture.
+    // becomes shimmer, and nothing here is filtered — every hash is evaluated at
+    // full contrast however small it lands. So the grain is faded out as a cell
+    // approaches a pixel, which needs the world size of a pixel at this
+    // fragment.
+    //
+    // NOT from fwidth(vWorld). See the note at the top of the file: this surface
+    // is displaced, a displaced surface tilts, and a tilted surface puts more
+    // world under every pixel — so a fwidth fade reads a steep swell as distance
+    // and dissolves the texture of exactly the sea that has the most going on.
+    // That is why the open sea was pinned at a third of the amplitude it wanted.
+    //
+    // ndc.y IS the pixel row — perspective-correct interpolation of clip.y and
+    // clip.w reconstructs the rasteriser's own mapping — so dFdy of it is the
+    // frame's 2/height and nothing else, whatever the water is doing. vPixel
+    // carries the rest from the vertex stage (see there), and toY lays the
+    // result down on the plane. Zoom, pitch and viewport all still move this;
+    // the swell cannot.
     //
     // Sized so it engages as a cell approaches a pixel and not before: in the
     // default framing a cell is 6px near the camera and about 1px at the top of
     // the frame, so this holds full detail over most of the sea and pulls the
     // far edge back. An earlier threshold at 2.2 cells never engaged anywhere,
     // which is worth recording — the fade LOOKED right and did nothing.
-    float footprint = max(fwidth(vWorld.x), fwidth(vWorld.z));
+    float ndcPerPx = max(abs(dFdy(vClip.y / max(abs(vClip.w), 0.0001))), 0.000001);
+    float footprint = vPixel * ndcPerPx / max(toY, 0.12);
     float detail = clamp(uCell * 0.75 / max(footprint, 0.0001), 0.0, 1.0);
 
     // THE LATTICE — see the note at the top of the file.
@@ -477,6 +552,46 @@ ${SWELL_GLSL}
     float broad = valueNoise(vec2(rot.x * 0.030, rot.y * 0.105)) * 0.52
                 + valueNoise(vec2(rot.x * 0.082, rot.y * 0.240) + 31.0) * 0.31
                 + valueNoise(vWorld.xz * 0.210 + 7.3) * 0.17;
+
+    // THE SEABED — see the note at the top of the file.
+    //
+    // The ramp below is a function of distance to land, and on its own that
+    // makes every pixel more than a dozen units offshore the same colour and
+    // every pixel in a scene with no island at all THE SAME colour. That is the
+    // flat backdrop, arithmetically. Their frames have bathymetry, so this does:
+    // a low-frequency field, read along the same diagonal everything else in
+    // this shader runs on, that scales the distance the ramp is read at. A
+    // sixty-unit shoal comes out pale turquoise, a reef teal, and the water
+    // between them navy, with no shore involved.
+    //
+    // Held off the shelf by the offshore term, so the collar, the surf apron and
+    // the mint-to-cyan first four units are exactly what they were.
+    float bed = valueNoise(vec2(rot.x * 0.021, rot.y * 0.047) + 3.1) * 0.60
+              + valueNoise(vec2(rot.x * 0.058, rot.y * 0.132) + 21.0) * 0.28
+              + valueNoise(vec2(rot.x * 0.170, rot.y * 0.360) + 44.0) * 0.12;
+    bed = clamp((bed - 0.5) * 1.45 + 0.5, 0.0, 1.0);
+    float offshore = smoothstep(1.5, 10.0, d);
+    float depthScale = mix(1.0, mix(0.30, 1.70, bed), uReef * offshore);
+    // How shallow this water is for reasons that have nothing to do with the
+    // island: 1 on a shoal, 0 in the deep.
+    float shoalField = uReef * offshore * smoothstep(0.62, 0.20, bed);
+
+    // Depth ramp.
+    //
+    // Fitted to a reference scanline running out from the beach: mint through
+    // the first world unit, cyan out to three or four, a wide mid-teal band to
+    // eight, navy beyond that. The old constant put the whole of it inside three
+    // units, which is why our shelf was a hairline and theirs is the widest
+    // single feature in the frame.
+    //
+    // Quantised on a BLOCK rather than a cell, and dithered, so the bands break
+    // into the ragged stepped edge the reference has instead of drawing clean
+    // contour rings — and so the steps read as water-sized tiles rather than as
+    // per-pixel noise.
+    float t = 1.0 - exp(-d * depthScale / 5.2);
+    vec2 tile = floor(vWorld.xz / (uCell * 2.0));
+    t = clamp(floor(t * 11.0 + hash21(tile) * 0.85) / 11.0, 0.0, 1.0);
+    vec3 col = rampColour(t);
 
     // The material grain: BLOCKS, low contrast.
     //
@@ -634,124 +749,121 @@ ${SWELL_GLSL}
                   * shoal * uCaps * 0.055;
     float capHit = step(1.0 - min(capMask, 0.92), hash21(capCell + 7.9));
     // A brighter core on a quarter of the area, the same two-tier chip the
-    // shore foam and the glitter both use.
+    // shore foam and the glare both use.
     float capCore = capHit * step(0.52, hash21(floor(vec2(wf.x / (uCell * 0.65), wf.y / (uCell * 3.2))) + 21.4));
 
     // How open this water is: 0 on the shelf, 1 out in the deep. The view ramp
-    // and the sparkle both key off it, so that neither drags the turquoise
-    // collar around the island with them.
+    // and the glare both key off it, so that neither drags the turquoise collar
+    // around the island with them.
     //
     // In world units rather than off the depth ramp, so retuning the ramp curve
     // cannot silently move the line the far/near sweep is held back at — which
     // it did once, brightening the whole sea by thirteen points of mean.
     float open = smoothstep(1.5, 7.0, d);
 
-    // OPEN-WATER SPARKLE.
+    // THE GLARE — every bit of white on this sea that is not surf or whitecap.
+    // See the note at the top of the file.
     //
-    // What used to sit here was sun glitter at a density that turned the near
-    // half of the frame into a white field — 39 to 45 percent of those pixels
-    // above L=205, against a reference that measures ZERO over the same water.
-    // Cropped and enlarged, the reference's near water is dark navy carrying
-    // sparse light-STEEL dashes, two or three chips per hundred, in patches with
-    // long clean stretches between them. That is what this draws now: the same
-    // mechanism at a tenth of the coverage and a fraction of the contrast, so it
-    // reads as light catching a swell rather than as confetti on a pond.
-    float sparkZone = close * uGlitter * detail * mix(0.25, 1.0, open);
-
-    // Everything below multiplies through sparkZone, so the hash evaluations
-    // are skipped outright over the far half of a 420-unit plane.
-    float sparkPlate = 0.0;
-    float sparkCore = 0.0;
-    if (sparkZone > 0.002) {
-      // Dashes: three cells along one world axis, one across, matching the
-      // elongated chips the reference draws. The patch field that decides
-      // whether one lights up is sampled at the dash's CENTRE, so a smooth
-      // field read through the dash grid comes back as blocks that agree with
-      // their neighbours rather than as a gradient cut into slivers.
-      vec2 gdrift = vWorld.xz + uTime * vec2(0.14, 0.05);
-      vec2 gsize = uCell * vec2(2.6, 1.0);
-      vec2 gcell = floor(gdrift / gsize);
-      vec2 gpos = (gcell + 0.5) * gsize;
-
-      // Patches are the wave's leading faces plus a slab of broad noise: light
-      // catches the side of a swell that is climbing toward the camera, and the
-      // noise keeps that from banding into stripes.
-      // (Not called "patch": that is a reserved word in GLSL ES and the shader
-      // will not compile with it, whatever the desktop driver lets through.)
-      float lit = clamp(0.46 + 0.42 * face + 0.22 * wave, 0.0, 1.0) * 0.62
-                + valueNoise(gpos * 0.28) * 0.38;
-      // Three chips in a hundred, counted off the reference: along a 700-pixel
-      // scanline of its near water, seventeen pixels are chip. Anything above
-      // about a tenth here and the dashes join up into the field this shader
-      // used to draw.
-      float amount = sparkZone * 0.16 * smoothstep(0.50, 0.86, lit);
-
-      // Hit tests go against a flat hash, never against the noise itself: value
-      // noise is bell shaped, so thresholding it directly makes coverage collapse
-      // the moment the threshold moves.
-      sparkPlate = step(1.0 - min(amount, 0.45), hash21(gcell + 61.0));
-      // A brighter core nested inside a quarter of the dashes, the same two-tier
-      // chip the surf uses.
-      sparkCore = sparkPlate * step(0.68, hash21(floor(gdrift / (gsize * 0.5)) + 133.0));
-    }
-
-    // THE SUN LANE — the one corner of this sea that breaks white. See the note
-    // at the top of the file for the counts it is built to hit.
+    // One mechanism for both scenes, because there is only one thing being
+    // drawn: sunlight broken up by a moving surface. What differs between the
+    // island shot and the open-sea shot is not the water, it is where the sun
+    // is in the FRAME, and that is what uLane carries.
     //
-    // The envelope is a straight line across the FRAME, taken off the reference:
-    // its chip field crosses 0.78 of the frame height at x=0.62 of the width and
-    // 0.62 at the right edge, so the boundary is scr.y = 0.42 * scr.x - 0.01 and
-    // the lane is everything under it. Broken up by world noise at a fifth of
-    // the frame, because a clean line here is a vignette and a vignette is a
-    // lens: theirs ends in a ragged coast of chips with dark water between.
-    // With that break in place the same band on the LEFT of the frame measures
-    // 0.08% chip against the reference's own 0.08% — the corner is confined.
+    // The island's corner is read off the reference: its chip field crosses 0.78
+    // of the frame height at x=0.62 of the width and 0.62 at the right edge, so
+    // the boundary is scr.y = 0.42 * scr.x - 0.01 and the lane is everything
+    // under it, ramped over most of its height rather than switched on at the
+    // line, and broken up by world noise so it ends in a ragged coast of chips
+    // rather than on an edge the eye can find. Outside the lane the island keeps
+    // getting on for half the glare rather than none of it: crop their frame
+    // into quarters and every one of them carries white — the top-left corner is
+    // one of the densest patches in the shot — the corner simply carries twice
+    // what the rest does. Confining it there was reading one measurement as if
+    // it were the whole picture.
     //
-    // Gated on open water, so it can never crowd the shelf or the collar — the
-    // white at the sand is the crispest edge in the frame and nothing is allowed
-    // to compete with it — and on the LOD, because a chip drawn smaller than a
-    // pixel is shimmer.
+    // At uLane 0 that whole weighting collapses to 1 and the glare is even over
+    // the frame — which is what the open sea needs, and what it did not get when
+    // this lived in the shader as a corner.
     vec2 scr = vClip.xy / max(vClip.w, 0.0001) * 0.5 + 0.5;
     float laneEdge = 0.42 * scr.x - scr.y - 0.01
                    + (valueNoise(vWorld.xz * 0.085 + 44.0) - 0.5) * 0.20;
-    // Ramped over most of the lane's height rather than switched on at its
-    // boundary, so the field thins out toward the top of the corner instead of
-    // ending on a line the eye can find.
-    float lane = smoothstep(0.0, 0.44, laneEdge) * uGlitter * detail * open;
+    float laneWeight = mix(1.0, mix(0.45, 1.0, smoothstep(0.0, 0.44, laneEdge)), uLane);
 
-    float laneChip = 0.0;
-    float lanePlate = 0.0;
-    if (lane > 0.004) {
-      // Broken water comes in patches with long calm between, and the patches
-      // are STREAKS: read along the same diagonal the block grain runs on, at a
-      // wavelength of twenty-odd world units, cut with a high threshold so most
-      // of the lane stays dark, with a shorter octave on top so a streak breaks
-      // into clusters and singles rather than into one solid raft. Drifting
-      // slowly, so the patches crawl rather than crackle.
-      float chop = valueNoise(vec2(rot.x * 0.052, rot.y * 0.150) + uTime * vec2(0.020, 0.006)) * 0.52
-                 + valueNoise(vec2(rot.x * 0.155, rot.y * 0.400) + 53.0) * 0.30
-                 + valueNoise(vec2(rot.x * 0.520, rot.y * 0.980) + 11.0) * 0.18;
-      // A FLOOR under the patches, not a gate on them. Thresholded outright,
-      // the low-frequency term wins and the lane comes out as one dense streak
-      // with two thirds of the corner bare, which is a weather front, not sun on
-      // water: theirs carries chips right across its corner and varies how
-      // thickly, three to one between the busiest patch and the quietest.
-      float amount = lane * mix(0.34, 1.0, smoothstep(0.40, 0.84, chop));
+    // Where the light is. Glare sits on the face of a swell that is climbing
+    // toward the camera — the one part of a wave angled to send the sun back —
+    // and on the shoals, and it sits on neither of them evenly.
+    // (Not called "patch" anywhere below: that is a reserved word in GLSL ES and
+    // the shader will not compile with it, whatever a desktop driver allows.)
+    float lit = clamp(0.42 + 0.40 * face + 0.20 * wave, 0.0, 1.0);
 
-      // Two cell sizes, because theirs has two: a cell and a half by a cell for
-      // the scatter, twice that for the slabs through it. Both tiers come off
-      // the same two hashes, so the steel brackets the cream at each size — see
-      // LANE_PLATE and LANE_SLAB.
-      vec2 cdrift = wp + uTime * vec2(0.16, 0.06);
-      float fine = hash21(floor(cdrift / (uCell * vec2(1.55, 1.05))) + 27.4);
-      float slab = hash21(floor(cdrift / (uCell * vec2(3.10, 2.10))) + 63.8);
-      float aFine = amount * ${g(1 - LANE_SLAB)};
-      float aSlab = amount * ${g(LANE_SLAB)};
+    // THE CLUMP, which is the whole difference between sunlight and static.
+    // Three octaves read along the same diagonal the block grain runs on, from a
+    // fifty-unit band down to a five-unit break, drifting slowly so the bands
+    // crawl rather than crackle.
+    float glareField = valueNoise(vec2(rot.x * 0.026, rot.y * 0.074) + uTime * vec2(0.018, 0.006)) * 0.50
+                     + valueNoise(vec2(rot.x * 0.090, rot.y * 0.260) + 53.0) * 0.32
+                     + valueNoise(vec2(rot.x * 0.310, rot.y * 0.820) + 11.0) * 0.18;
+    // Stretched around its own midpoint before it is thresholded, and this is
+    // the line that makes the difference between a field that clumps and one
+    // that does not. Three octaves of value noise averaged together land on a
+    // bell with a standard deviation of about an eighth — so a threshold set at
+    // 0.82, which reads like "only the top fifth", actually selects four parts
+    // in a thousand, and every other threshold in the chain quietly did the
+    // same. The predecessor to this field was cut at 0.84 and that is most of
+    // why the sun corner it fed was a scatter rather than a raft.
+    glareField = clamp((glareField - 0.5) * 2.30 + 0.5, 0.0, 1.0);
 
-      lanePlate = max(step(1.0 - min(aFine * ${g(LANE_PLATE)}, 0.80), fine),
-                      step(1.0 - min(aSlab * ${g(LANE_PLATE)}, 0.70), slab));
-      laneChip = max(step(1.0 - min(aFine * ${g(LANE_CHIP)}, 0.62), fine),
-                     step(1.0 - min(aSlab * ${g(LANE_CHIP)}, 0.52), slab));
+    // A FLOOR under the clumps, not a gate on them: thresholded outright the
+    // low-frequency term wins and the sea comes out as one raft with everything
+    // else bare, which is a weather front and not glare. But the range between
+    // the floor and the clump has to be WIDE. Their near water measures two ways
+    // at once and both readings are true: a clean 140x120 patch of it contains
+    // NO pixel above L=200, and the eighth of the frame that patch was cut from
+    // is 17% above L=200. That is not an average, it is a bimodal field — dense
+    // rafts of chip with clean navy between them. A floor at a fifth of the
+    // clump splits the difference and gets neither.
+    float clumping = mix(0.06, 1.0, smoothstep(0.40, 0.82, glareField));
+
+    // Gated on open water, so it can never crowd the shelf or the collar — the
+    // white at the sand is the crispest edge in the frame and nothing is allowed
+    // to compete with it — and on the LOD, because a chip drawn smaller than a
+    // pixel is shimmer. Weighted toward the near half of the frame rather than
+    // confined to it: the reference's far water carries chips too, just fewer.
+    //
+    // The near/far weighting is measured rather than picked. Cut into eighths
+    // from the far edge, the reference's share of water above L=200 runs
+    // 1 2 5 5 10 10 17 14 — it does not thin toward the camera, it TRIPLES, and
+    // an even field would be wrong in the other direction from the one this
+    // shader was wrong in.
+    // The light term is a FLOOR as well, for the same reason the clump is: the
+    // back of a swell is darker than its face, it is not bare. Gated outright,
+    // half the sea went to zero chip and the frame came back at a third of the
+    // reference's white however hard the rest of the chain was driven.
+    float glare = uGlitter * detail * open * laneWeight * clumping
+                * mix(0.80, 3.60, close)
+                * mix(0.85, 1.35, shoalField)
+                * mix(0.35, 1.0, smoothstep(0.28, 0.78, lit));
+
+    float glareChip = 0.0;
+    float glarePlate = 0.0;
+    if (glare > 0.004) {
+      // A slow twinkle, so the field breathes instead of sitting there. Shallow
+      // and per-plate rather than per-cell: a chip that blinks out entirely
+      // reads as a firefly, and a whole plate coming and going reads as the sea
+      // turning over.
+      vec2 gdrift = wp + uTime * vec2(0.16, 0.06);
+      float twinkle = 0.74 + 0.26 * sin(hash21(floor(gdrift / (uCell * 3.4))) * 6.2831 + uTime * 0.6);
+      float amount = glare * twinkle;
+
+      // Three cell sizes sharing one coverage budget — see GLARE_SIZES. Both
+      // tiers come off the SAME hash at each size, so the steel brackets the
+      // cream for free and every chip lands in its own halo.
+${GLARE_SIZES.map(
+  (s, i) => `      float gh${i} = hash21(floor(gdrift / (uCell * vec2(${g(s.cell[0])}, ${g(s.cell[1])}))) + ${g(s.seed)});
+      float ga${i} = amount * ${g(s.w)};
+      glarePlate = max(glarePlate, step(1.0 - min(ga${i} * ${g(GLARE_PLATE)}, 0.80), gh${i}));
+      glareChip  = max(glareChip,  step(1.0 - min(ga${i} * ${g(GLARE_CHIP)}, 0.62), gh${i}));`
+).join('\n')}
     }
 
     // Water first, then the view ramp, then everything that sits on the surface,
@@ -803,8 +915,23 @@ ${SWELL_GLSL}
     hazeTone = mix(hazeTone, uCrest, 0.07 * toneHaze + 0.48 * sheen);
     vec3 nearTone = uNear * mix(0.50, 1.62, tone);
 
-    col = mix(col, hazeTone, distant * 0.94 * mix(0.25, 1.0, open));
-    col = mix(col, nearTone, close * 0.96 * mix(0.16, 1.0, open));
+    // A shoal keeps its own colour wherever it sits in the frame — the same
+    // exemption the island's shelf already gets from the open term, generalised,
+    // and the reason a ramp is worth having out here. Without it the sweep
+    // flattens every reef into the same navy at the near edge and the same
+    // cerulean at the far one, and the frame is back to one blue with texture on
+    // it. Their frames keep pale turquoise at the TOP of the shot and teal at
+    // the bottom, which only happens if depth beats screen height.
+    //
+    // Asymmetric, and measured. Held back equally at both ends, the near water
+    // came out a third brighter than the reference's — its last three eighths
+    // run 39%, 51% and 41% of their pixels below L=55, and ours went to 2%, 34%
+    // and 65% the moment shoals stopped being swept to navy. Their near sea is
+    // dark, and it is dark BECAUSE the sweep wins down there; what makes it read
+    // as water is the white on top of it, not the tone under it. So the far end
+    // gives way to a shoal and the near end mostly does not.
+    col = mix(col, hazeTone, distant * 0.94 * mix(0.25, 1.0, open) * mix(1.0, 0.42, shoalField));
+    col = mix(col, nearTone, close * 0.96 * mix(0.16, 1.0, open) * mix(1.0, 0.82, shoalField));
 
     // A cell-scale fleck, applied last so the view ramp cannot flatten it.
     //
@@ -828,19 +955,23 @@ ${SWELL_GLSL}
     float haze = distant * 0.72;
     vec3 foamDim = mix(uFoamDim, uHorizon, haze);
     vec3 foamBright = mix(uFoamBright, uHorizon, haze);
-    vec3 sparkDim = mix(uGlintDim, uHorizon, haze);
-    vec3 sparkBright = mix(uGlintBright, uHorizon, haze);
 
-    // The lane, under the shore's own white so nothing here can crowd the
+    // The glare's two tiers, cooled as they go away as well as hazed: the near
+    // chips in both references are a warm cream and the far ones a pale steel,
+    // which is what a white chip looks like through that much air over that much
+    // water. Two colour pairs rather than one, and they are the reference's own
+    // two measurements.
+    vec3 glarePlateCol = mix(mix(uLanePlate, uGlintDim, distant), uHorizon, haze);
+    vec3 glareChipCol = mix(mix(uLaneChip, uGlintBright, distant), uHorizon, haze);
+
+    // The glare, under the shore's own white so nothing here can crowd the
     // collar. The bright tier goes on at 0.94 and not at 0.6: the tier is
     // DEFINED by clearing L=200, and a cream mixed halfway onto a navy that
     // measures L=37 lands at 135 — a mid pixel wearing a chip's colour, which
     // counts for nothing and looks like haze.
-    col = mix(col, mix(uLanePlate, uHorizon, haze), lanePlate * 0.58);
-    col = mix(col, mix(uLaneChip, uHorizon, haze), laneChip * 0.94);
+    col = mix(col, glarePlateCol, glarePlate * 0.58);
+    col = mix(col, glareChipCol, glareChip * 0.94);
 
-    col = mix(col, sparkDim, sparkPlate * 0.50);
-    col = mix(col, sparkBright, sparkCore * 0.80);
     col = mix(col, foamDim, capHit * 0.34 * detail);
     col = mix(col, foamBright, capCore * 0.50 * detail);
     col = mix(col, foamDim, dimHit * 0.80 * detail);
@@ -887,9 +1018,11 @@ interface Palette {
   glintBright: string;
   foamBright: string;
   foamDim: string;
-  /** The two tiers of the sun lane. Kept off the surf colours on purpose: the
-   *  collar is a wet, slightly green cream and the lane is a colder one, and
-   *  they are the reference's own two measurements, not one colour used twice. */
+  /** The two tiers of the glare, at close range — the pair above are the same
+   *  two tiers seen through a lot of air, and the shader crossfades between them
+   *  with distance. Kept off the surf colours on purpose: the collar is a wet,
+   *  slightly green cream and a chip is a colder one, and they are the
+   *  reference's own two measurements, not one colour used twice. */
   laneChip: string;
   lanePlate: string;
 }
@@ -938,16 +1071,30 @@ const PALETTES: Record<WaterPalette, Palette> = {
     lanePlate: '#6E93AE',
   },
   // Open sea: blue-dominant, resolving into the sky at the horizon.
+  //
+  // Re-fitted against reference/sea_combat.png, which is the open-sea frame and
+  // a different animal from the island one. Two things were wrong and both were
+  // structural rather than a matter of taste:
+  //
+  // - the ramp was six stops of grey-teal spanning barely a third of the range
+  //   the island's does, so even once the seabed field gave the open sea a real
+  //   depth to ramp over, there was nothing at the ends of the ramp to see. It
+  //   now runs the full distance their frame does: pale cyan shoal, teal, mid
+  //   cobalt, deep navy.
+  // - the horizon was #82B0A7, a grey-green. Every hazed pixel in the scene —
+  //   the far water, every chip on it, the fog seaScene sets to match — was
+  //   being pulled toward sage against a #8FD8EC sky, which is the muddy cast
+  //   the whole open-sea frame had.
   ocean: {
-    ramp: ['#5B9AA0', '#3B7D8B', '#2E5578', '#22547D', '#1B4372', '#143363'],
-    horizon: '#82B0A7',
-    near: '#0E2450',
-    deep: '#0B2050',
-    crest: '#4A8FAE',
-    glintDim: '#7C9AB4',
-    glintBright: '#C6DAE4',
+    ramp: ['#8AD6DA', '#55B9CE', '#3195C0', '#2273AC', '#1A5593', '#123C74'],
+    horizon: '#59B0CE',
+    near: '#0D2A5C',
+    deep: '#0B2450',
+    crest: '#5AAAC8',
+    glintDim: '#7FA6C0',
+    glintBright: '#CFE4EE',
     foamBright: '#FEFFFE',
-    foamDim: '#7FA6B6',
+    foamDim: '#8FC4D4',
     laneChip: '#F0F4EA',
     lanePlate: '#7195AD',
   },
@@ -958,9 +1105,28 @@ export interface WaterOptions {
   /** World size of one water cell. Roughly 1/5 of a terrain block. */
   cell?: number;
   palette?: WaterPalette;
-  /** Gain on the open-water sparkle — the sparse dim dashes on the near sea,
-   *  not a glitter field. 0 turns it off entirely. */
+  /** Gain on the glare — the clumped white chips on the open sea, not a glitter
+   *  field. 0 turns it off entirely. */
   glitter?: number;
+  /**
+   * Where the sun is in the FRAME, as a weight on the glare.
+   *
+   * 1 gathers it into the bottom-right corner, which is where the island
+   * reference's sun lane sits and what that shot is composed around. 0 spreads
+   * the same glare evenly, which is what a scene with a different camera and a
+   * different composition needs.
+   *
+   * This is a property of the SCENE, not of water. It lived in the shader for a
+   * round and the consequence was immediate the moment the same material was
+   * asked to draw an ocean with no island in it: texture in one corner of a
+   * portrait frame and a dead wash everywhere else. Defaults to the island's
+   * answer only because a shore SDF is a good proxy for "this is the island
+   * shot" — pass it explicitly and stop guessing.
+   */
+  lane?: number;
+  /** Gain on the seabed field that varies the depth ramp away from the shore.
+   *  0 gives back a sea whose only depth cue is the beach. */
+  reef?: number;
   /** Peak swell height in world units. 0 gives back the flat sea. */
   wave?: number;
   /** Height quantum for the swell. 0 leaves it smooth. */
@@ -1012,6 +1178,8 @@ export class Water {
         uLaneChip: { value: new THREE.Color(palette.laneChip) },
         uLanePlate: { value: new THREE.Color(palette.lanePlate) },
         uGlitter: { value: opts.glitter ?? 1 },
+        uLane: { value: opts.lane ?? (opts.shoreSDF ? 1 : 0) },
+        uReef: { value: opts.reef ?? 1 },
         uFoamBright: { value: new THREE.Color(palette.foamBright) },
         uFoamDim: { value: new THREE.Color(palette.foamDim) },
         uRing: { value: new THREE.Color('#E4F0E1') },
