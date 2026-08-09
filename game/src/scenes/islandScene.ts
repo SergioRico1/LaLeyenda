@@ -129,24 +129,45 @@ export async function createIslandScene(
      * They exist because a blind judge put our island beside the shipped Pirate
      * Nation frame, picked theirs, and said our sea was "dark and speckled with
      * square whitecaps following no direction". Measured with
-     * tools/sea-metrics.mjs against reference/island_hero.png — whole frame, and
-     * then per eighth from the far edge to the near one:
+     * tools/sea-metrics.mjs against reference/island_hero.png:
      *
-     *              mean    sd   detail
+     *   node tools/shoot.mjs island --hud 0 --out /tmp/x.png
+     *   node tools/sea-metrics.mjs reference/island_hero.png /tmp/x.png --bands
+     *
+     * WHICH FRAME THE NUMBERS CAME FROM IS PART OF THE NUMBER, and the first
+     * cut of this table did not say. It is the LANDSCAPE shot, 1280x720, which
+     * is the only framing that can be set beside a 16:9 reference at all —
+     * whole frame, and then per eighth from the far edge to the near one:
+     *
+     *              mean    sd   detail     (1280x720, --hud 0)
      *   reference  106.5  50.0   32.9
      *   before      98.9  46.1   23.8
-     *   after      106.7  49.8   29.2
+     *   after      106.8  50.0   29.1
      *
      *   L>200  reference  1  2  5  5 10 10 17 14
      *          before     0  0  3  7  7  7  6  3
+     *          after      0  0  8 15 17 13 11  5
      *   L<55   reference  0  1  0  0  2 39 51 41
      *          before     0  0  0  0  0  7 48 71
+     *          after      0  0  0  0  0 13 42 46
      *
      * The last eighth is the whole verdict: their near water sat thirty points
      * of mean brighter than ours and carried four times the white on top of it,
      * while ours was 71% below L=55 — an unlit floor with a few chips on it. An
      * island that sits ON water rather than IN it is what that table looks like
-     * as a sentence.
+     * as a sentence, and 71 falling to 46 against their 41 is it being unsaid.
+     *
+     * `npm run audit:sea` WILL NOT REPRODUCE ANY OF IT, and that is not a
+     * regression. It shoots the PHONE — 430x932 — and hands a 1:2.17 portrait
+     * frame to a band walk built for a 16:9 one, so its eighths and the
+     * reference's eighths are not the same distances from the camera: ours run
+     * from far beyond the island to well in front of it, theirs from the top of
+     * a 16:9 crop to the bottom. It reads 91.2 / 45.7 / 20.1 today against the
+     * same reference, up from 76.2 / 42.2 / 10.6 before this round, with the
+     * two bands either side of the island at mean 144 and 138 because a
+     * portrait frame is mostly shelf and deep water with little mid-ground
+     * between. Both tables are honest. Only the landscape one is a comparison,
+     * and only the portrait one is what a player holds.
      */
 
     // A ramp long enough to BE a lagoon. Against a 44-unit island the open sea's
@@ -407,12 +428,32 @@ export async function createIslandScene(
    *
    * The hero frame is 16:9 because the reference is, and every other frame
    * holds the same share of its AREA rather than of its width — a phone's
-   * frame is a different SHAPE, not just a smaller one. Hold the width there
-   * and the island shrinks to a speck between two vast bands of sea (0.21 of a
-   * phone's height); hold the area and the coast runs a portrait screen edge
-   * to edge with the sea it leaves above and below exactly where the HUD's two
-   * bars sit. The islets and the skiff fall outside a portrait frame, which is
-   * correct — they are a landscape composition, and the player pans.
+   * frame is a different SHAPE, not just a smaller one, and holding the width
+   * there would shrink the island to a speck between two vast bands of sea
+   * (0.21 of a phone's height). The islets and the skiff fall outside a
+   * portrait frame, which is correct — they are a landscape composition, and
+   * the player pans.
+   *
+   * ON A PHONE THE AREA RULE NEVER GETS TO SPEAK, and it is worth knowing that
+   * before tuning it. The scene logs its own solve; at 430x932 it reads
+   *
+   *   solved 215.7 (area 423.4, height 210.0, width 582.2) -> 582.2
+   *
+   * — the width backstop below wins by 38% over the area share, because a
+   * 44-cell coast asked to run edge to edge on a 1:2.17 screen is simply the
+   * binding constraint. The coast ends up reading 0.998 of the width against
+   * the hero frame's 0.699, and there is no room left to give it: the island
+   * already touches both edges.
+   *
+   * Which means the empty sea above and below a portrait island is GEOMETRY,
+   * not a framing bug, and no number in this block will close it. Measured, our
+   * land covers 34.0% of the landscape frame against the reference's 40.0% of
+   * theirs, and 17.6% of the phone's. Halving is what happens when a shape
+   * whose height is 0.55 of its width is fitted by width into a frame twice as
+   * tall as it is wide. The ways out are compositional rather than numeric —
+   * crop the coast on purpose, tilt the pitch up, or let the HUD sit over more
+   * of the water — and each is a decision someone has to take rather than a
+   * constant someone can nudge.
    *
    * `?cam=x,y,z` still overrides the position outright, so a shot can be
    * framed without editing code.
