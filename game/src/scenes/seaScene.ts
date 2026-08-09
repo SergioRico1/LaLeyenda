@@ -43,6 +43,14 @@ declare global {
  *   objects keyed by site id. Sail away and the objects are recycled; sail back
  *   and the same seed rebuilds the same reef in the same place.
  *
+ * - **The fight is drawn from the simulation's own numbers.** The firing arcs,
+ *   the reload gauges, the lock under a chosen target and the ring under one
+ *   that is about to bite all come out of `spec.arc`, `reloadPort`, the
+ *   broadside's own target search and a mob's `cooldown`. Nothing here decides
+ *   anything; it says out loud what sim/sea.ts already decided, because a game
+ *   about positioning that shows no positions is a game about nothing. See
+ *   READING A FIGHT, below.
+ *
  * - **The water does not move with the ship, it is REDRAWN under it.** The
  *   shader colours a fragment from its world position, so sliding the mesh
  *   changes nothing about the pattern — it is anchored to the world, not to the
@@ -1638,7 +1646,7 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
         voyage = out.voyage;
         for (const event of out.events) {
           opts.onEvent?.(event);
-          // Run in shot mode too. sfx() gates itself on SHOT, and the puffs
+          // Run in shot mode too. sfx() gates itself on SHOT, and the smoke
           // and flashes advance on the same fixed dt the sim does, so a
           // capture stays deterministic — while a broadside becomes something
           // a critic can actually look at. Hiding it from the harness is how
