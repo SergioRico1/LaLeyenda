@@ -1,4 +1,5 @@
 import './balance.test';
+import './captain.test';
 import './economy.test';
 import './offline.test';
 import './build.test';

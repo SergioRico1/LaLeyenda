@@ -1,0 +1,102 @@
+/* ============================================================================
+ * title.css — the main menu, over the live sea.
+ *
+ * Every colour here is a token from tokens.css. The one thing this file adds is
+ * a scoped `--brk` on the primary button, because §1.1's table makes the gloss
+ * step a function of HEIGHT and this button is taller than the 52-80px band the
+ * default 52% was measured for.
+ *
+ * The world is the backdrop, so there is no panel plate: UI_SPEC §6 names a
+ * full-bleed card over a 3D scene as the fastest way to make a game look like a
+ * web page. The wordmark and the two buttons are the only objects, and both
+ * buttons carry §0.2's four layers through `.btn`.
+ * ========================================================================== */
+
+.title {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding:
+    calc(var(--ui-safe-t) + 34px) 22px
+    calc(var(--ui-safe-b) + 30px);
+  pointer-events: none;
+  text-align: center;
+}
+
+.title > * { pointer-events: auto; }
+
+/* --- the crest ----------------------------------------------------------- */
+
+.title__crest {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.title__mark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+}
+
+/* ✎ Type standing in for art. The wordmark wants to be a drawn, carved,
+   rope-bound plate; until it is, this at least obeys §1.9 — heavy display face,
+   ink stroke, hard drop — instead of being a browser <h1>. */
+.title__mark-a,
+.title__mark-b {
+  color: var(--ui-ivory);
+  -webkit-text-stroke: var(--ui-txt-stroke-lg) var(--ui-ink);
+  paint-order: stroke fill;
+  text-shadow: 0 4px 0 rgba(0, 0, 0, 0.55);
+  line-height: 0.94;
+}
+
+.title__mark-a {
+  font-size: 44px;
+  letter-spacing: 0.5px;
+}
+
+.title__mark-b {
+  font-size: 62px;
+  letter-spacing: 3px;
+  color: var(--ui-gold-text);
+}
+
+.title__tag {
+  margin: 0;
+  color: var(--ui-ivory);
+  /* Wide enough for the sentence to break at its own full stop rather than
+     mid-clause, which is what "Una isla por / reclamar." was doing. */
+  max-width: 30ch;
+  text-wrap: balance;
+  opacity: 0.94;
+}
+
+/* --- the thumb zone ------------------------------------------------------ */
+
+.title__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  width: min(300px, 82%);
+}
+
+/* §1.1: over 80px tall, the gloss step sits at 47%. */
+.title__play {
+  --brk: 47%;
+  min-height: 84px;
+  border-radius: var(--ui-r-tile);
+}
+
+.title__play .t-btn { font-size: 26px; }
+
+.title__settings {
+  min-height: 58px;
+}

@@ -3,6 +3,7 @@ import {
   buildersFree, finishNowCost, placeInPlace, placeRefusal, spotRefusalNow, startUpgradeInPlace,
   upgradeRefusal,
 } from './build';
+import { sanitizeCaptain } from './captain';
 import { clearRefusal, startClearInPlace } from './obstacles';
 import {
   awardChestInPlace, openChestInPlace, skipCost, startChestInPlace, startRefusal,
@@ -10,7 +11,7 @@ import {
 import { clone, collectInPlace, isProducer } from './economy';
 import { advanceInPlace, type OfflineSummary } from './offline';
 import { claimDailyInPlace, claimQuestInPlace, dailyAvailable, noteInPlace } from './progression';
-import type { ActionResult, GameState, SimEvent, SimResult } from './types';
+import type { ActionResult, Captain, GameState, SimEvent, SimResult } from './types';
 
 /**
  * sim/index.ts — the whole public surface of the simulation.
@@ -24,6 +25,11 @@ import type { ActionResult, GameState, SimEvent, SimResult } from './types';
 export * from './balance';
 export * from './types';
 export { createNewGame, createDemoIsland } from './state';
+export {
+  AVATAR_PARTS, AVATAR_SLOTS, NAME_MAX, OPTIONAL_SLOTS, createCaptain, cycleSlot, isValidLook,
+  looksParts, rollLook, rollName, sanitizeCaptain, sanitizeLook, sanitizeName, slotOptional,
+  slotOptions,
+} from './captain';
 export { advanceInPlace, applyLongAbsenceGiftInPlace, type OfflineSummary } from './offline';
 export {
   buildersFree, buildersTotal, buildersBusy, gemSpeedupCost, finishNowCost, upgradePlan, placeable,
@@ -169,6 +175,40 @@ export function finishNow(state: GameState, buildingId: number, now: number): Ac
   // Completion, XP and the finished event all belong to the tick.
   const { events } = advanceInPlace(next, now);
   return { state: next, events, ok: true, gems: cost };
+}
+
+/* --------------------------------------------------------------------------
+ * the captain
+ * ----------------------------------------------------------------------- */
+
+/**
+ * The creation screen's ✓, and the only way a captain reaches a save.
+ *
+ * The look is sanitized rather than trusted — this is the one action whose
+ * argument is assembled by a screen from arrow taps and a text field, and an
+ * unknown part id would reach the renderer as a 404 on a model nobody can see.
+ *
+ * The SEED is taken from the state, never from the argument: by the time this
+ * runs the island has already been generated, so a captain claiming a different
+ * seed is describing an island that is not under them.
+ */
+export function setCaptain(state: GameState, captain: Captain): ActionResult {
+  const next = clone(state);
+  next.captain = sanitizeCaptain(captain, next.seed);
+  return { state: next, events: [], ok: true };
+}
+
+/**
+ * One-shot UI flags, through the sim like everything else.
+ *
+ * The tutorial is the first caller: "seen" has to survive a reload or the
+ * director replays its opening line every time the app is backgrounded, and
+ * `flags` is already the field on GameState that exists for exactly this.
+ */
+export function setFlag(state: GameState, key: string, value = true): ActionResult {
+  const next = clone(state);
+  next.flags = { ...next.flags, [key]: value };
+  return { state: next, events: [], ok: true };
 }
 
 /* --------------------------------------------------------------------------

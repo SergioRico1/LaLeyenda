@@ -1,7 +1,7 @@
 import {
   MIGRATIONS, SAVE_VERSION, exportFilename, migrate, parseSave, serialize, type SaveEnvelope,
 } from '../../src/core/save';
-import { HOUR, collect, startUpgrade, tick } from '../../src/sim';
+import { HOUR, MINUTE, collect, isValidLook, startUpgrade, tick, type GameState } from '../../src/sim';
 import { describe, eq, ok, test } from './harness';
 import { T0, find, game, rich } from './fixtures';
 
@@ -96,6 +96,72 @@ describe('the save envelope', () => {
     eq(out.state.nextObstacleId, 1, 'and a usable id counter');
     // The real proof: it survives a tick, which is what actually broke.
     ok(tick(out.state, T0 + HOUR).state.now === T0 + HOUR, 'and it ticks');
+  });
+
+  test('a captain-less save keeps its island, its timers and every resource', () => {
+    // THE migration that could cost someone their game. A version-2 save is a
+    // played island — this one has a store full of wood, a builder on the
+    // Almacén and five hours on the clock — and the only thing it lacks is an
+    // identity. It must come back with the identity ADDED and nothing else
+    // touched; a player who already has an island must never be sent to
+    // captain creation, and must not lose one plank on the way through here.
+    let played = tick(rich(), T0 + 5 * HOUR).state;
+    played = startUpgrade(played, find(played, 'almacen').id, played.now).state;
+    // Five minutes into a twenty-minute job, so the save is caught with a
+    // builder actually out on it rather than after it finished.
+    played = tick(played, played.now + 5 * MINUTE).state;
+
+    const envelope = JSON.parse(serialize(played, T0)) as SaveEnvelope;
+    const { captain, ...withoutTheField } =
+      JSON.parse(JSON.stringify(envelope.state)) as Record<string, unknown>;
+    ok(captain !== undefined, 'the current save does carry a captain');
+    const v2 = { ...envelope, version: 2, state: withoutTheField };
+
+    const out = migrate(v2 as unknown as SaveEnvelope);
+    eq(out.version, SAVE_VERSION, 'brought up to date');
+
+    // The island, item for item.
+    eq(out.state.buildings.length, played.buildings.length, 'every building survived');
+    eq(
+      JSON.stringify(out.state.buildings),
+      JSON.stringify(played.buildings),
+      'with their levels, their stock and their running work untouched'
+    );
+    eq(JSON.stringify(out.state.store), JSON.stringify(played.store), 'the stores are intact');
+    eq(out.state.gems, played.gems, 'the gems are intact');
+    eq(out.state.now, played.now, 'the clock did not move');
+    eq(JSON.stringify(out.state.chests), JSON.stringify(played.chests), 'the tray is intact');
+    eq(JSON.stringify(out.state.quests), JSON.stringify(played.quests), 'the quests are intact');
+    ok(out.state.buildings.some((b) => b.work), 'and the builder is still on the job');
+
+    // Everything the old save had is still there, key for key. This is the
+    // assertion that catches a migration which rebuilds the state instead of
+    // adding to it.
+    for (const key of Object.keys(withoutTheField)) {
+      eq(
+        JSON.stringify((out.state as unknown as Record<string, unknown>)[key]),
+        JSON.stringify(withoutTheField[key]),
+        `${key} came through unchanged`
+      );
+    }
+
+    // And the one thing that IS new.
+    ok(out.state.captain.name.length > 0, 'it arrives with a named captain');
+    eq(out.state.captain.seed, played.seed, 'whose island is the one they were already on');
+    ok(isValidLook(out.state.captain.look), 'wearing parts we actually ship');
+    ok(tick(out.state, out.state.now + HOUR).state.now > played.now, 'and it ticks');
+  });
+
+  test('a save whose captain is wearing a part we no longer ship is repaired, not refused', () => {
+    const envelope = JSON.parse(serialize(game(), T0)) as SaveEnvelope;
+    const state = JSON.parse(JSON.stringify(envelope.state)) as GameState;
+    state.captain.look.body = 'av_body_from_a_mod';
+    state.captain.name = '';
+
+    const out = migrate({ ...envelope, state });
+    ok(isValidLook(out.state.captain.look), 'the look is drawable again');
+    ok(out.state.captain.name.length > 0, 'and the captain has a name');
+    eq(out.state.buildings.length, envelope.state.buildings.length, 'the island was not touched');
   });
 
   test('a version with no migration fails loudly instead of loading a broken state', () => {

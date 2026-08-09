@@ -9,7 +9,7 @@ import { createGhost, type Ghost } from '../render/ghost';
 import { createCameraRig, type CameraRig } from '../render/cameraRig';
 import { buildScatter } from '../render/scatter';
 import {
-  DECOR_MODELS, OBSTACLE_MODELS, buildGroundCover, planDecor, planIslets, planObstacles,
+  DECOR_MODELS, OBSTACLE_MODELS, buildGroundCover, buildIslets, planDecor, planIslets, planObstacles,
 } from './decor';
 import { instantiate, preload } from '../render/assets';
 import { Rng } from '../core/rng';
@@ -216,6 +216,11 @@ export async function createIslandScene(
     // putting an object on ground a building could claim. See decor.ts.
     const cover = buildGroundCover(shape, seed);
     stage.scene.add(cover);
+    // The outlying islets' sand. Geometry rather than a prop because the model
+    // that used to serve carried three detached slabs a `ScatterItem` has no way
+    // to leave behind — see decor.ts. Same voxel lattice and same palette as the
+    // terrain, so they read as the same beach.
+    stage.scene.add(buildIslets(shape, seed));
     console.log(`[decor] ${props.length} props in ${scatter.children.length} draw calls, +1 ground cover`);
   }
 
@@ -521,15 +526,19 @@ export async function createIslandScene(
     }
   }
 
-  /** The distance at which the coast holds `share` of the hero frame's width.
+  /** The distance at which the coast holds `share` of a frame's width.
    *  A point's screen x does not move with how far back it stands — screenX is
    *  perpendicular to the camera axis — but the scale it is drawn at does, so
-   *  the two edges are divided by their own depths. Three passes settle it. */
-  const reachFor = (share: number) => {
-    let d = (coastRight - coastLeft) / (2 * halfLens * HERO_ASPECT * share);
+   *  the two edges are divided by their own depths. Three passes settle it.
+   *
+   *  `asp` defaults to the hero frame, which is the one the composition is
+   *  measured in. The width backstop below asks it for the REAL frame instead,
+   *  which is the same question about a different screen. */
+  const reachFor = (share: number, asp: number = HERO_ASPECT) => {
+    let d = (coastRight - coastLeft) / (2 * halfLens * asp * share);
     for (let pass = 0; pass < 3; pass++) {
       d = (coastRight / (1 - depthRight / d) - coastLeft / (1 - depthLeft / d))
-        / (2 * halfLens * HERO_ASPECT * share);
+        / (2 * halfLens * asp * share);
     }
     return d;
   };
@@ -586,10 +595,12 @@ export async function createIslandScene(
   // design rather than by accident.
   const solved = framing(hero);
   let riseY = 0;
+  let runX = 0;
   if (solved.fits) {
     riseY = (solved.lowY + solved.highY) / 2;
+    runX = (solved.lowX + solved.highX) / 2;
     target
-      .addScaledVector(screenX, (solved.lowX + solved.highX) / 2)
+      .addScaledVector(screenX, runX)
       .addScaledVector(screenY, riseY);
     // The island's own clearance is measured from wherever the look-at ended
     // up, or a frame wider than the hero's would cut the coast off the edge
@@ -604,6 +615,28 @@ export async function createIslandScene(
     }
   }
 
+  /**
+   * The same backstop in WIDTH that `needsHeight` is in height.
+   *
+   * A frame WIDER than 16:9 runs out of height before it runs out of area; a
+   * frame NARROWER than it runs out of width, and a portrait phone at 0.46 is
+   * as far the narrow side as anything gets. Holding the area share alone was
+   * survivable while the island was 26 cells. At 44 it puts the coast 1.35
+   * frames wide on a 430x932 screen: the east and west corners land off the
+   * edge and the island is cut off rather than framed.
+   *
+   * The share asked for is ONE — the coast running the full width of a
+   * portrait screen, edge to edge, which is what this composition says a
+   * portrait frame is for. Not `inside`: the 5% margin all round is the hero
+   * frame's, and spending it again on the narrow axis would buy a band of sea
+   * by pushing the island back towards the speck round one was fixing.
+   *
+   * Measured off the COAST, like every other width in this solve — the islets
+   * and the moored skiff are a landscape composition and are still allowed to
+   * fall outside a portrait frame.
+   */
+  const needsWidth = reachFor(1, aspect);
+
   const distance = Math.max(
     // Every other frame shape holds the same share of its AREA, which is one
     // multiplication because area share is what the square root of the aspect
@@ -611,7 +644,9 @@ export async function createIslandScene(
     hero * Math.sqrt(HERO_ASPECT / aspect),
     // A frame wider than 16:9 runs out of height before it runs out of area,
     // and without this the coast would be cropped off the top and the bottom.
-    needsHeight
+    needsHeight,
+    // And a frame narrower than 16:9 runs out of width first.
+    needsWidth
   );
 
   // What the solve chose, and what the coast ends up holding. A framing that
@@ -621,7 +656,9 @@ export async function createIslandScene(
     `[camera] coast ${(coastRight - coastLeft).toFixed(1)} wide across ${framedAlong.length} framed points; ` +
     `${near.toFixed(1)} holds ${ISLAND_WIDTH} of a hero frame, ${far.toFixed(1)} is the floor, ` +
     `solved ${hero.toFixed(1)}${solved.fits ? '' : ' (nothing fits, floored)'} ` +
-    `look-at +${((solved.lowX + solved.highX) / 2).toFixed(1)},${riseY.toFixed(1)} ` +
+    `(area ${(hero * Math.sqrt(HERO_ASPECT / aspect)).toFixed(1)}, ` +
+    `height ${needsHeight.toFixed(1)}, width ${needsWidth.toFixed(1)}) ` +
+    `look-at +${runX.toFixed(1)},${riseY.toFixed(1)} ` +
     `-> ${distance.toFixed(1)} at aspect ${aspect.toFixed(3)}, coast reading ${
       ((coastRight - coastLeft) / (2 * distance * halfLens * aspect)).toFixed(3)
     } of the width`

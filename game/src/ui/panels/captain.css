@@ -1,0 +1,186 @@
+/* ============================================================================
+ * captain.css — creation, over the same sea the title stands on.
+ *
+ * The layout is one column with THREE bands, and the middle one is empty on
+ * purpose: `.captain__stage` is where the avatar will stand. Reserving it now
+ * means the model arrives without moving a control, and it is why this screen
+ * can be finished by editing one file.
+ *
+ * §3.18's dark page body is used for the control sheet rather than for the
+ * whole screen, so the sea still shows behind the avatar — a full-bleed page
+ * over a live 3D scene is UI_SPEC §6's first anti-goal.
+ * ========================================================================== */
+
+.captain {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  padding: calc(var(--ui-safe-t) + 12px) 0 var(--ui-safe-b);
+  pointer-events: none;
+}
+
+.captain > * { pointer-events: auto; }
+
+/* --- header -------------------------------------------------------------- */
+
+.captain__head {
+  position: relative;
+  text-align: center;
+  padding: 0 56px 6px;
+}
+
+.captain__title {
+  margin: 0;
+  color: var(--ui-ivory);
+}
+
+.captain__sub {
+  margin: 2px 0 0;
+  color: var(--ui-ivory);
+  opacity: 0.82;
+}
+
+.captain__back {
+  position: absolute;
+  left: 12px;
+  top: -4px;
+  min-height: 40px;
+  padding: 8px 14px;
+  border-radius: var(--ui-r-chip);
+}
+
+/* --- where the captain stands -------------------------------------------- */
+/* Transparent, sized, and holding nothing. The sea shows through it. */
+
+.captain__stage {
+  min-height: 120px;
+  pointer-events: none;
+}
+
+/* --- the control sheet --------------------------------------------------- */
+
+.captain__sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* Capped and centred rather than full-bleed: on a wide screen a sheet that
+     spans 1280px stops reading as an object and starts reading as a page, and
+     a 1.1m arrow at one end of a row with its label at the other is not a
+     control anybody can use. */
+  width: min(410px, calc(100% - 20px));
+  margin: 0 auto 10px;
+  box-sizing: border-box;
+  padding: 14px 14px 16px;
+
+  background: var(--ui-panel);
+  border: var(--ui-frame-w) solid var(--ui-frame);
+  border-radius: var(--ui-r-panel);
+  /* §3.16's three-layer edge: near-black outside, taupe band, light rim inside,
+     then cream — the same object the bottom sheet is, standing on its own. */
+  box-shadow:
+    0 0 0 3px var(--ui-frame-dark),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.55),
+    0 6px 0 rgba(0, 0, 0, 0.28),
+    var(--ui-cast);
+}
+
+/* The name field is a WELL — sunk into the cream, which is the inverse of the
+   raised object and the reason it reads as something you type into. */
+.captain__name {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 52px;
+  padding: 8px 14px;
+  text-align: center;
+  color: var(--ui-ivory);
+  background: var(--ui-well);
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  border-radius: var(--ui-r-chip);
+  box-shadow: inset 0 3px 0 rgba(0, 0, 0, 0.34), inset 0 -2px 0 rgba(255, 255, 255, 0.14);
+  outline: none;
+}
+
+.captain__name::placeholder {
+  color: rgba(255, 255, 255, 0.42);
+  -webkit-text-stroke-width: 0;
+}
+
+/* --- the seven rows ------------------------------------------------------ */
+
+.captain__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* Seven rows always fit on a 932px phone; on a short one they scroll rather
+     than push the CTA off the bottom (§3.15: the primary never leaves the
+     thumb zone). */
+  max-height: min(48vh, 400px);
+  overflow-y: auto;
+  /* A flex child will not shrink below its content without this, which is what
+     put the last row underneath the CTA in landscape. */
+  min-height: 0;
+}
+
+.captain__row {
+  display: grid;
+  grid-template-columns: 68px 44px 1fr 44px;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border-radius: var(--ui-r-chip);
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.captain__slot {
+  color: var(--ui-ink);
+  -webkit-text-stroke-width: 0;
+  text-shadow: none;
+  opacity: 0.72;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.captain__value {
+  color: var(--ui-ink);
+  -webkit-text-stroke-width: 0;
+  text-shadow: none;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Under 52px, so §1.1's table puts the gloss step at 60%. */
+.captain__arrow {
+  --brk: 60%;
+  min-height: 44px;
+  padding: 0;
+  border-width: var(--ui-ink-w-sm);
+  border-radius: var(--ui-r-chip);
+}
+
+.captain__arrow .t-glyph {
+  font-size: 24px;
+  line-height: 1;
+  color: var(--ui-ink);
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+/* --- the two decisions --------------------------------------------------- */
+
+.captain__cta {
+  display: grid;
+  grid-template-columns: 1fr 1.25fr;
+  gap: 10px;
+}
+
+.captain__surprise,
+.captain__confirm {
+  min-height: 62px;
+  padding: 10px 12px;
+}
+
+.captain__surprise .t-btn { font-size: 17px; }
+.captain__confirm .t-btn { font-size: 21px; }

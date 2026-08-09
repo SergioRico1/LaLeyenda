@@ -8,6 +8,12 @@
 //   npm run shoot -- island --mobile            portrait phone framing
 //   npm run shoot -- island --act place         drive a real interaction first
 //
+// The name is a SCREEN in src/main.ts's router — title, captain, settings,
+// island, sea — or one of the two development scenes, model and measure. The
+// router takes `?screen=` for the first set and `?scene=` for the second; this
+// picks the right one, and refuses a name that is neither rather than silently
+// booting the title and capturing something nobody asked for.
+//
 // `--act` runs a scripted set of taps from tools/acts.mjs before capturing, so a
 // panel, a bottom sheet or a placement ghost can be reviewed as pixels rather
 // than described. A feature that only exists after a tap is otherwise a feature
@@ -36,6 +42,23 @@ const flag = (name, fallback) => {
 const has = (name) => argv.includes(`--${name}`);
 
 const scene = argv.find((a) => !a.startsWith('--') && argv[argv.indexOf(a) - 1]?.startsWith('--') !== true) ?? 'island';
+
+/** The router's named screens (src/main.ts). `settings` is an overlay that
+ *  boots over the title, and is a shootable name for exactly that reason. */
+const SCREENS = new Set(['title', 'captain', 'settings', 'island', 'sea']);
+/** Not part of the flow: a model viewer and a measuring rig. */
+const DEV_SCENES = new Set(['model', 'measure']);
+
+if (!SCREENS.has(scene) && !DEV_SCENES.has(scene)) {
+  console.error(
+    `unknown screen "${scene}"\n` +
+    `  screens: ${[...SCREENS].join(', ')}\n` +
+    `  dev scenes: ${[...DEV_SCENES].join(', ')}`
+  );
+  process.exit(1);
+}
+const target = SCREENS.has(scene) ? `screen=${scene}` : `scene=${scene}`;
+
 const mobile = has('mobile');
 const width = Number(flag('w', mobile ? 430 : 1280));
 const height = Number(flag('h', mobile ? 932 : 720));
@@ -114,7 +137,7 @@ try {
   }
 
   const url =
-    `http://localhost:${port}/?scene=${scene}&shot=1&w=${width}&h=${height}&t=${time}` +
+    `http://localhost:${port}/?${target}&shot=1&w=${width}&h=${height}&t=${time}` +
     `&seed=${encodeURIComponent(seed)}${extra.toString() ? '&' + extra.toString() : ''}`;
   await page.goto(url, { waitUntil: 'load', timeout: 60000 });
 

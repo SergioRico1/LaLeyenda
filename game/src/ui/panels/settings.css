@@ -1,0 +1,136 @@
+/* ============================================================================
+ * settings.css — the Ajustes overlay.
+ *
+ * §3.16's floating panel, scrimmed: unlike the build sheet there is nothing
+ * behind this the player is deciding ABOUT, so dimming the world is correct
+ * here and wrong there.
+ * ========================================================================== */
+
+.settings {
+  /* Scoped, because this is the one surface that has to sit over the guide
+     layer: Ajustes is reachable from the island HUD while the tutorial is
+     still running, and a coach mark drawn over a modal is a trapped player.
+     Below --z-toast (950), so a refusal is still readable. */
+  --settings-z: 940;
+
+  position: absolute;
+  inset: 0;
+  z-index: var(--settings-z);
+  display: grid;
+  place-items: center;
+  padding: calc(var(--ui-safe-t) + 16px) 16px calc(var(--ui-safe-b) + 16px);
+}
+
+.settings__scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--ui-scrim);
+}
+
+.settings__panel {
+  position: relative;
+  width: min(360px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 16px 14px;
+
+  background: var(--ui-panel);
+  border: var(--ui-frame-w) solid var(--ui-frame);
+  border-radius: var(--ui-r-panel);
+  box-shadow:
+    0 0 0 3px var(--ui-frame-dark),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.55),
+    0 8px 0 rgba(0, 0, 0, 0.3),
+    var(--ui-cast-lg);
+}
+
+.settings__head { text-align: center; }
+
+.settings__title {
+  margin: 0;
+  color: var(--ui-ink);
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 2px 0 rgba(255, 255, 255, 0.55);
+}
+
+/* --- the rows ------------------------------------------------------------ */
+
+.settings__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings__row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings__go {
+  width: 100%;
+  min-height: 56px;
+}
+
+.settings__hint {
+  margin: 0;
+  text-align: center;
+  color: var(--ui-ink);
+  -webkit-text-stroke-width: 0;
+  text-shadow: none;
+  opacity: 0.66;
+}
+
+/* The real file input, kept out of the layout but not out of the DOM: the
+   button above it is what the player presses, and a browser will only open a
+   picker from a click on the input itself. */
+.settings__file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.settings__who {
+  margin: 0;
+  text-align: center;
+  color: var(--ui-ink);
+  -webkit-text-stroke-width: 0;
+  text-shadow: none;
+  opacity: 0.5;
+}
+
+/* --- §3.14's red X, breaking the corner ---------------------------------- */
+
+.settings__x {
+  position: absolute;
+  right: 10px;
+  top: 0;
+  /* The independent `translate`, not `transform`: `.btn.is-pressed` writes a
+     transform for the press travel and would replace an offset declared there
+     (see the same note on .sheet__x). */
+  translate: 0 -46%;
+  width: 48px;
+  height: 48px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 11px;
+  overflow: visible;
+  z-index: 2;
+}
+
+.settings__x .mark--x { width: 46%; }
+
+.settings__x::before {
+  content: '';
+  position: absolute;
+  inset: 3px 4px auto 4px;
+  height: 52%;
+  border-radius: 8px 8px 4px 4px;
+  background: linear-gradient(180deg, var(--ui-red-gloss-a), var(--ui-red-gloss-b));
+  pointer-events: none;
+}
+
+.settings__x .mark { position: relative; z-index: 1; }

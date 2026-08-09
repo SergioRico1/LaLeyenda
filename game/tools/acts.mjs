@@ -107,7 +107,74 @@ async function dropGhostSomewhereValid(page) {
 const cameraAt = (page) => page.evaluate(() => window.__camera?.() ?? [0, 0, 0]);
 const apart = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
+/**
+ * Waits for the router to land on a screen.
+ *
+ * `window.__screen` is set by main.ts on every transition, so an act can wait
+ * for the destination instead of sleeping and hoping. It is checked BEFORE the
+ * selector because a screen builds its DOM after it is current, and a selector
+ * that never comes should blame the navigation rather than the markup.
+ */
+async function reachedScreen(page, name, selector, what) {
+  try {
+    await page.waitForFunction((n) => window.__screen === n, name, { timeout: 15000 });
+  } catch {
+    const on = await page.evaluate(() => window.__screen ?? 'nothing');
+    throw new Error(`act: ${what} — the router never reached ${name}; it is on ${on}`);
+  }
+  await need(page, selector, what);
+  await step(page, 2);
+}
+
 export const ACTS = {
+  /* --- the first run (PRODUCTION.md §1) ---------------------------------- */
+
+  /**
+   * Title → captain, through the real button.
+   *
+   *   npm run shoot -- title --mobile --act create
+   *
+   * This is the act that proves the seam: a fresh player taps Jugar and the
+   * router disposes the title, builds creation and photographs it. If the two
+   * screens ever end up on the stage together, this is where it shows.
+   */
+  async create(page) {
+    await (await need(page, 'button[aria-label="Jugar"]', 'the Jugar button')).click();
+    await reachedScreen(page, 'captain', '.captain__sheet', 'create');
+  },
+
+  /** Creation, re-rolled — "sorpréndeme" driving the sim's own roll. */
+  async surprise(page) {
+    await (await need(page, 'button[aria-label="Sorpréndeme"]', 'the Sorpréndeme button')).click();
+    await step(page, 2);
+  },
+
+  /** Ajustes, opened from the title the way a player opens it. */
+  async settings(page) {
+    await (await need(page, 'button[aria-label="Ajustes"]', 'the Ajustes button')).click();
+    await need(page, '.settings__panel', 'the Ajustes panel');
+    await step(page, 2);
+  },
+
+  /**
+   * The tutorial card over the island.
+   *
+   *   npm run shoot -- island --mobile --tutorial 1 --act teach
+   *
+   * The flag is required: a capture suppresses the tutorial by default, because
+   * otherwise it would cover the island in every island shot taken from a cold
+   * boot — which is every island shot there is.
+   */
+  async teach(page) {
+    if (!(await page.locator('.tut__card').count())) {
+      throw new Error('act: teach — no tutorial card. Pass --tutorial 1 (a capture hides it by default).');
+    }
+    await need(page, '.tut__card', 'the tutorial card');
+    await step(page, 2);
+  },
+
+  /* --- the island -------------------------------------------------------- */
+
   /** §3.15 — the picker, open, with its costs and its greyed reasons. */
   async picker(page) {
     await openPicker(page);

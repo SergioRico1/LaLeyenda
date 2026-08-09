@@ -1,3 +1,4 @@
+import { createCaptain, isValidLook, sanitizeCaptain } from '../sim/captain';
 import { SIM_VERSION, type GameState } from '../sim/types';
 
 /**
@@ -63,6 +64,31 @@ export const MIGRATIONS: Record<number, (state: Record<string, unknown>) => Reco
    * has already had its opening.
    */
   1: (state) => ({ ...state, obstacles: [], nextObstacleId: 1 }),
+
+  /**
+   * 2 → 3: PRODUCTION.md §1's captain.
+   *
+   * **This migration must not cost anyone an island.** A version-2 save is a
+   * played island — buildings mid-upgrade, producers part full, a daily chain
+   * six days in — and the only thing it lacks is an identity. Sending that
+   * player to captain creation would be the single most destructive thing this
+   * file could do, so it does the opposite: it rolls them one from THEIR OWN
+   * SEED and touches nothing else.
+   *
+   * Spread rather than rebuilt, deliberately. Every key that was in the object
+   * is still in the object, in the same order, with the same values; the only
+   * difference between the state that went in and the one that comes out is a
+   * field that did not exist before.
+   *
+   * The seed is read from the save because it IS the captain's island — a
+   * default here would hand two different players the same captain. A save with
+   * no seed at all is not one this game wrote, but it still gets a name rather
+   * than a crash.
+   */
+  2: (state) => ({
+    ...state,
+    captain: createCaptain(typeof state.seed === 'string' ? state.seed : 'la-leyenda'),
+  }),
 };
 
 export function migrate(envelope: SaveEnvelope): SaveEnvelope {
@@ -80,7 +106,32 @@ export function migrate(envelope: SaveEnvelope): SaveEnvelope {
     state = step(state);
     version++;
   }
+  state = repairCaptain(state);
   return { ...envelope, version, state: { ...(state as unknown as GameState), version } };
+}
+
+/**
+ * The load path's one integrity check, and it exists because of `importSave`:
+ * that file came off a player's disk, and a part id that is no longer in the
+ * library would reach the renderer as a request for a model that is not there.
+ *
+ * A sound captain is returned UNTOUCHED — same object, same key order — so a
+ * save that round-trips through here is byte-identical to the one that went in.
+ * Only a broken one is rebuilt, and rebuilt per slot, so a captain who has lost
+ * one hat does not also lose their name.
+ */
+function repairCaptain(state: Record<string, unknown>): Record<string, unknown> {
+  const seed = typeof state.seed === 'string' ? state.seed : 'la-leyenda';
+  const captain = state.captain as Partial<GameState['captain']> | undefined;
+  const sound =
+    !!captain &&
+    typeof captain.name === 'string' &&
+    captain.name.length > 0 &&
+    captain.seed === seed &&
+    isValidLook(captain.look);
+  if (sound) return state;
+  console.warn('[save] the captain on this save was incomplete — rebuilt from the island seed');
+  return { ...state, captain: sanitizeCaptain(captain, seed) };
 }
 
 /* --------------------------------------------------------------------------
@@ -317,6 +368,37 @@ export class SaveStore {
       }
     };
   }
+}
+
+/**
+ * Is there an island to come back to, and whose is it?
+ *
+ * The title screen asks this before it decides whether its primary button says
+ * `Jugar` or `Continuar`, and it is deliberately the FULL load rather than a
+ * key probe: a save that cannot be parsed is not one anybody can continue, and
+ * `load()` is also what quarantines it. Returning null is always safe — the
+ * worst case is a returning player being offered a fresh start, and nothing is
+ * written until they confirm one.
+ *
+ * The state is READ-ONLY here. `createGame` loads it again for real; this is
+ * the title asking a question, not the game taking ownership.
+ */
+export async function peekSavedGame(): Promise<GameState | null> {
+  try {
+    const store = await SaveStore.open();
+    return await store.load();
+  } catch (err) {
+    console.warn('[save] could not check for a stored game', err);
+    return null;
+  }
+}
+
+/** Writes a state straight to the store, for the one caller that has a save
+ *  but no game: importing a backup from the title screen, before there is
+ *  anything to import INTO. */
+export async function adoptSave(state: GameState, savedAt = Date.now()): Promise<void> {
+  const store = await SaveStore.open();
+  await store.save(state, savedAt);
 }
 
 /* --------------------------------------------------------------------------

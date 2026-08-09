@@ -297,7 +297,7 @@ export const DECOR_MODELS = [
   'tree_palm', 'tree_palm_tall', 'deco_bush', 'deco_bush_alt', 'deco_fern', 'deco_plant',
   'deco_hedge', 'deco_crate', 'deco_crate_red', 'deco_barrel', 'deco_fence', 'deco_fence_post',
   'deco_totem', 'deco_rock_lg', 'deco_rock_sm', 'deco_driftwood',
-  'deco_sandmound', 'deco_starfish', 'harv_cotton',
+  'deco_starfish', 'harv_cotton',
   'deco_archway', 'deco_flag',
 ] as const;
 
@@ -334,7 +334,7 @@ export const OBSTACLE_MODELS = [
  */
 const NO_SHADOW = new Set([
   'deco_bush', 'deco_bush_alt', 'deco_fern', 'deco_plant', 'deco_hedge',
-  'deco_starfish', 'harv_cotton', 'deco_sandmound',
+  'deco_starfish', 'harv_cotton',
 ]);
 // Freight came OUT of that set. A barrel is waist-high and it is the one prop
 // that stands on open sand rather than banked into planting, so it is exactly
@@ -1778,44 +1778,77 @@ export function planObstacles(shape: IslandShape, state: GameState, seed: string
     };
 
     if (o.kind === 'palmera') {
+      /*
+       * SMALLER THAN A DRESSING PALM, and the number matters more here than
+       * anywhere else in this file.
+       *
+       * An obstacle owns exactly one cell, and the field puts them on adjacent
+       * cells all over the plateau. A crown at the 1.6–2.3 the palm stands use
+       * is nearly two cells across, so neighbours weld — sixty of them came out
+       * as one unbroken canopy over the whole island, which is
+       * reference/SPACING.md's "NEVER a continuous hedge" with the hedge moved
+       * inland. At a cell and a quarter the crowns stay separate and the field
+       * reads as sixty things a player can clear one at a time, which is what
+       * it is. It is a sapling worth thirty seconds, not a landmark.
+       */
       const [px, pz] = around(0.05, 0.2);
-      put(rng.chance(0.4) ? 'tree_palm_tall' : 'tree_palm', rng.range(1.5, 1.9), px, pz, {
-        scaleY: rng.range(0.88, 1.12),
+      put(rng.chance(0.4) ? 'tree_palm_tall' : 'tree_palm', rng.range(1.2, 1.5), px, pz, {
+        scaleY: rng.range(0.86, 1.1),
       });
       // Never a bare trunk on bare ground: the undergrowth is what says this
-      // grew here rather than that somebody planted it.
-      for (let i = 0; i < rng.int(1, 2); i++) {
+      // grew here rather than that somebody planted it. One, and not always —
+      // at one-to-two guaranteed it was the skirt that welded the field shut.
+      if (rng.chance(0.7)) {
         const [sx, sz] = around(0.24, 0.4);
-        put(rng.pick(SHRUBS), rng.range(0.42, 0.66), sx, sz);
+        put(rng.pick(SHRUBS), rng.range(0.4, 0.6), sx, sz);
       }
     } else if (o.kind === 'roca') {
+      /*
+       * THREE THINGS, not one, and the reason is in this file already:
+       * `deco_rock_lg` is a dark mossy stone with a ragged silhouette, and the
+       * beach pass learned the hard way that overlapping them "closes into a
+       * black splat". Sixty-eight of these on green ground is that note at
+       * scale — the first field drawn had a hundred and forty rocks on it and
+       * the grass read as mottled with soot. The stone stays, because a rock is
+       * half of what `roca` means; it just stops being the only answer.
+       */
+      const r = rng.next();
       const [px, pz] = around(0.04, 0.18);
-      if (rng.chance(0.3)) {
-        // An ore seam. `harv_ironore` and `harv_copperore` are flat plates, so
-        // they read as something IN the ground rather than on it, which is what
-        // stops the small tier being five shades of the same grey lump.
-        put(rng.chance(0.5) ? 'harv_ironore' : 'harv_copperore', rng.range(0.72, 0.95), px, pz);
-        const [sx, sz] = around(0.26, 0.42);
-        put('deco_rock_sm', rng.range(0.5, 0.72), sx, sz);
+      if (r < 0.3) {
+        // An ore seam. The ores are flat plates, so they read as something IN
+        // the ground rather than on it — and they are the one warm note in a
+        // tier that is otherwise grey.
+        put(rng.chance(0.5) ? 'harv_ironore' : 'harv_copperore', rng.range(0.75, 1.0), px, pz);
+        const [sx, sz] = around(0.28, 0.44);
+        put('deco_rock_sm', rng.range(0.45, 0.62), sx, sz);
+      } else if (r < 0.66) {
+        // Scrub over a stone: the stone is still there and still what gets
+        // cleared, but the green breaks the silhouette so a field of them reads
+        // as undergrowth rather than as soot.
+        put('deco_rock_sm', rng.range(0.5, 0.72), px, pz);
+        for (let i = 0; i < rng.int(2, 3); i++) {
+          const [sx, sz] = around(0.2, 0.42);
+          put(rng.pick(SHRUBS), rng.range(0.45, 0.68), sx, sz);
+        }
       } else {
-        put('deco_rock_lg', rng.range(0.7, 0.95), px, pz);
-        if (rng.chance(0.55)) {
-          const [sx, sz] = around(0.26, 0.44);
-          put('deco_rock_sm', rng.range(0.45, 0.68), sx, sz);
+        put('deco_rock_lg', rng.range(0.62, 0.84), px, pz);
+        if (rng.chance(0.5)) {
+          const [sx, sz] = around(0.28, 0.44);
+          put(rng.pick(SHRUBS), rng.range(0.4, 0.58), sx, sz);
         }
       }
     } else if (o.kind === 'penasco') {
       // Half again the width of a `roca` and it keeps its rubble, so the tier is
-      // legible from across the island rather than from a tooltip.
+      // legible from across the island rather than from a tooltip. One companion
+      // stone, not three: the crag has to read as ONE object at fifteen minutes'
+      // worth of work, and a heap of overlapping boulders reads as a stain.
       const [px, pz] = around(0.02, 0.14);
-      put('deco_rock_lg', rng.range(1.2, 1.5), px, pz);
-      for (let i = 0; i < rng.int(2, 3); i++) {
-        const [sx, sz] = around(0.3, 0.46);
-        put(rng.chance(0.45) ? 'deco_rock_lg' : 'deco_rock_sm', rng.range(0.42, 0.7), sx, sz);
-      }
-      if (rng.chance(0.6)) {
-        const [sx, sz] = around(0.3, 0.46);
-        put(rng.pick(SHRUBS), rng.range(0.4, 0.6), sx, sz);
+      put('deco_rock_lg', rng.range(1.15, 1.45), px, pz);
+      const [sx, sz] = around(0.3, 0.46);
+      put('deco_rock_sm', rng.range(0.45, 0.68), sx, sz);
+      for (let i = 0; i < rng.int(1, 2); i++) {
+        const [bx, bz] = around(0.3, 0.46);
+        put(rng.pick(SHRUBS), rng.range(0.42, 0.62), bx, bz);
       }
     } else {
       // pecio. The hull is SUNK a fifth of a step into the ground: a skiff
@@ -2116,63 +2149,43 @@ export function buildGroundCover(shape: IslandShape, seed: string): THREE.Mesh {
 }
 
 /**
- * `deco_sandmound`, MEASURED — and it is not one solid mound.
+ * The satellite islets island_hero.png sets around its island — LAID OUT ONCE,
+ * so the sand and the things standing on it cannot disagree.
  *
- * The mesh is four disconnected pieces inside one 32 x 3 x 32 bounding box, and
- * the difference between the box and the sand is the whole of what shipped
- * wrong. Its vertex layers, in the model's own units:
+ * WHY THIS IS GEOMETRY AND NOT A MODEL
  *
- *   y −1.5 … −0.5   THREE 5 x 5 CHEVRON SLABS at three corners of the box,
- *                   attached to nothing. `fit` puts the BOX's floor at y = 0, so
- *                   these are what the islet was standing on: the sand began a
- *                   third of the model's height above them and they were left
- *                   sticking out of the sea alongside it. Two islets showed a
- *                   pair each and the third showed one — the blind judge's
- *                   "detached chevron slabs" and "orphaned slab off the edge".
- *   y −0.5 …  0.5   the wide sand PAD: x −11…12, z −14…8 of the 32-unit box.
- *   y  0.5 …  1.5   a small raised KNOB: x −3…5, z −7…4 — a QUARTER of the
- *                   footprint. Everything was lifted to the knob's TOP and then
- *                   scattered over the whole box, so palms stood a full tier
- *                   above the sand at radii the sand never reached, and the
- *                   rocks and bushes hovered over the pad.
+ * These used to be one `deco_sandmound` each, and every islet defect the blind
+ * judge found came out of that one model. Measured, it is four disconnected
+ * pieces in one 32 x 3 x 32 box: a sand pad, a smaller knob on top of it, and
+ * THREE 5 x 5 CHEVRON SLABS floating at three of the box's corners, attached to
+ * nothing and a tier clear of the sand. `fit` normalizes on the BOX, so the
+ * chevrons set the footprint and the size, and they rendered exactly as
+ * reported — detached slabs hovering beside two islets and an orphaned one off
+ * the edge of the third. Nothing a `ScatterItem` can express reaches inside a
+ * baked model to drop them: position, scale and yaw move all four pieces
+ * together, and sinking the box far enough to drown the chevrons drowns the
+ * sand as well. The same box is why the palms floated — they were lifted to the
+ * knob's top and then scattered across a footprint four times the knob's, so a
+ * clump of trunks stood over open water with the sand behind it.
  *
- * With the node transform folded in (`scale.x = −1`, `fit` centring on the box)
- * a model point renders at X = −x/32, Z = z/32, Y = (y + 1.5)/32 of the
- * footprint. Everything below is that arithmetic and nothing else.
+ * So the islets are built here instead, out of the same thing the island is: a
+ * lattice of `CELL`-wide voxel blocks on the terrain's own `STEP` ladder, in the
+ * terrain's own palette. They cost one draw call, they cannot come apart, and
+ * the props know exactly which block they are standing on because the same plan
+ * generates both.
  */
-const MOUND = {
-  /** One tier's height as a fraction of the footprint, before `scaleY`. */
-  tier: 1 / 32,
-  /** The wide pad: its centre's offset from the item's own position, and the
-   *  radius that stays on it. Both in footprints. */
-  pad: { x: -0.5 / 32, z: -3 / 32, radius: 11 / 32 },
-  /** The knob, same terms. `radius` is CIRCUMSCRIBED because it is used to keep
-   *  the pad's props off the knob, so it has to cover the corners; `inner` is
-   *  the inscribed one the palms are planted inside. */
-  knob: { x: -1 / 32, z: -1.5 / 32, radius: 6.8 / 32, inner: 4 / 32 },
-} as const;
+interface IsletBlock { x: number; z: number; height: number }
+interface Islet { blocks: IsletBlock[]; at: (b: IsletBlock) => THREE.Vector3 }
 
 /**
- * How far the chevron tier is pushed under the sea.
+ * Where the three islets are and what shape they are, deterministically.
  *
- * `render/water.ts` peaks its swell at `WAVE_AMPLITUDE` 0.16 world units and the
- * surface is opaque, so half that again below the trough hides them for good
- * without drowning the pad that sits directly on top of them.
+ * Shared by `buildIslets` (which draws the sand) and `planIslets` (which stands
+ * things on it) so there is exactly one answer to "where is the ground here".
  */
-const MOUND_SUBMERGE = 0.34;
-
-/**
- * The satellite islets island_hero.png sets around its island.
- *
- * They sit in open water where nothing can ever be built, they give the eye
- * something at the frame's edge, and they are the reference's own answer to a
- * horizon of flat blue. Deliberately small: the sea is not to be shrunk.
- */
-export function planIslets(shape: IslandShape, seed: string): ScatterItem[] {
-  const rng = new Rng(`${seed}:islets`);
-  const items: ScatterItem[] = [];
+function isletPlan(shape: IslandShape, seed: string): Islet[] {
+  const rng = new Rng(`${seed}:islets:shape`);
   const half = (shape.size * CELL) / 2;
-  const waterline = STEP * 0.82;
 
   // Placed by hand rather than scattered: three islets, off three different
   // shores, at distances that keep them clear of the island's own beach.
@@ -2182,89 +2195,184 @@ export function planIslets(shape: IslandShape, seed: string): ScatterItem[] {
     { x: half + 9.5, z: 8.5, r: 0.85 },
   ];
 
-  for (const spot of spots) {
-    const width = 8.5 * spot.r;
-    // 3.6 rather than 2.2, because one whole tier of this model is now spent
-    // below the waterline hiding the chevrons; without the stretch the sand
-    // would surface by a couple of centimetres and the islet would read as a
-    // raft rather than as land.
-    const squash = 3.6;
-    const yaw = rng.range(0, Math.PI * 2);
-    const tier = MOUND.tier * width * squash;
+  return spots.map((spot) => {
+    // Four cells of radius on the biggest, which is about the eight units the
+    // old mound covered. Deliberately small: the sea is not to be shrunk.
+    const reach = 4.2 * spot.r;
+    const crown = reach * 0.48;
+    const blocks: IsletBlock[] = [];
+    const span = Math.ceil(reach);
+    for (let dz = -span; dz <= span; dz++) {
+      for (let dx = -span; dx <= span; dx++) {
+        // A ragged edge, per cell, so an islet is a voxel island rather than a
+        // rasterised circle — the island's own coast is made the same way.
+        const d = Math.hypot(dx, dz) + rng.range(-0.55, 0.55);
+        if (d > reach) continue;
+        blocks.push({ x: dx, z: dz, height: d < crown ? 2 : 1 });
+      }
+    }
+    return {
+      blocks,
+      at: (b: IsletBlock) => new THREE.Vector3(
+        spot.x + b.x * CELL, b.height * STEP, spot.z + b.z * CELL
+      ),
+    };
+  });
+}
 
-    const base = new THREE.Vector3(spot.x, waterline - tier - MOUND_SUBMERGE, spot.z);
-    const padTop = base.y + tier * 2;
-    const knobTop = base.y + tier * 3;
-    items.push({
-      model: 'deco_sandmound',
-      position: base.clone(),
-      rotationY: yaw,
-      scale: width,
-      scaleY: squash,
-    });
+/**
+ * The islets' sand, as one vertex-coloured mesh.
+ *
+ * The same two-shade scheme `render/island.ts` gives the main island's coast —
+ * the ring the surf reaches a shade down from the dry sand behind it — so an
+ * islet belongs to the same beach as the island it sits off. Walls run down past
+ * the waterline and stop below it: what is under the sea is never seen, and a
+ * skirt that stops short leaves a hole the horizon shows through.
+ */
+export function buildIslets(shape: IslandShape, seed: string): THREE.Group {
+  const group = new THREE.Group();
+  group.name = 'islets';
+  let positions: number[] = [];
+  let normals: number[] = [];
+  let colours: number[] = [];
+  const tint = new THREE.Color();
 
-    // The sand is not centred on the item and it turns with it, so everything
-    // below is placed against the PIECE it actually stands on rather than
-    // against the bounding box the two share.
-    const sin = Math.sin(yaw);
-    const cos = Math.cos(yaw);
-    const on = (
-      piece: { x: number; z: number }, reach: number, angle: number
-    ): { x: number; z: number } => {
-      const px = piece.x * width + Math.cos(angle) * reach;
-      const pz = piece.z * width + Math.sin(angle) * reach;
-      return { x: base.x + px * cos - pz * sin, z: base.z + px * sin + pz * cos };
+  const face = (p: [number, number, number][], n: [number, number, number], hex: number) => {
+    const [a, b, c, d] = p;
+    positions.push(...a, ...b, ...c, ...a, ...c, ...d);
+    for (let i = 0; i < 6; i++) normals.push(...n);
+    tint.setHex(hex, THREE.SRGBColorSpace);
+    for (let i = 0; i < 6; i++) colours.push(tint.r, tint.g, tint.b);
+  };
+  const shade = (hex: number, k: number): number => (
+    (Math.min(255, Math.round(((hex >> 16) & 255) * k)) << 16)
+    | (Math.min(255, Math.round(((hex >> 8) & 255) * k)) << 8)
+    | Math.min(255, Math.round((hex & 255) * k))
+  );
+  const DRY = PALETTE.sand;
+  const WET = shade(PALETTE.sand, 0.93);
+  const WALL = shade(PALETTE.dirt, 0.96);
+  /** Where the skirt stops. Below the waterline and below the swell's trough. */
+  const FLOOR = -0.9;
+
+  for (const islet of isletPlan(shape, seed)) {
+    const height = new Map<number, number>();
+    for (const b of islet.blocks) height.set(b.z * 1000 + b.x, b.height);
+    positions = [];
+    normals = [];
+    colours = [];
+
+    for (const b of islet.blocks) {
+      const p = islet.at(b);
+      const x0 = p.x - CELL / 2;
+      const x1 = p.x + CELL / 2;
+      const z0 = p.z - CELL / 2;
+      const z1 = p.z + CELL / 2;
+      const y = p.y;
+      face(
+        [[x0, y, z0], [x0, y, z1], [x1, y, z1], [x1, y, z0]], [0, 1, 0],
+        b.height >= 2 ? DRY : WET
+      );
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nh = height.get((b.z + dz) * 1000 + b.x + dx) ?? 0;
+        if (nh >= b.height) continue;
+        const base = nh > 0 ? nh * STEP : FLOOR;
+        const wx = dx > 0 ? x1 : x0;
+        const wz = dz > 0 ? z1 : z0;
+        const wall: [number, number, number][] = dx !== 0
+          ? [[wx, base, z0], [wx, y, z0], [wx, y, z1], [wx, base, z1]]
+          : [[x0, base, wz], [x0, y, wz], [x1, y, wz], [x1, base, wz]];
+        // Wound so the normal points out of the block rather than into it.
+        face(dx > 0 || dz < 0 ? wall : [wall[3], wall[2], wall[1], wall[0]],
+          [dx, 0, dz], WALL);
+      }
+    }
+
+    /*
+     * ONE MESH PER ISLET, and it is not tidiness.
+     *
+     * islandScene.ts solves its framing off each scene child's BOUNDING BOX,
+     * and classes a box as the island or as an outlying prop by where its
+     * CENTRE falls. Three islets in one geometry share one box, that box spans
+     * from the far west islet to the far east one, and its centre lands on the
+     * island — so the solve took a hundred units of open sea for coastline and
+     * pulled the camera back until the island filled a third of the frame.
+     * Separate boxes put each islet back where the old per-prop instances had
+     * it: outlying, held in frame, and never allowed to widen the coast.
+     */
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colours, 3));
+    geometry.computeBoundingSphere();
+    const mesh = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({ vertexColors: true }));
+    mesh.name = 'islet';
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+  return group;
+}
+
+/**
+ * What stands on the islets.
+ *
+ * They give the eye something at the frame's edge, and they are the reference's
+ * own answer to a horizon of flat blue. Every prop is placed ON a block from
+ * `isletPlan` and at that block's own height, so there is no radius to overshoot
+ * and nothing can end up over water.
+ */
+export function planIslets(shape: IslandShape, seed: string): ScatterItem[] {
+  const rng = new Rng(`${seed}:islets`);
+  const items: ScatterItem[] = [];
+
+  for (const islet of isletPlan(shape, seed)) {
+    const crown = islet.blocks.filter((b) => b.height >= 2);
+    const skirt = islet.blocks.filter((b) => b.height < 2);
+    if (!crown.length) continue;
+    const taken = new Set<number>();
+    /** One free block from a tier, or null once the tier is used up. */
+    const claim = (from: IsletBlock[]): IsletBlock | null => {
+      const free = from.filter((b) => !taken.has(b.z * 1000 + b.x));
+      if (!free.length) return null;
+      const pick = free[rng.int(0, free.length - 1)];
+      taken.add(pick.z * 1000 + pick.x);
+      return pick;
+    };
+    const stand = (b: IsletBlock, model: string, scale: number, scaleY?: number): void => {
+      const p = islet.at(b);
+      items.push({
+        model,
+        position: new THREE.Vector3(
+          p.x + rng.range(-0.3, 0.3) * CELL, p.y, p.z + rng.range(-0.3, 0.3) * CELL
+        ),
+        rotationY: rng.range(0, Math.PI * 2),
+        scale,
+        scaleY,
+      });
     };
 
     // Three or four palms leaning together, not two standing apart: every islet
-    // in the reference is a CLUMP, and two trees on a sandbank read as two
-    // trees on a sandbank rather than as an island. On the KNOB and inside it —
-    // a trunk is the thing that has to meet sand, and the knob is a quarter of
-    // the box the old radii were rolled against.
-    const palms = rng.int(3, 4);
-    for (let i = 0; i < palms; i++) {
-      const at = on(MOUND.knob, rng.range(0, MOUND.knob.inner * 0.82) * width, rng.range(0, Math.PI * 2));
-      items.push({
-        model: rng.chance(0.5) ? 'tree_palm_tall' : 'tree_palm',
-        position: new THREE.Vector3(at.x, knobTop, at.z),
-        rotationY: rng.range(0, Math.PI * 2),
-        scale: rng.range(2.0, 2.8),
-        scaleY: rng.range(0.9, 1.1),
-      });
+    // in the reference is a CLUMP, and two trees on a sandbank read as two trees
+    // on a sandbank rather than as an island. On the crown, one to a block, so
+    // the clump is as wide as the high ground actually is.
+    for (let i = 0; i < rng.int(3, 4); i++) {
+      const b = claim(crown);
+      if (!b) break;
+      stand(b, rng.chance(0.5) ? 'tree_palm_tall' : 'tree_palm',
+        rng.range(2.0, 2.6), rng.range(0.9, 1.1));
     }
-
-    /** A ring on the pad: clear of the knob it would otherwise float beside,
-     *  and inside the sand's own edge it used to overshoot by half a mound. */
-    const skirt = (): { x: number; z: number } =>
-      on(MOUND.pad, rng.range(MOUND.knob.radius * 1.06, MOUND.pad.radius * 0.86) * width,
-        rng.range(0, Math.PI * 2));
-
     for (let i = 0; i < rng.int(1, 2); i++) {
-      const at = skirt();
-      items.push({
-        model: rng.chance(0.45) ? 'deco_rock_lg' : 'deco_rock_sm',
-        position: new THREE.Vector3(at.x, padTop, at.z),
-        rotationY: rng.range(0, Math.PI * 2),
-        scale: rng.range(1.0, 1.6),
-      });
+      const b = claim(skirt);
+      if (b) stand(b, rng.chance(0.45) ? 'deco_rock_lg' : 'deco_rock_sm', rng.range(0.7, 1.1));
     }
-    for (let i = 0; i < rng.int(3, 5); i++) {
-      const at = skirt();
-      items.push({
-        model: rng.pick(SHRUBS),
-        position: new THREE.Vector3(at.x, padTop, at.z),
-        rotationY: rng.range(0, Math.PI * 2),
-        scale: rng.range(0.6, 1.0),
-      });
+    for (let i = 0; i < rng.int(2, 4); i++) {
+      const b = claim(rng.chance(0.5) ? crown : skirt) ?? claim(skirt);
+      if (b) stand(b, rng.pick(SHRUBS), rng.range(0.5, 0.85));
     }
     if (rng.chance(0.6)) {
-      const at = skirt();
-      items.push({
-        model: rng.chance(0.5) ? 'deco_driftwood' : 'deco_starfish',
-        position: new THREE.Vector3(at.x, padTop, at.z),
-        rotationY: rng.range(0, Math.PI * 2),
-        scale: rng.range(0.7, 1.2),
-      });
+      const b = claim(skirt);
+      if (b) stand(b, rng.chance(0.5) ? 'deco_driftwood' : 'deco_starfish', rng.range(0.7, 1.1));
     }
   }
   return items.map((item) => ({ ...item, castShadow: !NO_SHADOW.has(item.model) }));

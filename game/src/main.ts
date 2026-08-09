@@ -1,11 +1,43 @@
 import { Stage } from './render/stage';
 import { measureRendered } from './render/assets';
 import { createIslandScene } from './scenes/islandScene';
+import { createTitleScene } from './scenes/titleScene';
+import { createCaptainScene } from './scenes/captainScene';
 import { createGame, type Game } from './core/game';
-import { landCargoInPlace } from './sim';
+import { adoptSave, importSaveFile, peekSavedGame } from './core/save';
+import { createSettingsPanel, type SettingsPanel } from './ui/panels/settings';
+import { createTutorial, type Tutorial } from './ui/tutorial';
+import { createCaptain, landCargoInPlace, setCaptain, setFlag, type Captain } from './sim';
 
-/** Entry point. `?scene=` picks the scene, `?shot=1` freezes time and reports
- *  readiness so the screenshot harness can capture a deterministic frame. */
+/**
+ * main.ts — the screen router.
+ *
+ * PRODUCTION.md §1: the first run does not exist, and "for a store release this
+ * is the first ninety seconds, and it decides everything else". So the game no
+ * longer boots onto the island; it boots onto a NAMED SCREEN, and the graph is:
+ *
+ *     title ──▶ captain ──▶ island ◀──▶ sea
+ *       └──────────────────────┴──▶ ajustes (overlay, from either end)
+ *
+ * Four rules the whole file exists to keep:
+ *
+ *  1. **One screen at a time.** Leaving a screen disposes it before the next one
+ *     is built. Two live scenes on one camera has been a real bug in this repo
+ *     and it reads as the game having a seizure; `tools/roundtrip.mjs` asserts
+ *     the island is GONE rather than merely covered, and that assertion is the
+ *     only thing standing between us and it coming back.
+ *  2. **The GAME outlives the screens.** It is created here, not inside a
+ *     scene: a voyage that restarted the island's economy would lose the timers
+ *     running while the player was away, and cargo would have nowhere to land.
+ *     Scenes are views of a simulation that outlives them.
+ *  3. **Every screen is photographable.** `?screen=` boots straight to one, and
+ *     under `?shot=1` the world is advanced to a fixed simulated time and then
+ *     frozen before `window.__ready` goes up. A screen that never sets __ready
+ *     cannot be captured, and a screen nobody can capture is a screen nobody
+ *     reviews.
+ *  4. **A returning player never loses an island by accident.** The only route
+ *     that destroys a save is Ajustes → Empezar de nuevo, behind two taps.
+ */
 
 declare global {
   interface Window {
@@ -24,18 +56,83 @@ declare global {
      *  the island actually moved, and "the picture changed" is not that: a
      *  running timer changes the picture too. */
     __camera?: () => [number, number, number];
+    /** Shot mode only — which screen the router is on, so an act can wait for
+     *  a navigation to land instead of sleeping and hoping. */
+    __screen?: string;
   }
 }
 
 const params = new URLSearchParams(location.search);
-const sceneName = params.get('scene') ?? 'island';
 const shotMode = params.get('shot') === '1';
 const shotTime = Number(params.get('t') ?? '2.0'); // simulated seconds for the frame
-const seed = params.get('seed') ?? 'la-leyenda';
+const seedParam = params.get('seed');
+const seed = seedParam ?? 'la-leyenda';
+
+/**
+ * The seed a BRAND-NEW captain's island is rolled from.
+ *
+ * PRODUCTION.md §2: "Every player currently gets the same seeded island. The
+ * seed should be the captain's, rolled or chosen at creation." So it is rolled
+ * here, at creation, and stored on the captain — unless the URL pinned one,
+ * which is what keeps every capture and every harness run deterministic.
+ *
+ * Rolled at the boundary, not in the sim: this is the one moment in the game
+ * that is allowed to be genuinely unrepeatable, and after it the seed is a
+ * stored string like any other.
+ */
+const rollIslandSeed = (): string =>
+  seedParam ?? `isla-${Math.random().toString(36).slice(2, 10)}`;
+
+/** `?save=` is a FIXTURE switch, not a screen: it names which island to boot
+ *  and is how the roundtrip harness and every island capture get there without
+ *  walking the menu. Its presence therefore also means "skip the title". */
+const saveParam = params.get('save');
+const saveStart = saveParam === 'demo' ? 'demo' : saveParam === 'new' ? 'new' : 'stored';
+
+/** The frozen instant a capture's sim clock reads. It must stay equal to
+ *  islandScene's own SHOT_EPOCH: the two never run at the same time, but a shot
+ *  of Ajustes over the title and a shot of the island should not be describing
+ *  two different days. */
+const SHOT_EPOCH = Date.UTC(2026, 0, 5, 12, 0, 0);
 
 const canvas = document.getElementById('scene') as HTMLCanvasElement;
 
-async function boot() {
+/* --------------------------------------------------------------------------
+ * screens
+ * ----------------------------------------------------------------------- */
+
+export type ScreenName = 'title' | 'captain' | 'island' | 'sea';
+
+/**
+ * Anything the frame loop and the shot path can drive. The two development
+ * scenes are this and no more — nothing navigates to or from them, so they owe
+ * nobody a dispose.
+ */
+interface Frameable {
+  update(dt: number, elapsed: number): void;
+  /** Only the sea implements it — see the note in the shot path. */
+  settle?(): Promise<void>;
+}
+
+/** What every screen in the flow owes the router on top of that. */
+interface Screen extends Frameable {
+  dispose(): void;
+}
+
+const SCREENS: readonly string[] = ['title', 'captain', 'island', 'sea'];
+const isScreen = (name: string | null): name is ScreenName => !!name && SCREENS.includes(name);
+
+/**
+ * Where to boot.
+ *
+ * `?screen=` is the name this router speaks; `?scene=` is the older one the
+ * screenshot harness has always used and every act in tools/acts.mjs still
+ * passes, so both are honoured and `screen` wins. Anything unrecognised falls
+ * through to the save-driven default, which is the only path a player takes.
+ */
+const requested = params.get('screen') ?? params.get('scene');
+
+async function boot(): Promise<void> {
   const stage = new Stage({
     canvas,
     fixedSize: shotMode
@@ -43,233 +140,526 @@ async function boot() {
       : null,
   });
 
-  // Outside shot mode the island and the sea take turns on the same stage, and
-  // runGame owns the handover. It has to be decided BEFORE the switch below:
-  // building a scene here and then letting the router build another one gives
-  // the player two islands, two HUDs and two update loops on one camera.
-  //
-  // In shot mode there is exactly one scene and no switching, so captures
-  // behave exactly as they always have.
-  if (!shotMode && (sceneName === 'island' || sceneName === 'sea')) {
-    return runGame(stage, sceneName);
-  }
-
-  let scene;
-  switch (sceneName) {
-    case 'model': {
-      const { createModelScene } = await import('./scenes/modelScene');
-      const ids = (params.get('id') ?? 'ship_skiff').split(',').filter(Boolean);
-      scene = await createModelScene(stage, ids, params.get('clip') ?? undefined);
-      break;
-    }
-    case 'measure': {
-      const { createMeasureScene } = await import('./scenes/measureScene');
-      scene = await createMeasureScene(
-        stage,
-        params.get('id') ?? 'ship_skiff',
-        Number(params.get('extent') ?? 4000),
-        (params.get('axis') as 'front' | 'top') ?? 'front',
-        params.get('fit') ? Number(params.get('fit')) : undefined,
-        params.get('clip') ?? undefined
-      );
-      break;
-    }
-    case 'sea': {
-      const { createSeaScene } = await import('./scenes/seaScene');
-      scene = await createSeaScene(stage, { seed });
-      break;
-    }
-    case 'island':
-    default:
-      scene = await createIslandScene(stage, seed);
-      break;
-  }
-
-  if (shotMode) {
-    // Advance the world to a fixed point in time in even steps, so animated
-    // models and the water land in exactly the same pose on every capture.
-    const step = 1 / 30;
-    for (let t = 0; t < shotTime; t += step) scene.update(step, t);
-    scene.update(0, shotTime);
-
-    // A scene that streams its contents in — the sea builds each reef and each
-    // enemy as the ship reaches it — has nothing loaded at this point, because
-    // the loop above ran synchronously and never yielded to a loader. Without
-    // this the open sea photographs as empty water, which is exactly what it
-    // did the first three times.
-    if ('settle' in scene && typeof scene.settle === 'function') {
-      await scene.settle();
-      scene.update(0, shotTime);
-    }
-
-    // Animation clips can drive the transform of the node a model was normalized
-    // against, so a model that measured correctly at load can be a different size
-    // by the time it is drawn. Report the biggest thing actually on screen.
-    {
-      const THREE_ = await import('three');
-      let worst = { name: '', span: 0 };
-      for (const child of stage.scene.children) {
-        if (child.name === 'water') continue;
-        const size = new THREE_.Box3().setFromObject(child).getSize(new THREE_.Vector3());
-        const span = Math.max(size.x, size.y, size.z);
-        if (Number.isFinite(span) && span > worst.span) worst = { name: child.name || child.type, span };
-      }
-      console.log(`[frame] largest non-water object at capture: ${worst.name} span ${worst.span.toFixed(1)}`);
-
-      // Every model that has been normalized states the size it is meant to be:
-      // a placed building carries the footprint it was built for, and anything
-      // through instantiate({fit}) carries the width it asked fitToFootprint
-      // for. This compares that promise against what is actually drawn, and
-      // fails the capture in EITHER direction.
-      //
-      // Too large has come back four times, most recently when the upgrade
-      // celebration reset the scale it was animating to 1 and restored the
-      // Ayuntamiento's native 126 units.
-      //
-      // Too small had nothing watching it at all, which is how the avatar
-      // bodies reached the captain screen drawing at 0.58 units against a
-      // target of 10. Note what that failure needed to be caught: a plain
-      // Box3 reported those bodies at a perfect 10 the whole time, because it
-      // never asks the bones where the vertices went. measureRendered does —
-      // a guard built on the cheap box would have missed it again.
-      //
-      // The band is deliberately wide. A clip legitimately moves a model's
-      // extent around: the widest sample in the library draws 2.2x its fitted
-      // width (an anglerfish mid-lunge) and the narrowest 0.57x (a dancing
-      // body), so 3x either way flags real breakage and nothing else.
-      //
-      // Checked per model rather than against the whole scene: the terrain,
-      // the water and the single InstancedMesh holding every decoration all
-      // legitimately span the island.
-      //
-      // Exposed rather than run once, because the failure it exists to catch
-      // arrived through an INTERACTION — the harness re-runs it after each act.
-      window.__checkSizes = () => {
-        const bad: string[] = [];
-        const size = new THREE_.Vector3();
-        stage.scene.traverse((node) => {
-          const target =
-            (node.userData?.footprint as number | undefined) ??
-            (node.userData?.fitTarget as number | undefined);
-          if (!target) return;
-          measureRendered(node).getSize(size);
-          const span = Math.max(size.x, size.z);
-          // An empty box means the model has not loaded into this node yet.
-          if (!Number.isFinite(span) || span === 0) return;
-          if (span > target * 3) {
-            bad.push(`${node.name || node.type} draws ${span.toFixed(2)} across, over 3x its target of ${target}`);
-          } else if (span < target / 3) {
-            bad.push(`${node.name || node.type} draws ${span.toFixed(2)} across, under a third of its target of ${target}`);
-          }
-        });
-        window.__oversized = bad.length ? bad.join('; ') : undefined;
-        if (bad.length) console.error(`[frame] BAD SIZE: ${window.__oversized}`);
-        return window.__oversized;
-      };
-      window.__checkSizes();
-    }
-
-    stage.render();
-
-    /**
-     * Shot mode renders twice and stops, which is what makes a capture
-     * byte-identical between runs. That also means anything a harness DOES to
-     * the page after boot — opening §3.15's picker, dropping a ghost on a cell
-     * — is never drawn, because no frame follows the tap.
-     *
-     * `__step` is the way back in: it advances the scene at the SAME frozen
-     * `shotTime`, so the world clock does not move and the capture stays
-     * deterministic, while giving the interaction a frame to appear in.
-     */
-    window.__step = (frames = 1) => {
-      for (let i = 0; i < frames; i++) {
-        scene.update(1 / 30, shotTime);
-        stage.render();
-      }
-    };
-
-    window.__camera = () => stage.camera.position.toArray() as [number, number, number];
-
-    // Two frames: the first can land before textures finish uploading.
-    requestAnimationFrame(() => {
-      stage.render();
-      window.__ready = true;
-    });
+  // The two development scenes are not part of the flow and never were: they
+  // are a model viewer and a measuring rig, they take their own query params,
+  // and nothing navigates to or from them.
+  if (requested === 'model' || requested === 'measure') {
+    await showDevScene(stage, requested);
     return;
   }
 
-  let last = performance.now();
-  let elapsed = 0;
-  const frame = (now: number) => {
-    const dt = Math.min(0.1, (now - last) / 1000);
-    last = now;
-    elapsed += dt;
-    scene.update(dt, elapsed);
-    stage.render();
-    requestAnimationFrame(frame);
-  };
-  requestAnimationFrame(frame);
-  window.__ready = true;
+  await runRouter(stage);
 }
 
+/* --------------------------------------------------------------------------
+ * the router
+ * ----------------------------------------------------------------------- */
 
-/**
- * The island and the sea, taking turns.
- *
- * The GAME is created here rather than inside a scene, and that is the whole
- * point: a voyage that restarted the island's economy every time the player
- * sailed would lose the timers running while they were away, and cargo would
- * have nowhere to land. Scenes are views of a simulation that outlives them.
- *
- * Each switch disposes the outgoing scene before building the incoming one, so
- * two scenes never share the stage — the alternative is two update loops
- * fighting over the same camera, which reads as the game having a seizure.
- */
-async function runGame(stage: Stage, start: 'island' | 'sea'): Promise<void> {
-  const game: Game = await createGame({
-    seed,
-    start: params.get('save') === 'demo' ? 'demo' : params.get('save') === 'new' ? 'new' : 'stored',
-  });
-
-  let current: { update(dt: number, elapsed: number): void; dispose(): void } | null = null;
+async function runRouter(stage: Stage): Promise<void> {
+  let current: Screen | null = null;
+  let currentName: ScreenName | null = null;
+  let game: Game | null = null;
   let elapsed = 0;
+  let looping = false;
+
+  // An overlay layer of the router's own, OUTSIDE #ui. islandScene.dispose()
+  // empties #ui wholesale — that is how it takes its picker, its sheets and its
+  // celebration layer with it — so anything that has to outlive a screen, or be
+  // torn down by hand, cannot live there.
+  const overlayRoot = document.createElement('div');
+  overlayRoot.id = 'overlay';
+  (document.getElementById('app') ?? document.body).append(overlayRoot);
+
+  let settings: SettingsPanel | null = null;
+  let tutorial: Tutorial | null = null;
+
+  /**
+   * Every navigation started by a tap goes through here.
+   *
+   * A screen is built asynchronously — models, a save, a dynamic import — so a
+   * failure inside one is a rejected promise with nobody holding it. Without
+   * this it disappears into the console as an unhandled rejection and the
+   * player is left on a screen whose button does nothing, which is PRODUCTION.md
+   * §7's "an error a player can hit shows something other than a blank canvas".
+   */
+  const nav = (run: () => Promise<void>): void => {
+    void run().catch((err) => {
+      window.__error = String(err?.stack || err);
+      console.error('[router] navigation failed', err);
+    });
+  };
+
+  /* --- the frame --------------------------------------------------------- */
+
+  function startLoop(): void {
+    if (looping || shotMode) return;
+    looping = true;
+    let last = performance.now();
+    const frame = (now: number): void => {
+      const dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      elapsed += dt;
+      current?.update(dt, elapsed);
+      stage.render();
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+    window.__ready = true;
+  }
+
+  /**
+   * The one place a screen changes.
+   *
+   * `after` runs with the new screen built and mounted but BEFORE the shot path
+   * freezes the frame, which is what lets `?screen=settings` photograph an
+   * overlay: anything mounted after __ready goes up is a race the harness loses.
+   */
+  async function show(
+    name: ScreenName,
+    build: () => Promise<Screen>,
+    after?: () => void | Promise<void>
+  ): Promise<void> {
+    closeSettings();
+    tutorial?.dispose();
+    tutorial = null;
+
+    current?.dispose();
+    current = null;
+    currentName = null;
+
+    const screen = await build();
+    current = screen;
+    currentName = name;
+    window.__screen = name;
+
+    // Awaited: the shot path freezes the frame the moment this returns, and
+    // anything mounted after that is a race the harness loses.
+    await after?.();
+
+    if (shotMode) await freeze(stage, () => current, screen);
+    else startLoop();
+  }
+
+  /* --- the game ---------------------------------------------------------- */
+
+  async function ensureGame(): Promise<Game> {
+    game ??= await createGame({
+      seed,
+      start: saveStart,
+      // A capture must never overwrite a real save, and must not depend on when
+      // it was taken. `persist:false` also means no IndexedDB is opened at all.
+      persist: !shotMode,
+      clock: shotMode ? () => SHOT_EPOCH : undefined,
+    });
+    return game;
+  }
+
+  /* --- destinations ------------------------------------------------------ */
+
+  async function toTitle(opts: { settings?: boolean } = {}): Promise<void> {
+    // A capture must never depend on what is in this browser's IndexedDB, so
+    // shot mode is told which face to wear instead of asking.
+    const saved = shotMode ? null : await peekSavedGame();
+    const returning = shotMode
+      ? saveParam === 'demo' || params.get('returning') === '1'
+      : saved !== null;
+    const captainName = shotMode ? createCaptain(seed).name : saved?.captain?.name ?? null;
+
+    await show(
+      'title',
+      () => createTitleScene(stage, {
+        returning,
+        captainName,
+        onPlay: () => nav(() => (returning ? toIsland() : toCaptain())),
+        onSettings: () => nav(openSettings),
+      }),
+      opts.settings ? () => openSettings() : undefined
+    );
+  }
+
+  async function toCaptain(): Promise<void> {
+    // Rolled once, HERE, so the captain the screen opens on and the island they
+    // confirm are the same one — re-rolling on confirm would hand the player a
+    // different pirate than the one they were looking at.
+    const island = rollIslandSeed();
+    await show('captain', () => createCaptainScene(stage, {
+      seed: island,
+      onBack: () => nav(toTitle),
+      onConfirm: (captain) => nav(() => startNewGame(captain)),
+    }));
+  }
+
+  /**
+   * Creation confirmed: this is the moment a player's island comes into being.
+   *
+   * The game is built from the CAPTAIN'S SEED, which is what makes the island
+   * theirs (PRODUCTION.md §2 — "the seed should be the captain's, rolled or
+   * chosen at creation"), and the captain is written onto the fresh state
+   * through the sim like every other change. It is saved before the island is
+   * built so that a player who closes the app during the first load still has a
+   * captain and an island when they come back.
+   */
+  async function startNewGame(captain: Captain): Promise<void> {
+    game?.stop();
+    game = await createGame({ seed: captain.seed, start: 'new' });
+    game.dispatch((state) => setCaptain(state, captain));
+    await game.saveNow();
+    await toIsland();
+  }
 
   async function toIsland(): Promise<void> {
-    current?.dispose();
-    current = await createIslandScene(stage, seed, { game, onSail: () => void toSea() });
+    // Shot mode boots exactly one scene and never switches, so the island keeps
+    // making its own game exactly as it always has — persistence off AND the sim
+    // clock frozen inside the scene, which is what makes an island capture
+    // byte-identical between runs. Handing it the router's would change every
+    // island shot in the project, so it does not.
+    if (shotMode) {
+      await show('island', () => createIslandScene(stage, seed), () => {
+        watchNavSettings();
+        maybeTeach(null);
+      });
+      return;
+    }
+
+    const live = await ensureGame();
+    await show(
+      'island',
+      () => createIslandScene(stage, live.state().seed, {
+        game: live,
+        onSail: () => nav(toSea),
+      }),
+      () => {
+        watchNavSettings();
+        maybeTeach(live);
+      }
+    );
   }
 
   async function toSea(): Promise<void> {
-    current?.dispose();
     const { createSeaScene } = await import('./scenes/seaScene');
-    current = await createSeaScene(stage, {
-      seed,
+
+    // As above: a sea capture is one scene with no way home, exactly as it has
+    // always been photographed.
+    if (shotMode) {
+      await show('sea', () => createSeaScene(stage, { seed }));
+      return;
+    }
+
+    const live = await ensureGame();
+    await show('sea', () => createSeaScene(stage, {
+      seed: live.state().seed,
       onEnd: (voyage) => {
         // The one place the sea touches the island's economy, and it goes
         // through the sim like every other change: caps apply, and what will
         // not fit is reported rather than silently dropped.
-        game.dispatch((state) => {
+        live.dispatch((state) => {
           const { spilled } = landCargoInPlace(state, voyage.cargo);
           const over = Object.values(spilled).reduce((a, b) => a + (b ?? 0), 0);
           if (over > 0) console.log(`[voyage] ${Math.round(over)} units would not fit in the stores`);
           return { ok: true, state, events: [] };
         });
-        void game.saveNow().then(() => toIsland());
+        nav(() => live.saveNow().then(() => toIsland()));
+      },
+    }));
+  }
+
+  /* --- the tutorial ------------------------------------------------------ */
+
+  /**
+   * Mounted over the island, once, for a player who has not been through it.
+   *
+   * It is the router's rather than the island's because it survives the island
+   * being disposed and rebuilt (a voyage in the middle of the opening), and
+   * because "has this player been taught" is a save-level fact.
+   */
+  function maybeTeach(live: Game | null): void {
+    // In a capture the tutorial is off unless it is the thing being
+    // photographed: it would otherwise cover the island in every island shot
+    // taken from a cold boot, which is every island shot there is.
+    if (shotMode && params.get('tutorial') !== '1') return;
+    if (live && live.state().flags.tutorialDone) return;
+    tutorial = createTutorial({
+      root: overlayRoot,
+      onDone: () => {
+        tutorial = null;
+        // No game under a capture — the island made its own — so the flag has
+        // nowhere to go and nothing to be remembered for.
+        if (!live) return;
+        live.dispatch((state) => setFlag(state, 'tutorialDone'));
+        void live.saveNow();
       },
     });
   }
 
-  // `?scene=sea` drops straight into a voyage, which is how the sea gets
-  // played without building a shipyard first.
-  if (start === 'sea') await toSea();
-  else await toIsland();
+  /* --- ajustes ----------------------------------------------------------- */
+
+  async function openSettings(): Promise<void> {
+    if (settings) return;
+
+    // A returning player tapping Ajustes on the title expects to be able to
+    // export the island they already have, so the game is created on demand
+    // here rather than only on Continuar. A player with no save gets no game
+    // and therefore no export — which is the truth, and the row says so.
+    if (!game && (shotMode || (await peekSavedGame()) !== null)) await ensureGame();
+
+    const live = game;
+    settings = createSettingsPanel({
+      captainName: live?.state().captain.name ?? null,
+      onClose: () => closeSettings(),
+      onSave: live ? () => live.saveNow() : null,
+      onExport: live ? () => live.exportSave() : null,
+      // From the title there is no game to import INTO, so the file is written
+      // straight to the store and the island is booted from it. That is the
+      // recovery path a player with a backup and a wiped phone needs, and it is
+      // the reason import is offered from the title at all.
+      onImport: live
+        ? (file) => live.importSave(file)
+        : async (file) => {
+            await adoptSave(await importSaveFile(file));
+            closeSettings();
+            await toIsland();
+          },
+      onReset: live
+        ? async () => {
+            await live.reset();
+            // Stop the autosave BEFORE dropping the reference, or the fresh
+            // island it just made is written back over the save we cleared.
+            live.stop();
+            game = null;
+            closeSettings();
+            await toTitle();
+          }
+        : null,
+    });
+    overlayRoot.append(settings.el);
+  }
+
+  function closeSettings(): void {
+    settings?.dispose();
+    settings = null;
+  }
+
+  /**
+   * ✎ SEAM — the island HUD's Ajustes slot, until it has a route of its own.
+   *
+   * LAYOUT_SPEC §1 gives the nav bar five slots and the fifth is Ajustes.
+   * `hud.ts` turns it into `onOpen('Ajustes')` and `islandScene.ts` routes
+   * every unknown destination to a "soon" toast — and both of those files
+   * belong to other builders this round, so the router cannot reach in and add
+   * a case.
+   *
+   * What it CAN do is listen for the tap itself. The nav slot is a real button
+   * with a stable accessible name, so this catches it in the capture phase and
+   * stops it before the HUD's own handler turns it into a toast.
+   *
+   * The moment islandScene grows an `onSettings` option this goes, and the flow
+   * does not change with it.
+   */
+  function watchNavSettings(): void {
+    // Installed once and left: the listener no-ops unless the island is the
+    // current screen, which is cheaper and safer than adding and removing it
+    // around every transition.
+    if (navWatchInstalled) return;
+    navWatchInstalled = true;
+    document.addEventListener(
+      'click',
+      (event) => {
+        if (currentName !== 'island' || settings) return;
+        const target = event.target as HTMLElement | null;
+        if (!target?.closest?.('button[aria-label="Ajustes"]')) return;
+        event.stopPropagation();
+        event.preventDefault();
+        nav(openSettings);
+      },
+      { capture: true }
+    );
+  }
+  let navWatchInstalled = false;
+
+  /* --- where we came in -------------------------------------------------- */
+
+  // An explicit `?screen=`/`?scene=` wins; `?save=` names an island and
+  // therefore skips the menu (it is what roundtrip.mjs and every island capture
+  // use); otherwise a player always lands on the title, whether or not they
+  // have an island waiting.
+  if (requested === 'settings') {
+    // Ajustes is an overlay rather than a screen, so it boots OVER the title.
+    // Under a capture the game is made first, so the panel photographs with its
+    // rows live instead of with every one of them correctly disabled.
+    if (shotMode) await ensureGame();
+    await toTitle({ settings: true });
+  } else if (isScreen(requested)) {
+    if (requested === 'title') await toTitle();
+    else if (requested === 'captain') await toCaptain();
+    else if (requested === 'sea') await toSea();
+    else await toIsland();
+  } else if (saveParam) await toIsland();
+  else await toTitle();
+}
+
+/* --------------------------------------------------------------------------
+ * shot mode
+ * ----------------------------------------------------------------------- */
+
+/**
+ * Advance to a fixed point in time, in even steps, and stop.
+ *
+ * That is what makes a capture byte-identical between runs: animated models and
+ * the water land in exactly the same pose every time, and no frame follows
+ * unless the harness asks for one through `__step`.
+ */
+async function freeze(stage: Stage, live: () => Frameable | null, screen: Frameable): Promise<void> {
+  const step = 1 / 30;
+  for (let t = 0; t < shotTime; t += step) screen.update(step, t);
+  screen.update(0, shotTime);
+
+  // A scene that streams its contents in — the sea builds each reef and each
+  // enemy as the ship reaches it — has nothing loaded at this point, because
+  // the loop above ran synchronously and never yielded to a loader. Without
+  // this the open sea photographs as empty water, which is exactly what it
+  // did the first three times.
+  if (screen.settle) {
+    await screen.settle();
+    screen.update(0, shotTime);
+  }
+
+  await installSizeGuard(stage);
+
+  stage.render();
+
+  /**
+   * Shot mode renders twice and stops, which is what makes a capture
+   * byte-identical between runs. That also means anything a harness DOES to
+   * the page after boot — opening §3.15's picker, dropping a ghost on a cell
+   * — is never drawn, because no frame follows the tap.
+   *
+   * `__step` is the way back in: it advances the scene at the SAME frozen
+   * `shotTime`, so the world clock does not move and the capture stays
+   * deterministic, while giving the interaction a frame to appear in.
+   *
+   * It reads the router's CURRENT screen rather than closing over this one, so
+   * an act that navigates (title → captain) keeps a working step.
+   */
+  window.__step = (frames = 1) => {
+    for (let i = 0; i < frames; i++) {
+      live()?.update(1 / 30, shotTime);
+      stage.render();
+    }
+  };
+
+  window.__camera = () => stage.camera.position.toArray() as [number, number, number];
+
+  // Two frames: the first can land before textures finish uploading.
+  requestAnimationFrame(() => {
+    stage.render();
+    window.__ready = true;
+  });
+}
+
+/**
+ * Animation clips can drive the transform of the node a model was normalized
+ * against, so a model that measured correctly at load can be a different size
+ * by the time it is drawn. Report the biggest thing actually on screen, and
+ * expose the per-model check the harness re-runs after an interaction.
+ */
+async function installSizeGuard(stage: Stage): Promise<void> {
+  const THREE_ = await import('three');
+  let worst = { name: '', span: 0 };
+  for (const child of stage.scene.children) {
+    if (child.name === 'water') continue;
+    const size = new THREE_.Box3().setFromObject(child).getSize(new THREE_.Vector3());
+    const span = Math.max(size.x, size.y, size.z);
+    if (Number.isFinite(span) && span > worst.span) worst = { name: child.name || child.type, span };
+  }
+  console.log(`[frame] largest non-water object at capture: ${worst.name} span ${worst.span.toFixed(1)}`);
+
+  // Every model that has been normalized states the size it is meant to be:
+  // a placed building carries the footprint it was built for, and anything
+  // through instantiate({fit}) carries the width it asked fitToFootprint
+  // for. This compares that promise against what is actually drawn, and
+  // fails the capture in EITHER direction.
+  //
+  // Too large has come back four times, most recently when the upgrade
+  // celebration reset the scale it was animating to 1 and restored the
+  // Ayuntamiento's native 126 units.
+  //
+  // Too small had nothing watching it at all, which is how the avatar
+  // bodies reached the captain screen drawing at 0.58 units against a
+  // target of 10. Note what that failure needed to be caught: a plain
+  // Box3 reported those bodies at a perfect 10 the whole time, because it
+  // never asks the bones where the vertices went. measureRendered does —
+  // a guard built on the cheap box would have missed it again.
+  //
+  // The band is deliberately wide. A clip legitimately moves a model's
+  // extent around: the widest sample in the library draws 2.2x its fitted
+  // width (an anglerfish mid-lunge) and the narrowest 0.57x (a dancing
+  // body), so 3x either way flags real breakage and nothing else.
+  //
+  // Checked per model rather than against the whole scene: the terrain,
+  // the water and the single InstancedMesh holding every decoration all
+  // legitimately span the island.
+  //
+  // Exposed rather than run once, because the failure it exists to catch
+  // arrived through an INTERACTION — the harness re-runs it after each act.
+  window.__checkSizes = () => {
+    const bad: string[] = [];
+    const size = new THREE_.Vector3();
+    stage.scene.traverse((node) => {
+      const target =
+        (node.userData?.footprint as number | undefined) ??
+        (node.userData?.fitTarget as number | undefined);
+      if (!target) return;
+      measureRendered(node).getSize(size);
+      const span = Math.max(size.x, size.z);
+      // An empty box means the model has not loaded into this node yet.
+      if (!Number.isFinite(span) || span === 0) return;
+      if (span > target * 3) {
+        bad.push(`${node.name || node.type} draws ${span.toFixed(2)} across, over 3x its target of ${target}`);
+      } else if (span < target / 3) {
+        bad.push(`${node.name || node.type} draws ${span.toFixed(2)} across, under a third of its target of ${target}`);
+      }
+    });
+    window.__oversized = bad.length ? bad.join('; ') : undefined;
+    if (bad.length) console.error(`[frame] BAD SIZE: ${window.__oversized}`);
+    return window.__oversized;
+  };
+  window.__checkSizes();
+}
+
+/* --------------------------------------------------------------------------
+ * the development scenes — a model viewer and a measuring rig
+ * ----------------------------------------------------------------------- */
+
+async function showDevScene(stage: Stage, which: 'model' | 'measure'): Promise<void> {
+  let scene: Frameable;
+  if (which === 'model') {
+    const { createModelScene } = await import('./scenes/modelScene');
+    const ids = (params.get('id') ?? 'ship_skiff').split(',').filter(Boolean);
+    scene = await createModelScene(stage, ids, params.get('clip') ?? undefined);
+  } else {
+    const { createMeasureScene } = await import('./scenes/measureScene');
+    scene = await createMeasureScene(
+      stage,
+      params.get('id') ?? 'ship_skiff',
+      Number(params.get('extent') ?? 4000),
+      (params.get('axis') as 'front' | 'top') ?? 'front',
+      params.get('fit') ? Number(params.get('fit')) : undefined,
+      params.get('clip') ?? undefined
+    );
+  }
+
+  if (shotMode) {
+    await freeze(stage, () => scene, scene);
+    return;
+  }
 
   let last = performance.now();
-  const frame = (now: number) => {
+  let elapsed = 0;
+  const frame = (now: number): void => {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     elapsed += dt;
-    current?.update(dt, elapsed);
+    scene.update(dt, elapsed);
     stage.render();
     requestAnimationFrame(frame);
   };

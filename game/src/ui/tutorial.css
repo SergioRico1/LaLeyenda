@@ -1,0 +1,121 @@
+/* ============================================================================
+ * tutorial.css — the contramaestre's card (§3.23).
+ *
+ * It sits ABOVE the nav bar and below nothing else the player needs, and it
+ * does NOT dim the island: the whole opening is taught by doing, so the thing
+ * being taught has to stay visible and tappable behind the instruction.
+ * ========================================================================== */
+
+.tut {
+  position: absolute;
+  inset: 0;
+  /* The card is the only thing that takes a tap. Everything else falls through
+     to the island, which is the point. */
+  pointer-events: none;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  /* Clear of the nav bar and the objective line under it. */
+  padding: 0 12px calc(var(--ui-safe-b) + 148px);
+}
+
+.tut__card {
+  pointer-events: auto;
+  width: min(390px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px 14px;
+
+  background: var(--ui-panel);
+  border: var(--ui-frame-w) solid var(--ui-frame);
+  border-radius: var(--ui-r-panel);
+  box-shadow:
+    0 0 0 3px var(--ui-frame-dark),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.55),
+    0 6px 0 rgba(0, 0, 0, 0.28),
+    var(--ui-cast);
+}
+
+.tut__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tut__who,
+.tut__line {
+  color: var(--ui-ink);
+  -webkit-text-stroke-width: 0;
+  text-shadow: none;
+}
+
+.tut__who {
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  opacity: 0.6;
+}
+
+.tut__line {
+  margin: 0;
+  line-height: 1.3;
+}
+
+/* Saltar is a text button on purpose: §6 forbids draining a real button to
+   make it secondary, so the way to say "this is not the action" is not to make
+   it an object at all. */
+.tut__skip {
+  /* NOT optional. base.css gives everything `.tap` (dom.ts adds it) an
+     absolutely-positioned 48px hit area through `::after`, and an unpositioned
+     element hands that pseudo to the nearest positioned ancestor — which here
+     is the full-screen `.tut` layer, so a `width:max(100%,48px)` hit area
+     became the whole viewport and swallowed every tap on the nav bar
+     underneath. Every other button in the game is `.btn`, which is
+     position:relative; this one is deliberately not, so it says so itself. */
+  position: relative;
+  border: 0;
+  background: none;
+  padding: 4px 6px;
+  color: var(--ui-ink);
+  opacity: 0.55;
+  text-decoration: underline;
+}
+
+.tut__skip .t-micro {
+  color: var(--ui-ink);
+  -webkit-text-stroke-width: 0;
+  text-shadow: none;
+}
+
+.tut__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tut__dots {
+  display: flex;
+  gap: 6px;
+}
+
+.tut__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.18);
+  box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.25);
+}
+
+.tut__dot.is-done { background: rgba(0, 0, 0, 0.34); }
+
+.tut__dot.is-on {
+  width: 20px;
+  background: var(--ui-green-a);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.tut__go {
+  min-height: 52px;
+  padding: 10px 26px;
+}
