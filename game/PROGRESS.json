@@ -63,6 +63,44 @@
           "biggestGap": "Zero cast shadows. Measured off their flag: a point at screen-height H drops its shadow ~0.68H, and lit sand (225,211,180) lands at (167,163,142) in shadow \u2014 a 25% multiply, not a grey overlay."
         }
       ]
+    },
+    {
+      "round": 2,
+      "title": "Shadows, a real beach, and the water contradiction settled",
+      "a": "shots/blind/island-r2/a.png",
+      "b": "shots/blind/island-r2/b.png",
+      "key": {
+        "a": "ours",
+        "b": "the shipped game"
+      },
+      "better": "B",
+      "weWon": false,
+      "gapSize": "obvious",
+      "biggestFlaw": "Our shadows are too SHORT to read. The sun was 15.3 degrees off the camera axis, so every shadow fell behind the object throwing it \u2014 the map was never broken. The azimuth is now solved off their flag (0.68H against their measured 0.68H) and shadows exist, but the judge still sees 'a flat sticker of objects hovering on a beige plane'. The reference's shadows are long and soft; ours are short and hard.",
+      "differences": [
+        "FRAMING REGRESSION: the island now runs off the bottom of frame and crops the moored ship at the left edge. Round 1's silhouette fit was correct; the coast rebuild moved it.",
+        "The right third collapses into an unreadable brown-and-orange mass \u2014 no negative space, no separation between market and shipyard.",
+        "Four unrelated architectural vocabularies on one island: a curved-roof pagoda, a half-timbered northern house, a Mediterranean cottage and pirate rigging. This is asset selection, not rendering.",
+        "Our ocean reads as a tiling noise pattern rather than water \u2014 flat lighter-blue rectangles at even density.",
+        "SETTLED: the water contradiction. Both sides were partly right. The reference's sea is TWO materials split by screen height plus a sun lane confined to one corner. The builder was right to delete the glitter field and wrong to delete the lane with it \u2014 our white chip tier is 13.7x short in the near-field right lane."
+      ],
+      "pieces": [
+        {
+          "piece": "shadows",
+          "verdict": "ours-worse",
+          "biggestGap": "Shadows are cast correctly now but read short. Shadowed-sand share is 18.2% against the reference's 8.3% \u2014 we have twice their shadow AREA at the right multiply and bearing, but ours lands on palm canopies shadowing other palm canopies instead of on open plaza. The gap here is composition, not light."
+        },
+        {
+          "piece": "coast",
+          "verdict": "close",
+          "biggestGap": "Rebuilt from a 21px single cliff to three low bands ending 0.24 units above the water, with a wet-sand ring. Measured against their 11px wall."
+        },
+        {
+          "piece": "water",
+          "verdict": "ours-worse",
+          "biggestGap": "Add the white chip tier to the near-field lane only: reference runs 4.9% of pixels above L=200 there, we run 0.36%."
+        }
+      ]
     }
   ]
 }
