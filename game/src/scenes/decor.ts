@@ -1937,7 +1937,8 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
  * ----------------------------------------------------------------------- */
 
 /**
- * Where the wilderness clumps — a sparse, jittered set of points on the grid.
+ * Where the wilderness clumps — a handful of points, well apart, on the ground
+ * the obstacle field can actually reach.
  *
  * THE PROBLEM THIS SOLVES, AND WHY IT IS SOLVED HERE AND NOT IN THE SIM
  *
@@ -1971,7 +1972,7 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
  * depend only on the island seed and the grid, so they are the same before and
  * after every tap the player will ever make.
  *
- * A DOZEN POINTS, SEVEN CELLS APART, ON GROUND THE ISLAND ACTUALLY HAS.
+ * TEN POINTS, SIX CELLS APART, ON GROUND THE FIELD ACTUALLY REACHES.
  *
  * The first cut of this put one jittered point in each block of eleven cells,
  * which is the standard trick and is wrong here for a measurable reason: it
