@@ -1,33 +1,47 @@
 /* ============================================================================
  * captain.css — creation, over the same sea the title stands on.
  *
- * The layout is one column with THREE bands, and the middle one is empty on
- * purpose: `.captain__stage` is where the avatar will stand. Reserving it now
- * means the model arrives without moving a control, and it is why this screen
- * can be finished by editing one file.
+ * Four bands down a portrait phone: header, the captain, their nameplate, and
+ * the control sheet. The captain gets the top ~55% and the sheet the bottom
+ * ~34%, which is the split UI_SPEC §2.1 asks for — everything actionable inside
+ * a thumb's arc, nothing to reach for above the middle of the screen.
  *
  * §3.18's dark page body is used for the control sheet rather than for the
- * whole screen, so the sea still shows behind the avatar — a full-bleed page
+ * whole screen, so the sea still shows behind the captain: a full-bleed page
  * over a live 3D scene is UI_SPEC §6's first anti-goal.
+ *
+ * Every raised object here carries §0.2's four layers — ink contour, a HARD
+ * gloss step, a warm top rim, and a dark lip over a zero-x-offset extrusion.
+ * The swatch is the one that matters: it is the object the player taps forty
+ * times on this screen.
  * ========================================================================== */
 
 .captain {
   position: absolute;
   inset: 0;
   display: grid;
-  grid-template-rows: auto 1fr auto;
-  padding: calc(var(--ui-safe-t) + 12px) 0 var(--ui-safe-b);
+  grid-template-rows: auto 1fr auto auto;
+  padding: calc(var(--ui-safe-t) + 10px) 0 var(--ui-safe-b);
   pointer-events: none;
 }
 
-.captain > * { pointer-events: auto; }
+/* `min-width: 0` is load-bearing, not tidying. A grid item's automatic minimum
+   size is its MIN-CONTENT size, and the swatch row's min-content is nine 74px
+   tiles — so the single auto column sized itself to 780px, the whole screen
+   laid itself out in that column and everything to the right of 430 was simply
+   off the phone. Every flex/grid item down this tree that holds a scroller
+   needs it. */
+.captain > * { pointer-events: auto; min-width: 0; }
 
 /* --- header -------------------------------------------------------------- */
 
 .captain__head {
   position: relative;
   text-align: center;
-  padding: 0 56px 6px;
+  padding: 0 64px 2px;
+  /* The title is a caption over a live scene; it must not eat a tap meant for
+     the turntable behind it. */
+  pointer-events: none;
 }
 
 .captain__title {
@@ -36,42 +50,134 @@
 }
 
 .captain__sub {
-  margin: 2px 0 0;
+  margin: 3px 0 0;
   color: var(--ui-ivory);
-  opacity: 0.82;
+  opacity: 0.84;
 }
 
 .captain__back {
   position: absolute;
   left: 12px;
-  top: -4px;
-  min-height: 40px;
-  padding: 8px 14px;
+  top: -6px;
+  min-height: 42px;
+  padding: 9px 15px;
   border-radius: var(--ui-r-chip);
+  pointer-events: auto;
 }
 
 /* --- where the captain stands -------------------------------------------- */
-/* Transparent, sized, and holding nothing. The sea shows through it. */
+/* Transparent, sized, and holding nothing: the 3D captain is behind it and this
+   box is only the turntable's handle (captainScene.ts). */
 
 .captain__stage {
-  min-height: 120px;
+  position: relative;
+  min-height: 180px;
+  touch-action: none;
+  cursor: grab;
+}
+
+/* A warm pool of light behind the captain. The sea is busy and the same value
+   as a lot of the clothing, and a character creator has to present its subject
+   — this is the cheapest possible version of the studio backdrop every
+   reference puts behind a hero object. */
+.captain__stage::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  width: 118%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle at 50% 50%,
+    rgba(255, 246, 214, 0.34) 0%,
+    rgba(255, 240, 200, 0.14) 34%,
+    rgba(255, 240, 200, 0) 62%);
   pointer-events: none;
 }
+
+.captain__stage:active { cursor: grabbing; }
+
+/* --- the nameplate ------------------------------------------------------- */
+/* Directly under the captain's feet, the way a character card names its
+   character — and out of the sheet, which needs its height for the options. */
+
+.captain__plate {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(324px, calc(100% - 40px));
+  margin: 0 auto 10px;
+  padding: 4px 4px 4px 0;
+
+  background: var(--ui-well);
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  border-radius: var(--ui-r-pill);
+  /* A WELL: sunk, not raised. The dark inset at the top is the inverse of a
+     raised object's rim and is what makes it read as something you type into. */
+  box-shadow:
+    inset 0 3px 0 rgba(0, 0, 0, 0.42),
+    inset 0 -2px 0 rgba(255, 255, 255, 0.14),
+    0 3px 0 rgba(0, 0, 0, 0.3);
+}
+
+.captain__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 46px;
+  padding: 6px 4px 6px 18px;
+  text-align: center;
+  color: var(--ui-ivory);
+  background: none;
+  border: 0;
+  outline: none;
+}
+
+.captain__name::placeholder {
+  color: rgba(255, 255, 255, 0.42);
+  -webkit-text-stroke-width: 0;
+}
+
+/* The one control inside the well, so it is a raised object on a sunk one. */
+.captain__dice {
+  position: relative;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  border-radius: 12px;
+  background: linear-gradient(180deg,
+    var(--ui-grey-gloss-a) 0%, var(--ui-grey-gloss-b) 60%,
+    var(--ui-grey-a) 60.01%, var(--ui-grey-b) 92%,
+    var(--ui-grey-lip) 92.01%, var(--ui-grey-lip) 100%);
+  box-shadow: inset 0 2px 0 var(--ui-rim), var(--ui-drop-xs);
+}
+
+.captain__dice .t-glyph {
+  font-size: 21px;
+  line-height: 1;
+  color: var(--ui-ink);
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+.captain__dice:active,
+.captain__dice.is-pressed { transform: translateY(3px); box-shadow: inset 0 2px 0 var(--ui-rim); }
 
 /* --- the control sheet --------------------------------------------------- */
 
 .captain__sheet {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 9px;
   /* Capped and centred rather than full-bleed: on a wide screen a sheet that
-     spans 1280px stops reading as an object and starts reading as a page, and
-     a 1.1m arrow at one end of a row with its label at the other is not a
-     control anybody can use. */
-  width: min(410px, calc(100% - 20px));
-  margin: 0 auto 10px;
+     spans 1280px stops reading as an object and starts reading as a page. */
+  width: min(452px, calc(100% - 16px));
+  margin: 0 auto 8px;
   box-sizing: border-box;
-  padding: 14px 14px 16px;
+  padding: 10px 8px 12px;
 
   background: var(--ui-panel);
   border: var(--ui-frame-w) solid var(--ui-frame);
@@ -85,102 +191,296 @@
     var(--ui-cast);
 }
 
-/* The name field is a WELL — sunk into the cream, which is the inverse of the
-   raised object and the reason it reads as something you type into. */
-.captain__name {
-  width: 100%;
-  box-sizing: border-box;
-  min-height: 52px;
-  padding: 8px 14px;
-  text-align: center;
-  color: var(--ui-ivory);
-  background: var(--ui-well);
-  border: var(--ui-ink-w) solid var(--ui-ink);
-  border-radius: var(--ui-r-chip);
-  box-shadow: inset 0 3px 0 rgba(0, 0, 0, 0.34), inset 0 -2px 0 rgba(255, 255, 255, 0.14);
-  outline: none;
-}
+/* Same reason as `.captain > *`: the rail and the swatch row are scrollers, and
+   a flex item defaults to refusing to shrink below its content. */
+.captain__sheet > * { min-width: 0; }
 
-.captain__name::placeholder {
-  color: rgba(255, 255, 255, 0.42);
-  -webkit-text-stroke-width: 0;
-}
+/* --- §3.19 the category rail --------------------------------------------- */
 
-/* --- the seven rows ------------------------------------------------------ */
-
-.captain__rows {
+.captain__rail {
+  position: relative;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  /* Seven rows always fit on a 932px phone; on a short one they scroll rather
-     than push the CTA off the bottom (§3.15: the primary never leaves the
-     thumb zone). */
-  max-height: min(48vh, 400px);
-  overflow-y: auto;
-  /* A flex child will not shrink below its content without this, which is what
-     put the last row underneath the CTA in landscape. */
-  min-height: 0;
+  align-items: flex-end;
+  gap: 3px;
+  /* Sized so all SEVEN categories fit across a 430pt phone — a taxonomy the
+     player can count at a glance is worth two points of type. Below that width
+     it scrolls and snaps (§3.19) rather than wrapping into a second row, which
+     would put half the categories out of the thumb's arc. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  /* Room for the tabs' own contour and the 2px they overlap the tray by. */
+  margin: 0 -3px -2px;
+  padding: 0 3px;
+  min-height: 50px;
 }
 
-.captain__row {
+.captain__rail::-webkit-scrollbar { display: none; }
+
+.captain__tab {
+  position: relative;
+  flex: 0 0 auto;
+  scroll-snap-align: center;
+  min-width: 46px;
+  height: 40px;
+  padding: 0 7px;
   display: grid;
-  grid-template-columns: 68px 44px 1fr 44px;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 4px;
-  border-radius: var(--ui-r-chip);
-  background: rgba(0, 0, 0, 0.06);
+  place-items: center;
+  /* An inactive tab sits LOWER than the active one and has no bottom edge of
+     its own — §3.19. */
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+  background: linear-gradient(180deg,
+    #9A968A 0%, #9A968A 26%,
+    var(--ui-tab-off) 26.01%, var(--ui-tab-off) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
 }
 
-.captain__slot {
-  color: var(--ui-ink);
-  -webkit-text-stroke-width: 0;
-  text-shadow: none;
-  opacity: 0.72;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
+/* The open tab is taller, and is filled with the WELL the tray below is made
+   of, so the two shapes merge into one silhouette instead of stacking. */
+.captain__tab.is-on {
+  height: 48px;
+  min-width: 58px;
+  border-radius: 14px 14px 0 0;
+  background: linear-gradient(180deg,
+    #4E4948 0%, #4E4948 24%,
+    var(--ui-well) 24.01%, var(--ui-well) 100%);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 248, 0.42);
+  z-index: 1;
 }
 
-.captain__value {
-  color: var(--ui-ink);
-  -webkit-text-stroke-width: 0;
-  text-shadow: none;
-  text-align: center;
+.captain__tabtext {
+  font-size: 13px;
+  -webkit-text-stroke-width: 1.7px;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.82);
+  white-space: nowrap;
+}
+
+.captain__tab.is-on .captain__tabtext { font-size: 14px; }
+
+.captain__tab:active,
+.captain__tab.is-pressed { filter: brightness(0.94); }
+
+/* --- the tray ------------------------------------------------------------ */
+/* §3.17: list content lives in a --ui-well inset panel inside the cream. */
+
+.captain__tray {
+  position: relative;
+  padding: 7px 8px 9px;
+  border-radius: 12px;
+  background: var(--ui-well);
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  box-shadow: inset 0 3px 7px rgba(0, 0, 0, 0.5);
+}
+
+.captain__now {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 0 2px 6px;
+  min-height: 20px;
+}
+
+/* One line naming what is open and what is chosen — the Kingshot move
+   (LAYOUT_SPEC §4): say it in words once instead of labelling forty tiles. */
+.captain__caption {
+  min-width: 0;
+  color: var(--ui-ivory);
+  -webkit-text-stroke-width: 1.6px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* Under 52px, so §1.1's table puts the gloss step at 60%. */
-.captain__arrow {
-  --brk: 60%;
-  min-height: 44px;
-  padding: 0;
-  border-width: var(--ui-ink-w-sm);
-  border-radius: var(--ui-r-chip);
+.captain__hint {
+  margin-left: auto;
+  color: #E7C98A;
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
 }
 
-.captain__arrow .t-glyph {
-  font-size: 24px;
+.captain__row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  /* Room for the selected swatch's lift and its tick badge, which overhangs
+     the corner and must not be clipped (§3.8). */
+  padding: 7px 2px 8px;
+  margin: -7px -2px -8px;
+}
+
+.captain__row::-webkit-scrollbar { display: none; }
+
+/* Nine hats do not fit across a phone, so the row scrolls — and a row that
+   scrolls has to SAY so. The well fades back in over the last few pixels, which
+   is the quietest possible "there is more this way". */
+.captain__tray::after {
+  content: '';
+  position: absolute;
+  top: 30px;
+  right: 3px;
+  bottom: 6px;
+  width: 26px;
+  border-radius: 0 10px 10px 0;
+  background: linear-gradient(90deg, rgba(58, 54, 53, 0), rgba(58, 54, 53, 0.92));
+  pointer-events: none;
+}
+
+/* --- the swatch — the object this screen is made of ---------------------- */
+
+.captain__sw {
+  position: relative;
+  flex: 0 0 auto;
+  width: 74px;
+  height: 74px;
+  display: grid;
+  place-items: center;
+  overflow: visible;
+
+  /* 1. contour · 2. hard gloss STEP at 52% · 3. warm top rim ·
+     4. dark lip plus a zero-x extrusion. The face is the blue item-tile family
+     of §3.20, which is what a voxel prop is presented on everywhere else in
+     this game. */
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 50% 44%,
+      rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0.16) 42%, rgba(255, 255, 255, 0) 66%),
+    linear-gradient(180deg,
+      #6FE0F2 0%, #6FE0F2 52%,
+      var(--ui-blue-a) 52.01%, var(--ui-blue-b) 92%,
+      #1F5D74 92.01%, #1F5D74 100%);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 250, 0.62),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.28),
+    var(--ui-drop-sm),
+    var(--ui-cast);
+  transition: transform .07s ease-out, box-shadow .07s ease-out, filter .07s ease-out;
+}
+
+.captain__sw:active,
+.captain__sw.is-pressed {
+  transform: translateY(3px);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.35), 0 1px 0 rgba(0, 0, 0, 0.3);
+  filter: brightness(0.94);
+}
+
+.captain__art {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  /* Hard offset, no blur: a blurred drop under a flat-shaded voxel prop is the
+     fastest way to look like a generic mobile game. */
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.38));
+  pointer-events: none;
+}
+
+.captain__fallback {
+  padding: 0 5px;
+  text-align: center;
+  line-height: 1.15;
+  pointer-events: none;
+}
+
+/* "None" is a different KIND of choice, so it is a different object: the well
+   again, with a heavy glyph on it. */
+.captain__sw--none {
+  background: linear-gradient(180deg,
+    #67635F 0%, #67635F 52%,
+    #4A4644 52.01%, #3A3635 92%,
+    #221F1E 92.01%, #221F1E 100%);
+}
+
+.captain__novalue {
+  font-size: 28px;
   line-height: 1;
-  color: var(--ui-ink);
-  -webkit-text-stroke-width: 0;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.82);
+  pointer-events: none;
+}
+
+/* --- selected: four cues, because one is never enough at arm's length ---- */
+
+.captain__sw.is-on {
+  /* 1. the face turns GOLD */
+  background:
+    radial-gradient(circle at 50% 42%,
+      rgba(255, 252, 232, 0.72) 0%, rgba(255, 250, 220, 0.28) 44%, rgba(255, 250, 220, 0) 68%),
+    linear-gradient(180deg,
+      #FFDE7A 0%, #FFDE7A 47%,
+      var(--ui-gold-a) 47.01%, var(--ui-gold-b) 92%,
+      var(--ui-gold-lip) 92.01%, var(--ui-gold-lip) 100%);
+  /* 2. an ivory frame inside the ink — §3.7's treatment, and there is no HUD on
+     this screen for it to compete with. 3. it stands taller: a longer
+     extrusion is how rank is carried everywhere else in this UI. */
+  box-shadow:
+    inset 0 0 0 3px var(--ui-ivory),
+    inset 0 5px 0 rgba(255, 255, 250, 0.5),
+    var(--ui-drop),
+    var(--ui-cast-lg);
+  transform: translateY(-3px);
+}
+
+.captain__sw.is-on:active,
+.captain__sw.is-on.is-pressed {
+  transform: translateY(0);
+  box-shadow: inset 0 0 0 3px var(--ui-ivory), 0 2px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* 4. and a green tick that BREAKS the silhouette (§3.8's badge geometry). */
+.captain__tick {
+  position: absolute;
+  top: 0;
+  right: 0;
+  transform: translate(34%, -34%);
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  line-height: 1;
+  border-radius: var(--ui-r-badge);
+  background: linear-gradient(180deg,
+    var(--ui-ok-gloss-a) 0%, var(--ui-ok-gloss-b) 48%,
+    var(--ui-ok-a) 48.01%, var(--ui-ok-b) 100%);
+  box-shadow:
+    0 0 0 2.5px var(--ui-badge-ring),
+    0 0 0 4px rgba(0, 0, 0, 0.55),
+    0 2px 3px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
 }
 
 /* --- the two decisions --------------------------------------------------- */
 
 .captain__cta {
   display: grid;
-  grid-template-columns: 1fr 1.25fr;
+  grid-template-columns: 1fr 1.3fr;
   gap: 10px;
 }
 
 .captain__surprise,
 .captain__confirm {
-  min-height: 62px;
-  padding: 10px 12px;
+  min-height: 60px;
+  padding: 10px 10px;
 }
 
 .captain__surprise .t-btn { font-size: 17px; }
 .captain__confirm .t-btn { font-size: 21px; }
+
+/* --- landscape ----------------------------------------------------------- */
+/* Both orientations are first class (§2.3). The sheet stays a sheet; it just
+   stops being most of the screen. */
+
+@media (orientation: landscape) {
+  .captain__stage { min-height: 90px; }
+  .captain__plate { margin-bottom: 6px; }
+  .captain__sheet { width: min(560px, calc(100% - 24px)); gap: 7px; padding: 8px 11px 10px; }
+  .captain__row { padding-top: 6px; padding-bottom: 6px; margin-top: -6px; margin-bottom: -6px; }
+  .captain__sw { width: 64px; height: 64px; }
+  .captain__surprise,
+  .captain__confirm { min-height: 54px; }
+}
