@@ -192,6 +192,80 @@
           "biggestGap": "Detached chevron slabs hovering in the water beneath two islets — deco_sandmound.glb is four disconnected pieces in one bounding box, three of them 5x5 chevron slabs at the box's corners a tier clear of the sand; no ScatterItem transform can leave them behind, so planIslets no longer uses the model. Islets are now voxel geometry built by buildIslets() on the terrain's own CELL/STEP lattice and palette."
         }
       ]
+    },
+    {
+      "round": 5,
+      "title": "The first run — a title screen, a captain, and a workflow the container killed",
+      "a": "shots/title_09.png",
+      "b": "shots/captain_mobile.png",
+      "key": {
+        "a": "ours — the title screen",
+        "b": "ours — captain creation"
+      },
+      "better": null,
+      "weWon": false,
+      "gapSize": "not judged",
+      "biggestFlaw": "Never judged. The container restarted mid-round and took the workflow with it: two of the four screen builders had finished, the other two never started, and neither the gate nor the blind critics ran. The two finished screens were salvaged off disk and verified rather than assumed. This entry exists so the gap in the record is a fact rather than a silence.",
+      "differences": [
+        "Title screen: the game's own Water runs behind it with a ship, gulls and islets — not a plate. The logo is carved with the four-layer rule, because that rule is about lettering too.",
+        "Captain creation: seven slots over the 43 av_*.glb parts, live swapping, a seeded Sorpréndeme, and a rolled name already in the field so nobody has to invent one to get past the screen.",
+        "The avatar renders at the right size because it clones through SkeletonUtils — a plain clone shares the skeleton, AttachedBindMode cancels the mesh's world matrix, and the model comes out about 13x too small. That bug cost six rounds earlier in this build.",
+        "Known weak, seen with my own eyes rather than reported: the title's lower third is empty navy with two stray planks floating in it, and several captain swatch thumbnails are too dark to read as the thing they select.",
+        "NOT BUILT: the tutorial director and the settings panel. Save export/import is still reachable only from the JS console, which cannot ship."
+      ],
+      "pieces": []
+    },
+    {
+      "round": 6,
+      "title": "One plateau, grass on the ground, water with a floor — and the inversion nobody had seen",
+      "a": "shots/blind/island-r6/a.png",
+      "b": "shots/blind/island-r6/b.png",
+      "key": {
+        "a": "reference",
+        "b": "ours"
+      },
+      "better": "B",
+      "weWon": false,
+      "gapSize": "obvious",
+      "biggestFlaw": "Ground-cover inversion. Ours is a bare sand slab with rectangular green rugs dropped on it; the reference is a grass island with sand paths cut through it — green is the field, sand is the route. Worse, building appears to scrub grass to sand: the day-one island is greener than the 27-building demo, so the island gets beiger the more you play. That one inversion is what hands the reference everything we lack — a path network that leads the eye, warm roofs popping against green instead of dying against beige, and 55% of our frame that currently reads as an unbroken empty lot becoming field. Fix the ground and the focal-hierarchy complaint from round 4 largely fixes itself; fix the focal point without fixing the ground and the hero still stands in a car park.",
+      "differences": [
+        "WHERE THE EYE LANDS. B: the tallest object — a cream-sailed derrick — stands alone at the head of the island silhouetted against open water; cream paths run down from it to a blue-trimmed hall with a ship's-wheel gable, then right to a forge with live orange fire in the mouth, then out to a dock leaving frame right. Three stops in a fixed order. A: the eye hits one undifferentiated brown clot of ~20 roofs jammed along the top edge, finds nothing inside it to hold on to (every roof is the same thatch-tan at the same height), and slides down into an empty beige apron that is over half the island. Round 4's 'the eye lands nowhere and slides off' is still true; the clot is now denser, not more legible.",
+        "GROUND AT 6x — this is the cheap tell. A's grass is a flat plane carrying per-pixel salt-and-pepper noise: random dark green, red-brown flecks that read as dirt or compression artifacts, and 1px white specks meant to be flowers that read as sensor noise. Its boundary with the sand is a 1-2px dither with no contact shadow and no thickness. B's grass is a slab: two clean greens, a visibly darker green riser where the lawn steps up off the sand, and a soft darker rim where the two meet. Its hedges are chunky blocks with lit top faces and dark bases. Ours reads as a texture; theirs reads as geometry with light on it.",
+        "SHORE. A ends in three stacked sand terraces, every riser the same value as the top face, separated only by a 1px peach line — the island dissolves into the water instead of sitting on it. B ends in exactly ONE riser: a distinctly darker, warmer tan face under a lit cream top, saw-toothed, with the bright turquoise shelf and foam starting immediately below. Theirs is a solid slab dropped in the sea; ours is a sandbar fading out.",
+        "SEA. A's sparkle is hard-edged white AND GREY chips, all one size, at near-uniform density right out to the frame edges — it reads as static, and the grey ones read as dirt because specular highlights are not grey. B concentrates its sparkle in the turquoise shelf against the shore and thins it to almost nothing in the deep field, so contrast falls off with depth and the water reads as a plane receding away from you. Our water is no longer dark, but it is still one uniform noise field — the same failure in a lighter key.",
+        "COLOR ECONOMY. B spends five accents, each appearing once or twice, against a green field: the forge's orange fire, the hall's blue trim, one red/blue striped awning, one black flag, the ship's red sails. A's twenty structures are ~80% one tan/thatch/wood family, so at frame scale they merge into a single brown mass, and the loudest chroma in our whole image is a cyan parasol — a prop, not a hero.",
+        "COMPOSITION. B sits the island off-centre, anchors the lower left with a ship at readable size, and exits frame right on a dock — the frame has direction. A centres a symmetric diamond, crops its ship to a tiny sliver at the left edge, and stacks all buildings in one corner. Nothing in our frame points anywhere.",
+        "SCALE LADDER. B's palms are as tall as its buildings, lean in four different directions, use two greens per frond and overhang the shore, breaking the island silhouette. A's palms are near-vertical, one green, one frond silhouette, spread only about 1.3x in height, and shorter than every building — nothing in our frame establishes scale.",
+        "CREDIT WHERE IT IS DUE, so nobody rebuilds the wrong thing: at 3x our BUILDINGS are excellent and arguably denser and more characterful than the reference's — the crane rig, the market stalls with stacked goods, the orange-tiled roof, the pagoda tower, the pirate flag. We are not losing on asset craft. We are losing entirely on the ground they stand on, the water they sit in, and where they were put.",
+        "DAY-ONE ISLAND, JUDGED SEPARATELY (shots at /tmp/claude-0/-home-user-LaLeyenda/639e22bd-90e5-54e6-ba9b-4a7b95847f10/scratchpad/day1_island.png): it does NOT yet read as a place worth starting, though it reads better than the demo. Positives — the single orange-roofed hut is an unambiguous focal point, the beached ship with the red flag gives one line of story, and grass coverage is higher than the built-out state. Negatives — the hut is roughly 90px in a 1280 frame and no taller than the palms beside it, so it reads as a token on a board rather than a home; the plateau is a symmetric diamond dead-centre; and the scatter of small grey rocks and debris reads as gravel noise at frame scale rather than as props. It currently says 'an empty lot with a cabin', not 'this is yours, build here'."
+      ],
+      "note": "Judged on the BUILT-OUT island this time, not the day-one one — round 4's verdict was measured against a design decision rather than the art, and this corrects that. The verdict also credits what is working: at 3x our buildings are 'arguably denser and more characterful than the reference's'. We are not losing on asset craft. We are losing on the ground they stand on, the water they sit in, and where they were put.",
+      "pieces": [
+        {
+          "piece": "terrain",
+          "verdict": "shipped",
+          "biggestGap": "Three tiers collapsed to two, and the staircase outline was two root causes nobody had touched: the superellipse exponent 3.2 -> 5.5 (a blob runs at a shallow angle to the grid everywhere, so it staircases everywhere; the reference is a chamfered square), and one chunking rule applied to coast, plateau and every plot. Verified 0 one-cell spikes and 0 one-cell bites on both outlines."
+        },
+        {
+          "piece": "water",
+          "verdict": "shipped",
+          "biggestGap": "Six scene-owned levers, every default reproducing the old sea exactly, so the open ocean is untouched. Streak direction now resolves from TRAINS[0] rather than a hard-coded 34 degrees, so there is still exactly one wave direction in the file. Mean 98.9 -> 106.6 against the reference's 106.5."
+        },
+        {
+          "piece": "wilderness",
+          "verdict": "shipped",
+          "biggestGap": "Palms are two populations with a deliberate gap: 1.65-2.8 inside a stand, 0.70-1.35 outside, and nothing drawn between 1.35 and 1.65 — which is what stops them reading as one asset stamped sixty times. The Ayuntamiento's clearance disc was parked five cells SOUTH of the hall and cleared ground the hall was not on."
+        }
+      ],
+      "nextRound": [
+        "Invert the ground plane. Grass becomes the default surface of the plateau; sand exists only as the path network and the beach ring. Placing a building must NOT scrub grass to sand — it should stamp a compacted-dirt pad the size of the footprint plus a short path stub joining the network. Right now playing the game makes the island uglier, which is backwards.",
+        "Kill the per-pixel grass noise. Two greens, not a noise field. Add a contact-shadow rim where grass meets sand, and give the grass slab a visible riser so the lawn has thickness. This is the single change that stops us looking cheap at 6x.",
+        "Collapse the shore to ONE riser. Delete the three-terrace stack. Make the riser face two to three values darker and warmer than the top face so the island reads as a solid slab sitting in water. Round 4 named this and it is not fixed.",
+        "Make sea sparkle a function of depth, not a uniform noise layer: dense small foam in the shallow shelf, thinning to near-nothing in the deep field. Drop every grey chip — specular is white or it is absent. Vary chip size by at least 3x.",
+        "Pick ONE hero building. Make it 1.5-2x the tallest roof, put it at the head of the island silhouetted against open water, and give it the only large cream or white surface in the frame. Then spread the other 26 across the whole plateau instead of the top third, so the paths have somewhere to go.",
+        "Palms: three distinct sizes with a 2.5x height spread, at least two lean directions, a second lighter green in the fronds, and let the largest ones overhang the shore and break the island silhouette. Right now they are one asset stamped repeatedly.",
+        "For day one specifically: push the camera in, or scale the starter hut up so it is clearly the largest object in frame, and clear the small grey rock scatter out of the plateau interior. The first frame must read as a home, not as a token on an empty board."
+      ]
     }
   ]
 }
