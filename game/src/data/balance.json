@@ -1380,6 +1380,237 @@
     "plotFactor": 0.6,
     "clearance": 2
   },
+  "sea": {
+    "$doc": [
+      "PLAN.md Fase 2, measurable. Every number the open sea runs on lives here and",
+      "nowhere else, for the same reason the island's do: a balance you cannot diff is a",
+      "balance nobody can argue with. sim/sea.ts reads this file and invents nothing.",
+      "",
+      "These numbers were MEASURED, not chosen. `node tools/voyages.mjs` plays hundreds of",
+      "seeded voyages with two models of player — a beginner who points the thumb and holds",
+      "it, and someone who has understood the ship — and prints survival, time to sink,",
+      "cargo landed and hull on arrival. Change anything below and re-run it; the headline",
+      "numbers are also asserted in tools/tests/sea.test.ts, so `npm test` fails if the sea",
+      "stops being playable.",
+      "",
+      "What the table said before this pass, and why the pass happened: a beginner's FIRST",
+      "voyage — ring 1, the tutorial water — got home 68% of the time. Ring 2 was 30%, ring",
+      "3 was 5%, ring 4 was zero. Thirty seconds of open throttle sank three ships in four.",
+      "A third of all damage taken came from bumping into scenery. That is not a difficulty",
+      "curve, it is a drowning."
+    ],
+    "cell": 55,
+    "$harbour": [
+      "How close to home, in cells, banks the hold — and how far out counts as having left.",
+      "",
+      "`harbour` was 0.3 of a cell: sixteen units, smaller than the skiff's own turning",
+      "circle, so a player carrying a full hold had to thread a needle to bank it.",
+      "",
+      "`departed` is the latch that stops a voyage reporting an arrival from the spawn,",
+      "which IS home water. It was 0.9 of a cell — but a seeded sea puts lootable islands",
+      "as close as twenty-two units from the harbour, so a player who left, took the first",
+      "thing they saw and came back had never armed it: no arrival, no way to bank the",
+      "hold, no way out of the voyage. One first voyage in eight, measured. sim/sea.ts now",
+      "also arms the latch on having taken anything, because carrying loot is proof you",
+      "went somewhere."
+    ],
+    "harbour": 0.45,
+    "departed": 0.75,
+    "rings": {
+      "$doc": [
+        "'Distance is difficulty' is the whole risk/reward curve, and it was calibrated in",
+        "CELLS while it is experienced in SECONDS. At 17 units a second a cell goes by in",
+        "3.2 seconds, so a player holding the throttle for half a minute crossed NINE rings",
+        "and arrived in water designed to kill them, having made no decision at all.",
+        "",
+        "`bands` is how many cell-shells each ring is thick, so the ring index — the number",
+        "the HUD's zone chip shows and the number every spawn and payout is drawn from —",
+        "advances at a pace a person can feel. The last entry repeats outward forever.",
+        "2,2,3,4,5 puts ring 1 at 4 seconds out, ring 2 at 11, ring 3 at 17, ring 4 at 27",
+        "and ring 5 at 40 — so the thirty-second run that used to end in ring 9 now ends",
+        "at the edge of ring 4, which is dangerous water a player chose to be in."
+      ],
+      "bands": [2, 2, 3, 4, 5],
+      "$occupancy": "Chance a cell holds anything at all. Rises with the ring: the sea gets busier as it gets worse, but never solid — an empty cell is what makes a full one feel like a find.",
+      "occupancyBase": 0.4,
+      "occupancyPerRing": 0.07,
+      "occupancyMax": 0.3
+    },
+    "ships": {
+      "$doc": [
+        "`damage`/`reload` are a BROADSIDE, one side at a time, and they were the reason",
+        "every fight was a losing trade. At 11 damage on a 2.1s reload a skiff needed 8.4",
+        "seconds to kill a kelpling and took 40 hull doing it; a hammerdead cost 12.6",
+        "seconds and more hull than the ship had. A fight nobody can win is not a fight.",
+        "",
+        "`repair` is the one genuinely new rule, and it is what turns sinking into a",
+        "decision. With no way back from a bad fight, a hull is a countdown that started",
+        "the moment the player left, and every voyage ends the same way. After `calm`",
+        "seconds with nothing touching the ship the crew patches her at `repair` hull a",
+        "second — so breaking off, running for quieter water and coming back out is a real",
+        "play, and drowning means the player chose to stay."
+      ],
+      "calm": 6,
+      "skiff": {
+        "hull": 150,
+        "speed": 17,
+        "turn": 1.6,
+        "accel": 9,
+        "turnDrag": 0.3,
+        "damage": 17,
+        "reload": 1.7,
+        "arc": 0.7,
+        "range": 54,
+        "radius": 2.4,
+        "hold": 900,
+        "repair": 2.2
+      }
+    },
+    "grounding": {
+      "$doc": [
+        "Reefs were 28–42% of ALL damage taken, which is a game where a third of the",
+        "punishment comes from scenery. Two things were wrong. Damage was drawn from raw",
+        "speed, so a glancing scrape along a rock cost the same as ramming it head-on; and",
+        "there was no grace, so a ship held against a reef took a fresh hit every quarter",
+        "second — about 20 damage a second for as long as the thumb stayed down.",
+        "",
+        "Now only the speed going INTO the rock counts, anything under `safeSpeed` of top",
+        "is free, and a contact cannot hurt again for `grace` seconds. Ramming a reef flat",
+        "out still costs a seventh of a skiff, which is what it should cost.",
+        "",
+        "`deflect` is the other half, and it was the worse bug: a site was a wall that ATE",
+        "momentum, so a bow against a rock lost its way, and a ship with no way has no",
+        "rudder, so it stayed there. Measured: ninety seconds of open throttle in a",
+        "straight line covered 299 units of a sea where the ship does 17 a second — the",
+        "voyage was spent pinned to scenery. Now a rock turns the bow along its own face at",
+        "`deflect` radians a second and takes only the speed that was aimed at it, so",
+        "touching an island is a slide down its shore. Grazing a shoreline is a thing",
+        "players do on purpose; being welded to one is not a game."
+      ],
+      "safeSpeed": 0.3,
+      "damagePerUnit": 1.7,
+      "grace": 1.6,
+      "speedKept": 0.6,
+      "deflect": 3.2
+    },
+    "mobs": {
+      "$doc": [
+        "`hp` is written against the skiff's 17-damage broadside so a kill is a countable",
+        "number of hits a player can feel: a blowfish is two, a kelpling three, a",
+        "hammerdead four. `damage`/`cadence` is what it costs to stand there and trade.",
+        "",
+        "The squid is a lair guardian and is deliberately still out of a skiff's reach —",
+        "PRODUCTION.md §3 has the boss fight itself as unbuilt work. Its numbers are here",
+        "so that fight has something to be built against, not because a starting ship",
+        "should win it."
+      ],
+      "blowfish": {
+        "$doc": "Slow, harmless alone, always in a group — the ring-1 tutorial in monster form.",
+        "hp": 30, "speed": 5, "turn": 1.6, "damage": 4, "cadence": 1.7, "reach": 5, "sight": 36, "radius": 2.2
+      },
+      "kelpling": {
+        "$doc": "Bites hard up close, so it punishes stopping.",
+        "hp": 50, "speed": 9, "turn": 2.2, "damage": 10, "cadence": 1.8, "reach": 7, "sight": 46, "radius": 2.6
+      },
+      "hammerdead": {
+        "$doc": "Fast enough that turning away is a commitment, slow enough that a ship holding a straight line can break off — 14 against a skiff's 17, and a skiff at full helm only makes 12.",
+        "hp": 66, "speed": 12.5, "turn": 2.8, "damage": 13, "cadence": 1.6, "reach": 8, "sight": 50, "radius": 3
+      },
+      "squid": {
+        "$doc": "The first boss. Guards a lair and does not leave it.",
+        "hp": 340, "speed": 7, "turn": 1.2, "damage": 18, "cadence": 2.6, "reach": 12, "sight": 60, "radius": 7
+      }
+    },
+    "patrols": {
+      "$doc": [
+        "What patrols a cell, by ring. `[min, max]` enemies and the pool they are drawn",
+        "from; the last entry of each list repeats outward forever.",
+        "",
+        "Ring 1 is tutorial water and reads like it: at most one blowfish in a cell, and",
+        "half the cells empty. Ring 2 introduces the kelpling, ring 3 the hammerdead, and",
+        "from ring 4 out the blowfish is gone entirely — the water stops being kind.",
+        "",
+        "`tether` is how far past its site a guard chases before returning to its post. It",
+        "is what puts the danger ON the reward instead of scattered through the water",
+        "between: nothing in the sea is faster than a skiff at full way, so a threat you",
+        "can drive past is not a threat, and a threat standing on the thing you came for",
+        "is the decision the whole risk curve is made of.",
+        "",
+        "It also has to be SHORTER than the ship's gun range, and that is not a detail. At",
+        "45 a guard would come out to 51-58 units against a skiff that shoots to 54, so",
+        "there was no distance from which a player could fight on their own terms: every",
+        "defended site had to be charged, and a pilot that stood off and cleared the guards",
+        "first measured WORSE than one that barrelled in. Positioning is the skill PLAN.md",
+        "Fase 2 asks for, and a leash longer than the guns is what makes it impossible."
+      ],
+      "$post": [
+        "How far off its site's shore a guard stands. It has to be INSIDE the water the",
+        "player must enter to take the site (`loot.reach` plus the two radii, about twelve",
+        "units off the shore) or the whole arrangement is decorative: guards posted at 7 to",
+        "22 units could be looted around at full way, and measured across a fleet a ring-5",
+        "voyage taking five defended sites lost sixteen hull in total. Guards hugging the",
+        "shore of the thing they are guarding cannot be skirted, only fought or run past."
+      ],
+      "post": [2, 14],
+      "tether": 28,
+      "$roam": "How far from its own patch an open-water patrol follows before turning back. Long enough to be a chase, short enough that leaving its water ends it.",
+      "roam": 110,
+      "$openChance": "Chance a cell with nothing worth guarding carries a lone patrol anyway. Danger belongs ON the reward — but open water with nothing at all in it is a corridor, not a sea.",
+      "openChance": 0.18,
+      "count": [[0, 1], [1, 2], [1, 3], [2, 4], [2, 4]],
+      "pools": [
+        ["blowfish"],
+        ["blowfish", "blowfish", "kelpling"],
+        ["blowfish", "kelpling", "kelpling", "hammerdead"],
+        ["kelpling", "kelpling", "hammerdead", "hammerdead"],
+        ["kelpling", "hammerdead", "hammerdead"]
+      ]
+    },
+    "bounty": {
+      "$doc": [
+        "What a sunk creature leaves floating, straight into the hold.",
+        "",
+        "There was nothing here at all, and that was a hole underneath the entire combat",
+        "system. The cannons fire themselves — PLAN.md Fase 2 asks the player to play",
+        "positioning rather than a fire button — so the ONLY reason to turn a beam onto",
+        "anything was to stop it biting, and running was always cheaper than that.",
+        "Measured over a fleet, a pilot that fought whatever came at it came home with",
+        "LESS cargo than one that drove straight past, at every ring. The central verb of",
+        "the game was a net loss.",
+        "",
+        "Sized against a site: three hammerdeads pay about a third of what the island they",
+        "are guarding does, so clearing a defended site is worth doing and is never worth",
+        "more than the site itself. The squid is a boss and pays like one."
+      ],
+      "blowfish": { "oro": 12 },
+      "kelpling": { "oro": 30 },
+      "hammerdead": { "oro": 55 },
+      "squid": { "oro": 500, "metal": 250 }
+    },
+    "loot": {
+      "$doc": [
+        "What a site pays, before the ring multiplier `1 + ring * perRing`. A ring-1 site",
+        "is worth about 120 units of cargo and a ring-4 site about 300, against a hold of",
+        "900 — so a first voyage comes home with something, and a deep one comes home with",
+        "a hold full or does not come home at all."
+      ],
+      "$reach": [
+        "How close to a site's shore the ship has to come to take it, on top of the two",
+        "radii. It used to be 3, which is less than the ship is long — so taking anything",
+        "meant RAMMING it, and the reward mechanic was also the biggest source of damage in",
+        "the game. Measured: a beginner lost six times more hull to scenery than to",
+        "monsters at every ring. At 10 a ship that sails up to an island collects it, which",
+        "is what sailing up to an island should do."
+      ],
+      "reach": 10,
+      "perRing": 1,
+      "spread": [0.8, 1.25],
+      "harvest": { "madera": 60, "metal": 40 },
+      "islet": { "madera": 45, "ron": 18 },
+      "wreck": { "oro": 35, "ron": 20 },
+      "lair": { "oro": 90, "metal": 70 }
+    }
+  },
   "island": {
     "$doc": [
       "OPENING.md: the map is LARGE AND FIXED from day one, Clash-style — it never grows under",

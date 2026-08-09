@@ -1,11 +1,12 @@
 import {
-  MOBS, SEA_CELL, SEA_STEP, SHIPS, bearingHome, holdUsed, mobsAt, ringOf, siteAt,
-  startVoyage, steer, stepVoyage, type SeaEvent, type Voyage,
+  MOBS, SEA_CELL, SEA_RANGE, SEA_STEP, SHIPS, bearingHome, cellsInRing, holdUsed, mobsAt,
+  ringOf, siteAt, startVoyage, steer, stepVoyage, type SeaEvent, type Voyage,
 } from '../../src/sim/sea';
 import { landCargoInPlace, storeCap } from '../../src/sim';
 import { clone } from '../../src/sim/economy';
 import { describe, eq, near, ok, test } from './harness';
 import { quiet } from './fixtures';
+import { breakOff, playFleet, straightOut, summarise } from './voyages';
 
 /**
  * The voyage is the half of the game PLAN.md calls Fase 2, and the half that
@@ -68,22 +69,46 @@ describe('the world is a function of the seed', () => {
 });
 
 describe('distance is difficulty', () => {
+  /**
+   * These four used to walk `cx, cy` from -ring to +ring and keep the cells
+   * whose ring matched, which quietly assumed one ring was one cell-shell. It
+   * is not any more — a ring is a BAND of shells, because difficulty was being
+   * calibrated in cells and experienced in seconds, and half a minute of open
+   * throttle used to cross nine of them. Under the band curve every one of
+   * these loops searched an area that could not contain the ring it was asking
+   * about, and two of them divided by a cell count of zero.
+   *
+   * The subjects were right and are unchanged: the far sea pays more, the far
+   * sea is worse to be in, ring 1 is thin. Only the way the cells are found
+   * has changed, and `cellsInRing` is now the sim's own answer to that.
+   */
   test('rings grow outward from home in every direction', () => {
     eq(ringOf(0, 0), 0, 'home is ring 0');
-    eq(ringOf(-3, 1), 3, 'the ring is the larger axis, so it is a square shell');
+    eq(ringOf(-3, 1), ringOf(3, -1), 'the ring is the larger axis, so it is a square shell');
+    eq(ringOf(-3, 1), ringOf(0, 3), 'and it does not care which axis that is');
+    ok(ringOf(9, 0) > ringOf(3, 0), 'and it only grows outward');
+  });
+
+  test('a ring is thicker than a cell, so difficulty ramps at a human pace', () => {
+    // 17 units a second, 55 to a cell: a ring per shell put a player nine rings
+    // out in thirty seconds of holding the throttle.
+    eq(ringOf(1, 0), 1, 'the first cell out is ring 1');
+    eq(ringOf(2, 0), 1, 'and so is the second — ring 1 is two cells thick');
+    eq(ringOf(3, 0), 2, 'ring 2 starts at three cells, about eleven seconds out');
+    eq(ringOf(5, 0), 3, 'ring 3 at five, about seventeen seconds');
+    eq(ringOf(8, 0), 4, 'ring 4 at eight, about twenty-seven');
+    ok(ringOf(30, 0) > 5, 'and the bands keep tiling outward, so the sea stays open');
   });
 
   test('the far sea pays more than the near sea', () => {
     const payout = (ring: number) => {
+      const cells = cellsInRing(ring);
       let total = 0;
-      for (let cx = -ring; cx <= ring; cx++) {
-        for (let cy = -ring; cy <= ring; cy++) {
-          if (ringOf(cx, cy) !== ring) continue;
-          const site = siteAt('la-leyenda', cx, cy);
-          if (site) total += Object.values(site.loot).reduce((a, b) => a + b, 0);
-        }
+      for (const [cx, cy] of cells) {
+        const site = siteAt('la-leyenda', cx, cy);
+        if (site) total += Object.values(site.loot).reduce((a, b) => a + b, 0);
       }
-      return total / Math.max(1, 8 * ring);
+      return total / cells.length;
     };
     const near1 = payout(1);
     const far = payout(5);
@@ -92,29 +117,61 @@ describe('distance is difficulty', () => {
 
   test('the far sea is also worse to be in', () => {
     const threat = (ring: number) => {
+      const cells = cellsInRing(ring);
       let hp = 0;
-      let cells = 0;
-      for (let cx = -ring; cx <= ring; cx++) {
-        for (let cy = -ring; cy <= ring; cy++) {
-          if (ringOf(cx, cy) !== ring) continue;
-          cells++;
-          for (const mob of mobsAt('la-leyenda', cx, cy, 1)) hp += MOBS[mob.kind].hp;
-        }
+      for (const [cx, cy] of cells) {
+        for (const mob of mobsAt('la-leyenda', cx, cy, 1)) hp += MOBS[mob.kind].hp;
       }
-      return hp / cells;
+      return hp / cells.length;
     };
     ok(threat(4) > threat(1) * 2, `ring 4 is much deadlier per cell than ring 1`);
   });
 
   test('ring 1 is thin enough for a first voyage to survive it', () => {
     let worst = 0;
-    for (let cx = -1; cx <= 1; cx++) {
-      for (let cy = -1; cy <= 1; cy++) {
-        if (ringOf(cx, cy) !== 1) continue;
-        worst = Math.max(worst, mobsAt('la-leyenda', cx, cy, 1).length);
-      }
+    for (const [cx, cy] of cellsInRing(1)) {
+      worst = Math.max(worst, mobsAt('la-leyenda', cx, cy, 1).length);
     }
     ok(worst <= 2, `no ring-1 cell holds more than two enemies (worst was ${worst})`);
+  });
+
+  /**
+   * A number nobody was watching, and it decided the whole game.
+   *
+   * The sim keeps two and a bit cells of sea alive around the ship, which is
+   * about fifteen cells — so anything spawned per-cell is multiplied by fifteen
+   * before a player sees it. Two to four in every cell put TWENTY-FOUR
+   * creatures inside a screen and a half at ring 4. Nothing was individually
+   * readable, the automatic broadsides had no target worth picking, and a hull
+   * at 40% got out of ring 4 alive eighteen times in a hundred whatever the
+   * player did. It is also twenty-four models against PLAN.md's hundred-draw-
+   * call budget.
+   */
+  test('the sea is never so crowded that a fight stops being readable', () => {
+    const reach = Math.ceil(SEA_RANGE / SEA_CELL);
+    const around = (ax: number, ay: number) => {
+      let awake = 0;
+      for (let cx = ax - reach; cx <= ax + reach; cx++) {
+        for (let cy = ay - reach; cy <= ay + reach; cy++) {
+          if (Math.hypot((cx - ax) * SEA_CELL, (cy - ay) * SEA_CELL) > SEA_RANGE) continue;
+          awake += mobsAt('la-leyenda', cx, cy, 1).length;
+        }
+      }
+      return awake;
+    };
+    // Averaged over the whole ring rather than sampled at one spot: a single
+    // cell can be a nest and that is fine, a whole band of them is not.
+    const crowd = (ring: number) => {
+      const cells = cellsInRing(ring);
+      let total = 0;
+      for (let i = 0; i < cells.length; i += Math.max(1, Math.floor(cells.length / 24))) {
+        total += around(cells[i][0], cells[i][1]);
+      }
+      return total / Math.ceil(cells.length / Math.max(1, Math.floor(cells.length / 24)));
+    };
+    ok(crowd(1) <= 6, `ring 1 is calm enough to learn in (${crowd(1).toFixed(1)} awake at once)`);
+    ok(crowd(5) <= 20, `even ring 5 stays countable (${crowd(5).toFixed(1)} awake at once)`);
+    ok(crowd(5) > crowd(1), 'and the deep sea is still busier than the shallows');
   });
 });
 
@@ -442,6 +499,156 @@ describe('finding the way home', () => {
     const to = pointsAt(bearingHome(200, 0));
     near(to.x, -1, 1e-9, 'straight back along the x axis');
     near(to.y, 0, 1e-9, 'and not up or down it');
+  });
+});
+
+/**
+ * The balance, as numbers rather than as a feeling.
+ *
+ * Nobody had ever played this. PRODUCTION.md §3 said so twice — "hull nearly
+ * gone in six seconds", "nobody has played this" — and the test above about the
+ * departure latch had to be cut from thirty seconds to ten to have a boat left
+ * to sail home. Measured with `tools/voyages.mjs` before this round: a
+ * beginner's FIRST voyage, ring 1, the tutorial water, got home 68 times in a
+ * hundred. Ring 3 was five. Ring 4 was none at all.
+ *
+ * These cases play real fleets through the real simulation with an autopilot
+ * that steers exactly the way `src/ui/stick.ts` makes a thumb steer, and assert
+ * the handful of numbers the design actually promises. They are slower than the
+ * rest of the suite and that is the price of knowing.
+ *
+ * The bounds are deliberately loose — this is a floor under the design, not a
+ * lock on today's tuning. `node tools/voyages.mjs` prints the full table.
+ */
+describe('somebody has played this', () => {
+  const fleet = (ring: number, skill: 'novato' | 'veterano', runs = 40) =>
+    summarise(playFleet(runs, { ring, skill, sites: Math.min(6, 1 + ring), limit: 240 }, `t-${skill}-${ring}-`));
+
+  test('a first voyage ends in cargo, not on the bottom', () => {
+    const first = fleet(1, 'novato');
+    ok(first.survived >= 0.95, `a beginner comes home from ring 1 (${(first.survived * 100).toFixed(0)}%)`);
+    ok(first.cargoHome > 100, `and comes home with something (${first.cargoHome.toFixed(0)} units)`);
+    ok(first.timeHome < 40, `in the length of a bus stop (${first.timeHome.toFixed(0)}s)`);
+  });
+
+  test('tutorial water stays tutorial water', () => {
+    const second = fleet(2, 'novato');
+    ok(second.survived >= 0.9, `ring 2 is still forgiving (${(second.survived * 100).toFixed(0)}%)`);
+  });
+
+  test('the deep sea is a decision, and it costs', () => {
+    const three = fleet(3, 'novato');
+    const four = fleet(4, 'novato');
+    const five = fleet(5, 'novato');
+    ok(three.survived >= four.survived, 'ring 4 is never kinder than ring 3');
+    ok(four.survived > five.survived, 'and ring 5 is worse than ring 4');
+    ok(five.survived < 0.85, `the far sea is a real gamble (${(five.survived * 100).toFixed(0)}% come back)`);
+    ok(five.survived > 0.2, `but not a foregone conclusion (${(five.survived * 100).toFixed(0)}%)`);
+    ok(four.hullHome < 0.85, 'and you come back from ring 4 knowing you were there');
+    ok(three.hullHome > four.hullHome, 'the hull bar reads the depth you went to');
+  });
+
+  test('sailing further out pays more', () => {
+    ok(fleet(3, 'novato').cargoHome > fleet(1, 'novato').cargoHome * 2, 'ring 3 fills the hold, ring 1 does not');
+  });
+
+  /**
+   * What skill buys, stated honestly.
+   *
+   * It is NOT survival. Measured over hundreds of voyages the two pilots come
+   * home at about the same rate, and that is the game rather than a fault in
+   * the model: the careful one stands off a defended island and clears it from
+   * gun range, which costs almost no hull and takes twice as long — and time at
+   * sea is itself the risk. The reckless one drives in, takes the bites and is
+   * back in half the time. Two playable answers to the same question.
+   *
+   * What skill does buy is measurable and is what these assert: a much
+   * healthier ship at the same ring, and far more sunk on the way, which since
+   * `sea.bounty` exists is money.
+   */
+  test('knowing what you are doing is worth something', () => {
+    const green = fleet(4, 'novato');
+    const salt = fleet(4, 'veterano');
+    ok(
+      salt.kills > green.kills * 1.3,
+      `the one who turns a beam onto things sinks far more of them (${salt.kills.toFixed(1)} vs ${green.kills.toFixed(1)})`
+    );
+    ok(
+      salt.hullHome > green.hullHome,
+      `and brings the ship back in better shape (${(salt.hullHome * 100).toFixed(0)}% vs ${(green.hullHome * 100).toFixed(0)}%)`
+    );
+  });
+
+  test('and being reckless is a real answer too, not just a worse one', () => {
+    // If the fast, careless line were strictly dominated there would be one way
+    // to play. It is not: it is out and back in half the time.
+    const green = fleet(4, 'novato');
+    const salt = fleet(4, 'veterano');
+    ok(green.timeHome < salt.timeHome, 'the reckless line is much the quicker trip');
+    ok(green.cargoPerMinute > salt.cargoPerMinute, 'and pays better per minute at sea');
+  });
+
+  test('sinking something pays, or nobody would ever fire', () => {
+    // The guns are automatic, so if a kill is worth nothing then the only
+    // reason to engage is to stop being bitten — and running is always cheaper.
+    const v = startVoyage('bounty');
+    v.mobs.push({
+      id: 1, kind: 'blowfish', x: 0, y: 26, heading: 0, hp: MOBS.blowfish.hp,
+      state: 'patrol', cooldown: 0, homeX: 0, homeY: 26, tether: 0, cell: '0:1',
+    });
+    for (let cx = -3; cx <= 3; cx++) for (let cy = -3; cy <= 3; cy++) v.seen.push(`${cx}:${cy}`);
+    const { voyage, events } = sail(v, 14, { throttle: 0 });
+    const kill = events.find((e) => e.kind === 'mob-killed');
+    ok(kill?.kind === 'mob-killed' && Object.keys(kill.loot).length > 0, 'the wreck leaves something floating');
+    ok(holdUsed(voyage) > 0, 'and it reaches the hold');
+  });
+
+  test('breaking off a fight is a real play, not theatre', () => {
+    // If a hurt ship cannot get out, the hull bar is a countdown that started
+    // when the player left the harbour and being sunk is not their decision.
+    const runs = Array.from({ length: 40 }, (_, i) => breakOff(`t-escape-${i}`, 3, 0.4));
+    const home = runs.filter((r) => r.outcome === 'home').length / runs.length;
+    ok(home >= 0.8, `a ring-3 ship at 40% hull that runs for it gets home (${(home * 100).toFixed(0)}%)`);
+  });
+
+  test('half a minute of open throttle is not a death sentence', () => {
+    // The thing the owner did on a phone, and the thing PRODUCTION.md §3
+    // recorded: hold the throttle, look at the sea, sink. Thirty seconds used
+    // to drown three ships in four.
+    const short = Array.from({ length: 40 }, (_, i) => straightOut(`t-straight-${i}`, 30));
+    const sunk = short.filter((r) => r.outcome === 'sunk').length / short.length;
+    ok(sunk <= 0.15, `thirty seconds of not steering is survivable (${(sunk * 100).toFixed(0)}% sank)`);
+
+    // But it cannot be free either, or distance means nothing.
+    const long = Array.from({ length: 40 }, (_, i) => straightOut(`t-straight-${i}`, 120));
+    const lost = long.filter((r) => r.outcome === 'sunk').length / long.length;
+    ok(lost >= 0.6, `two minutes of never touching the helm is not (${(lost * 100).toFixed(0)}% sank)`);
+  });
+
+  test('scenery scuffs the ship, it does not sink it', () => {
+    // Reefs were 28–42% of ALL damage taken and, worse, the arithmetic was
+    // wrong twice over: damage came off raw speed so a graze cost as much as a
+    // ram, and there was no grace, so a ship pinned against a rock took a fresh
+    // hit every quarter second. Taking a site meant RAMMING it too, because the
+    // radius that paid out was shorter than the ship is long.
+    //
+    // Measured absolutely rather than as a share, because a share only says
+    // which of two numbers is bigger. A whole voyage's worth of bumping must
+    // cost less than a quarter of the hull.
+    const total = summarise(playFleet(40, { ring: 3, skill: 'novato', sites: 4, limit: 240 }, 't-reef-'));
+    ok(
+      total.reefDamage < SHIPS.skiff.hull * 0.25,
+      `a voyage of bumping into things costs ${total.reefDamage.toFixed(0)} of a ${SHIPS.skiff.hull} hull`
+    );
+  });
+
+  test('a ship pinned against a rock is not held there and ground down', () => {
+    // The failure this replaced: a site ATE momentum, and a ship with no way
+    // has no rudder, so it stayed. Ninety seconds of open throttle in a
+    // straight line covered 299 units of a sea the ship crosses at 17 a second.
+    const far = Array.from({ length: 20 }, (_, i) => straightOut(`t-slide-${i}`, 40));
+    const travelled = far.reduce((a, r) => a + r.distance, 0) / far.length;
+    ok(travelled > 350, `forty seconds of open throttle actually goes somewhere (${travelled.toFixed(0)} units)`);
   });
 });
 

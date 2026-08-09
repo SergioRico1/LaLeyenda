@@ -412,4 +412,36 @@ export const ACTS = {
     }
     throw new Error('act: never hit a building that was not already building');
   },
+
+  /* --- the open sea ------------------------------------------------------ */
+
+  /**
+   * A fight, sailed rather than posed.
+   *
+   *   npm run shoot -- sea --mobile --act fight --at 170,20 --t 8
+   *
+   * Nothing in the sea moves in a capture unless something steers it: the
+   * stick stops listening under `?shot=1` (src/ui/stick.ts) so a scripted
+   * pointer cannot fight a real gesture, and a voyage nobody steers sits at the
+   * spawn with the throttle shut. So the sea exposes `window.__sail`, which
+   * feeds the same screen-direction-to-helm conversion a thumb feeds, and this
+   * act holds the helm the way the design asks a player to: close, then turn a
+   * beam to the thing and keep it there while the guns come back.
+   *
+   * `--at` is worth passing. Home water is empty by design — there is nothing
+   * to fight within a cell of the harbour — and `--t` sails for that many
+   * simulated seconds before the act even starts.
+   */
+  async fight(page) {
+    const helm = await page.evaluate(() => {
+      window.__sail?.('hunt');
+      return typeof window.__sail === 'function';
+    });
+    if (!helm) {
+      throw new Error('act: fight — no helm to drive (window.__sail). Is this a sea capture?');
+    }
+    // Real steps at the sim's own rate, so the broadsides, the reload and
+    // everything they light up land where they would land in play.
+    for (let i = 0; i < 16; i++) await step(page, 5);
+  },
 };
