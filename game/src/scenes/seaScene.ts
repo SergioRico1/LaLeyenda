@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Stage } from '../render/stage';
-import { Water, swellAt } from '../render/water';
+import { Water } from '../render/water';
 import { instantiate, preload, type ModelInstance } from '../render/assets';
 import { Rng } from '../core/rng';
 import { createStick, type Stick } from '../ui/stick';
@@ -109,7 +109,28 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
   // 7% in every band, dark navy below). At the island's gains this scene came
   // out at mean 129, 47% detail and up to 36% white — a bright flecked field
   // where the reference has deep water. Foam out here is weather, not surf.
-  const water = new Water({ size: 620, palette: 'ocean', glitter: 0.2, caps: 0.22 });
+  // A REAL swell out here.
+  //
+  // WAVE_AMPLITUDE is 0.16 because the ISLAND needs a flat waterline: a beach,
+  // a surf collar and a shoreline SDF all assume the sea meets the sand at a
+  // known height. None of that exists in open water, and this scene had been
+  // inheriting the constraint anyway — rocking an eight-unit hull by a sixth of
+  // a unit, which is why the high seas read as a painted floor that drifts.
+  //
+  // 0.55 is a compromise found by looking, not by taste. At 0.9 the hull rocked
+  // beautifully and the SURFACE went smooth: a steeper sea grows the world-space
+  // size of a pixel (fwidth) on every slope, the detail fade in water.ts reads
+  // that as "too far to resolve", and the chips and glitter fade out. So the
+  // swell and the texture trade against each other through the mip term, which
+  // nobody had noticed because the island's sea is nearly flat.
+  //
+  // Left here for round 4's water pass to resolve properly — the fade should
+  // key on distance rather than on surface slope, and then the amplitude can go
+  // back up.
+  const water = new Water({
+    size: 620, palette: 'ocean', glitter: 0.2, caps: 0.22,
+    wave: 0.55, waveStep: 0.55 / 4,
+  });
   water.mesh.position.y = SEA_Y;
   stage.scene.add(water.mesh);
 
@@ -382,11 +403,11 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
     for (const mob of voyage.mobs) {
       const entry = mobNodes.get(mob.id);
       if (!entry) continue;
-      const sea = swellAt(mob.x, mob.y, carry);
+      const sea = water.surfaceAt(mob.x, mob.y, carry);
       entry.node.position.copy(toWorld(mob.x, mob.y, at));
       entry.node.position.y += sea.height;
       entry.node.rotation.y = facing(mob.heading);
-      entry.node.rotation.x = -sea.dz * 1.4;
+      entry.node.rotation.x = -sea.dz * 0.5;
     }
   }
 
@@ -527,11 +548,16 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
       }
 
       // The hull rides the swell, and heels into its turn.
-      const sea = swellAt(voyage.x, voyage.y, elapsed);
+      // surfaceAt, not swellAt: the bare function defaults to the ISLAND's
+      // amplitude, so the hull was riding a 0.16 sea while the shader drew a
+      // different one. water.ts warns about exactly this — a boat bobbing to a
+      // sea nobody is drawing — and the scene was doing it.
+      const sea = water.surfaceAt(voyage.x, voyage.y, elapsed);
       ship.position.set(voyage.x, SEA_Y + sea.height, voyage.y);
       ship.rotation.y = facing(voyage.heading);
-      ship.rotation.z = -voyage.helm.turn * 0.13 - sea.dx * 1.2;
-      ship.rotation.x = -sea.dz * 1.2;
+      // The slopes are six times steeper than the gains below were tuned for.
+      ship.rotation.z = -voyage.helm.turn * 0.13 - sea.dx * 0.45;
+      ship.rotation.x = -sea.dz * 0.45;
       const way = voyage.speed / SHIPS[voyage.shipType].speed;
       for (const quad of wake.children) {
         (quad as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>).material.opacity = 0.34 * way;
