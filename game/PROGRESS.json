@@ -2,7 +2,7 @@
   "rounds": [
     {
       "round": 0,
-      "title": "Baseline \u2014 before any of this round's work",
+      "title": "Baseline — before any of this round's work",
       "a": "shots/blind/island-r0/a.png",
       "b": "shots/blind/island-r0/b.png",
       "key": {
@@ -23,7 +23,7 @@
     },
     {
       "round": 1,
-      "title": "Camera, water, terrain, density and light \u2014 all five rebuilt",
+      "title": "Camera, water, terrain, density and light — all five rebuilt",
       "a": "shots/blind/island-r1/a.png",
       "b": "shots/blind/island-r1/b.png",
       "key": {
@@ -33,19 +33,19 @@
       "better": "A",
       "weWon": false,
       "gapSize": "obvious",
-      "biggestFlaw": "We cast no shadows. Not weak ones, not wrong-angle ones \u2014 zero. Four of the five critics named this independently, without seeing each other's verdicts. The reference lays a directional shadow from every flag, fence post, palm frond and 12px stone block; our isolated shed sits on 200px of open sand and touches it nowhere. The result reads as stickers on a blockout rather than a lit scene.",
+      "biggestFlaw": "We cast no shadows. Not weak ones, not wrong-angle ones — zero. Four of the five critics named this independently, without seeing each other's verdicts. The reference lays a directional shadow from every flag, fence post, palm frond and 12px stone block; our isolated shed sits on 200px of open sand and touches it nowhere. The result reads as stickers on a blockout rather than a lit scene.",
       "differences": [
         "The coast is a 3-4 block cliff of flat untextured sand dropping straight into the sea. Theirs is a low one-block lip meeting the water almost at sea level, with a wet-sand band behind the surf collar.",
         "Every interior surface is empty. The whole decoration budget is welded around the coastline as a hedge of palms; step inland and it is bare slabs.",
-        "Broken style and scale consistency \u2014 flat-shaded low-poly palm fronds next to voxel rocks, at a visibly coarser texel density.",
+        "Broken style and scale consistency — flat-shaded low-poly palm fronds next to voxel rocks, at a visibly coarser texel density.",
         "The buildings crowd into a band across the top-right, leaving large empty plots dead in the bottom-left.",
-        "Deep-water local contrast averages 2.25 against their 20.04 \u2014 but this directly contradicts the water builder's own measurement and is not being acted on until resolved."
+        "Deep-water local contrast averages 2.25 against their 20.04 — but this directly contradicts the water builder's own measurement and is not being acted on until resolved."
       ],
       "pieces": [
         {
           "piece": "water",
           "verdict": "ours-worse",
-          "biggestGap": "Open ocean has no sun glitter past the shallow ring \u2014 deep-water contrast 2.25 vs their 20.04. CONTESTED: the builder measured the reference's open water as having ZERO pixels above L=200 and removed the glitter deliberately. Two measurements of the same pixels disagree; resolving that comes before either is acted on."
+          "biggestGap": "Open ocean has no sun glitter past the shallow ring — deep-water contrast 2.25 vs their 20.04. CONTESTED: the builder measured the reference's open water as having ZERO pixels above L=200 and removed the glitter deliberately. Two measurements of the same pixels disagree; resolving that comes before either is acted on."
         },
         {
           "piece": "terrain",
@@ -60,7 +60,7 @@
         {
           "piece": "light",
           "verdict": "ours-much-worse",
-          "biggestGap": "Zero cast shadows. Measured off their flag: a point at screen-height H drops its shadow ~0.68H, and lit sand (225,211,180) lands at (167,163,142) in shadow \u2014 a 25% multiply, not a grey overlay."
+          "biggestGap": "Zero cast shadows. Measured off their flag: a point at screen-height H drops its shadow ~0.68H, and lit sand (225,211,180) lands at (167,163,142) in shadow — a 25% multiply, not a grey overlay."
         }
       ]
     },
@@ -76,19 +76,19 @@
       "better": "B",
       "weWon": false,
       "gapSize": "obvious",
-      "biggestFlaw": "Our shadows are too SHORT to read. The sun was 15.3 degrees off the camera axis, so every shadow fell behind the object throwing it \u2014 the map was never broken. The azimuth is now solved off their flag (0.68H against their measured 0.68H) and shadows exist, but the judge still sees 'a flat sticker of objects hovering on a beige plane'. The reference's shadows are long and soft; ours are short and hard.",
+      "biggestFlaw": "Our shadows are too SHORT to read. The sun was 15.3 degrees off the camera axis, so every shadow fell behind the object throwing it — the map was never broken. The azimuth is now solved off their flag (0.68H against their measured 0.68H) and shadows exist, but the judge still sees 'a flat sticker of objects hovering on a beige plane'. The reference's shadows are long and soft; ours are short and hard.",
       "differences": [
         "FRAMING REGRESSION: the island now runs off the bottom of frame and crops the moored ship at the left edge. Round 1's silhouette fit was correct; the coast rebuild moved it.",
-        "The right third collapses into an unreadable brown-and-orange mass \u2014 no negative space, no separation between market and shipyard.",
+        "The right third collapses into an unreadable brown-and-orange mass — no negative space, no separation between market and shipyard.",
         "Four unrelated architectural vocabularies on one island: a curved-roof pagoda, a half-timbered northern house, a Mediterranean cottage and pirate rigging. This is asset selection, not rendering.",
-        "Our ocean reads as a tiling noise pattern rather than water \u2014 flat lighter-blue rectangles at even density.",
-        "SETTLED: the water contradiction. Both sides were partly right. The reference's sea is TWO materials split by screen height plus a sun lane confined to one corner. The builder was right to delete the glitter field and wrong to delete the lane with it \u2014 our white chip tier is 13.7x short in the near-field right lane."
+        "Our ocean reads as a tiling noise pattern rather than water — flat lighter-blue rectangles at even density.",
+        "SETTLED: the water contradiction. Both sides were partly right. The reference's sea is TWO materials split by screen height plus a sun lane confined to one corner. The builder was right to delete the glitter field and wrong to delete the lane with it — our white chip tier is 13.7x short in the near-field right lane."
       ],
       "pieces": [
         {
           "piece": "shadows",
           "verdict": "ours-worse",
-          "biggestGap": "Shadows are cast correctly now but read short. Shadowed-sand share is 18.2% against the reference's 8.3% \u2014 we have twice their shadow AREA at the right multiply and bearing, but ours lands on palm canopies shadowing other palm canopies instead of on open plaza. The gap here is composition, not light."
+          "biggestGap": "Shadows are cast correctly now but read short. Shadowed-sand share is 18.2% against the reference's 8.3% — we have twice their shadow AREA at the right multiply and bearing, but ours lands on palm canopies shadowing other palm canopies instead of on open plaza. The gap here is composition, not light."
         },
         {
           "piece": "coast",
@@ -114,19 +114,19 @@
       "better": "A",
       "weWon": false,
       "gapSize": "obvious",
-      "biggestFlaw": "The settlement is one undifferentiated brown mass jammed into the upper-right quadrant while the lower-left half of the island is blank sand. A dozen structures share the same tan thatch and cream wall, packed roof-edge to roof-edge, so their silhouettes merge \u2014 you cannot count the buildings, let alone tell a workshop from a market. The reference uses red shingle, a blue-trimmed tavern, a grey stone forge with a smoking chimney, striped market awnings, a windmill: you identify every building's FUNCTION from 500 pixels away.",
+      "biggestFlaw": "The settlement is one undifferentiated brown mass jammed into the upper-right quadrant while the lower-left half of the island is blank sand. A dozen structures share the same tan thatch and cream wall, packed roof-edge to roof-edge, so their silhouettes merge — you cannot count the buildings, let alone tell a workshop from a market. The reference uses red shingle, a blue-trimmed tavern, a grey stone forge with a smoking chimney, striped market awnings, a windmill: you identify every building's FUNCTION from 500 pixels away.",
       "differences": [
         "BUGS, not art: detached chevron slabs hovering in the water under two islets, an orphaned slab off another, a cluster of palms floating on open ocean with no landmass under it, and a stray white cursor-shaped glyph over the town centre.",
-        "The ocean is a flat backdrop \u2014 one uniform cobalt with a mechanical diagonal dither and evenly-spaced white dashes. It reads as static noise, not sunlight, and it is 60% of the frame.",
-        "Grass plateaus are raised rectangles with vertical walls and no blend \u2014 they look pasted on at the wrong Y.",
+        "The ocean is a flat backdrop — one uniform cobalt with a mechanical diagonal dither and evenly-spaced white dashes. It reads as static noise, not sunlight, and it is 60% of the frame.",
+        "Grass plateaus are raised rectangles with vertical walls and no blend — they look pasted on at the wrong Y.",
         "The moored ship is a placeholder: flat orange hull, no sails, no rigging, no shadow, no wake. It is the one moving object in frame.",
-        "Lighting still nearly flat \u2014 shadows exist but are pale and low-contrast, so nothing has weight."
+        "Lighting still nearly flat — shadows exist but are pale and low-contrast, so nothing has weight."
       ],
       "pieces": [
         {
           "piece": "architecture",
           "verdict": "ours-much-worse",
-          "biggestGap": "MY BRIEFING ERROR. I asked for 'one architectural voice' and got uniformity, which destroyed legibility. The reference has one vocabulary with VARIED materials and colours per function \u2014 that is the opposite of what I asked for."
+          "biggestGap": "MY BRIEFING ERROR. I asked for 'one architectural voice' and got uniformity, which destroyed legibility. The reference has one vocabulary with VARIED materials and colours per function — that is the opposite of what I asked for."
         },
         {
           "piece": "composition",
@@ -142,6 +142,54 @@
           "piece": "geometry",
           "verdict": "ours-much-worse",
           "biggestGap": "Floating and orphaned slabs, palms on open water, a stray glyph. These are defects to fix, not taste to tune."
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "title": "Start with only the Ayuntamiento, on an island big enough to hold the game",
+      "a": "shots/blind/island-r4/a.png",
+      "b": "shots/blind/island-r4/b.png",
+      "key": {
+        "a": "ours",
+        "b": "reference"
+      },
+      "better": "B",
+      "weWon": false,
+      "gapSize": "obvious",
+      "biggestFlaw": "A has no focal hierarchy: the island is a uniform confetti of one repeated palm asset and one repeated small brown shack, all at roughly the same size and value, so the surface reads as texture noise instead of a place. There is exactly one slightly-larger lodge and it does not win — the eye lands nowhere and slides off. B solves this by scale: a hero tavern, a smoking forge, a market row, a dock that pulls the composition off the edge.",
+      "differences": [
+        "Ground cover. A's grass is flat, hard-edged slabs of a single saturated mid-green stamped onto sand with vertical cliff sides and near-zero internal detail. B varies green by plot, adds tilled crop rows, hedges, bushes and soft rounded borders where turf meets sand — the ground itself carries information.",
+        "Light. A's shadows are hard dark blobs cast in inconsistent directions with no contact occlusion where objects meet the ground, and the whole scene sits at one flat exposure. B commits to a single low sun: long consistent shadows, soft ambient occlusion under eaves and stilts, plus a warm emissive forge that anchors the value range.",
+        "Terrain silhouette. A's beach dissolves into a pile of stair-stepped terraces and jagged one-tile notches that read as unresolved geometry rather than coastline. B is one confident plateau with a clean two-step shore and a believable rounded outline.",
+        "Water. A's ocean is dark, muddy and speckled with random square whitecaps that follow no wave direction, and the shallows barely lighten before the shore. B ramps turquoise shallows to deep blue, runs coherent diagonal sparkle bands, and rings the island with a bright surf line that separates land from sea."
+      ],
+      "note": "The judge compared our DAY-ONE island against their BUILT-OUT one. Since OPENING.md a new player starts with the Ayuntamiento and nothing else, so 'add a hero tavern and a forge' is not a note we can act on — the player builds those. The structural faults it names are real at any game state and are what round 6 takes: a stack of sand terraces instead of one plateau with one step, grass plots raised on vertical cliff sides instead of sitting flush, a uniform palm field that reads as confetti, and an island sea that is dark and speckled instead of ramping turquoise to blue.",
+      "pieces": [
+        {
+          "piece": "island",
+          "verdict": "shipped",
+          "biggestGap": "The grid is 44, fixed from the start and read from balance.json rather than hardcoded — 911 buildable cells against the 255 the eleven buildings could never fit into — and the grass plots were rebuilt to suit it: sized as a share of the island, tapered into a size hierarchy, ragged one-cell edges, and a lit sloped shoulder where the grass rolls over onto the plaza instead of a bare vertical wall."
+        },
+        {
+          "piece": "legibility",
+          "verdict": "shipped",
+          "biggestGap": "The Banco stopped being a tailor's shop. bldg_bank — a grey stone vault with columns, an orange tile roof and a chest of spilling gold — was in the manifest, unused, while the gold store wore the same mesh as the wood store. Putting it in place is the single change that most obviously says what a building DOES from 500 pixels away, and it is one of the three duplicate pairs broken, so it is also what lets you count the buildings at all."
+        },
+        {
+          "piece": "water",
+          "verdict": "shipped",
+          "biggestGap": "The detail fade no longer keys on surface slope, so the open sea's swell is back up to 0.95. fwidth(worldPos) was the wrong ruler for a DISPLACED surface: tilt the water and a pixel covers more world, so the fade read a steep swell as distance and dissolved the texture of exactly the water that had the most going on — the trap seaScene.ts had recorded and been pinned by. The pixel is now sized from the projection instead: ndc.y IS the pixel row by construction, so dFdy of it is the frame's 2/height whatever the surface does; a `vPixel = clip.w / projectionMatrix[1][1]` varying carries the depth-to-length conversion (and makes it correct for an orthographic camera for free), and dividing by the view angle lays the result on the plane. Zoom, pitch and viewport still move it; the swell cannot. With that gone the amplitude went 0.55 → 0.95, and the knock-ons went with it: heel gain 0.45 → 0.68, the wake and the hull's shadow are displaced per-vertex onto the swell each frame (a 16-unit wake laid flat across a 20-unit swell spends half its length buried in opaque water), and the islets' shelf and sand are sunk below the deepest trough — the shelf's top face sat at −0.09 and was lifting a bright cyan slab out of the sea beside every island twice a second."
+        },
+        {
+          "piece": "sim / the opening",
+          "verdict": "shipped",
+          "biggestGap": "createNewGame is one building on the fixed 44 grid. storeCap had to be fixed first: it summed store BUILDINGS, so a one-building island had a capacity of zero and every payout, daily and chest landed as literally nothing."
+        },
+        {
+          "piece": "dressing",
+          "verdict": "shipped",
+          "biggestGap": "Detached chevron slabs hovering in the water beneath two islets — deco_sandmound.glb is four disconnected pieces in one bounding box, three of them 5x5 chevron slabs at the box's corners a tier clear of the sand; no ScatterItem transform can leave them behind, so planIslets no longer uses the model. Islets are now voxel geometry built by buildIslets() on the terrain's own CELL/STEP lattice and palette."
         }
       ]
     }
