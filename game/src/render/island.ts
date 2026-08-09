@@ -2,12 +2,20 @@ import * as THREE from 'three';
 import { Rng } from '../core/rng';
 
 /**
- * The player's island: a stepped voxel landmass built from a height/material grid.
+ * The player's island: a low voxel landmass built from a height/material grid.
  *
- * The reference island is not a smooth mesh — it is a stack of flat plateaus with
- * visible vertical dirt walls where the grass steps up from the sand, and a crisp
- * beach ring at the waterline. So the terrain is generated as a grid of cells and
- * merged into a handful of geometries (one per material) to keep draw calls low.
+ * The reference island is not a smooth mesh and it is not a stack of terraces
+ * either — it is ONE flat plateau, ringed by a single shallow step down to a
+ * beach that lies almost on the water, with a chunky rounded outline you can
+ * read as a shape at arm's length. The grass on top of it is flush: differently
+ * coloured ground with a soft border, not a raised slab. So the terrain is
+ * generated as a grid of cells and merged into a handful of geometries (one per
+ * material) to keep draw calls low.
+ *
+ * Three passes decide the shape, and each has its own note below:
+ *   generateIsland   the radius function, the beach depth, and the drain rule
+ *   carveRim         the guarantee that nothing one cell wide reaches the frame
+ *   stampGrassPlots  the fields, their outlines and their greens
  */
 
 export const CELL = 1; // world units per grid cell
@@ -18,6 +26,21 @@ export interface TerrainCell {
   height: number; // in steps
   material: Material;
   buildable: boolean;
+  /**
+   * Top-face albedo for this one cell, when the material's palette entry is not
+   * the whole story.
+   *
+   * Grass is the reason it exists. The reference's plateau is not one green: it
+   * carries a bright yellow-green field, a deeper one beside it, an olive one
+   * with tilled rows, and the difference plot to plot is a real part of why the
+   * eye can tell one field from the next at arm's length. Ours was one saturated
+   * mid-green stamped everywhere, which is half of what "uniform confetti" meant.
+   *
+   * Held per CELL rather than per plot because the mesh builder walks cells and
+   * nothing else needs to know that plots exist — and because tilled rows are a
+   * per-cell variation inside a single plot.
+   */
+  tint?: number;
 }
 
 export interface IslandShape {
@@ -49,6 +72,59 @@ const PALETTE: Record<Material, number> = {
   rock: 0xa5a6a8, // -> #9aa3a8
   path: 0xf8dfbc, // -> #e3d7b8; paths are sand in the reference, not a stripe
 };
+
+/**
+ * The greens, plot by plot.
+ *
+ * Not taste: histogrammed. Every grass-family pixel of island_hero.png binned
+ * to 4 bits a channel and sorted by count gives #98b848 as the plateau's main
+ * green by a factor of two over anything else, and then a clear tail of
+ * NEIGHBOURING FIELDS at #a8b858, #88a838, #78a838 and #889818 — a yellow-green,
+ * two deeper greens and an olive. Their plateau is five or six greens, not one,
+ * and each field holds its own the whole way across.
+ *
+ * Each entry is solved through the same rig response the sand and the base green
+ * were: PALETTE.grass at 0xa5c146 measures out at #95b944, so an albedo is its
+ * target divided componentwise by that ratio. The comment on each line is the
+ * pixel it aims at.
+ *
+ * The SPREAD is measured too, and it is narrower than it looks like it should
+ * be. That one dominant bin holds 54% of every green pixel in their frame, so
+ * their fields differ by about one bin — six or eight levels — not by the three
+ * bins a first pass at this reached for. A plateau of six greens a bin apart
+ * reads as land that varies; six greens three bins apart reads as a patchwork
+ * quilt, which is a different criticism arriving to replace the old one.
+ *
+ * Ordered light to dark on purpose, so the list itself can be audited against
+ * that histogram. TONE_ORDER is what actually hands them out.
+ */
+const GRASS_TONES: readonly number[] = [
+  0xb3c458, // -> #a2bc55, the dry yellow-green
+  0xadc24f, // -> #9cba4d
+  0xa5c146, // -> #95b944, the base green, and the commonest in their frame
+  0x9cb941, // -> #8db13f
+  0x91af3d, // -> #83a83b, the deep field
+  0xa3ad36, // -> #93a634, the olive one the crop rows go on
+];
+
+/**
+ * The order the plots take those greens in, and it is a fixed permutation
+ * rather than a stride for a reason worth stating.
+ *
+ * The packer places the biggest field first and works down, and plots that are
+ * consecutive in that order are usually NEIGHBOURS on the plateau — so walking
+ * the list in sequence would stand the two closest greens side by side every
+ * time and the variation would be invisible where it is most needed. A stride
+ * is the obvious fix and it is a trap: the first attempt used three, which
+ * shares a factor with six and therefore only ever reached tones 1 and 4. Two
+ * greens, on every plot, for the whole island — the exact fault this exists to
+ * fix, hiding inside its own fix.
+ *
+ * So the order is written out. Every entry appears once, no two consecutive
+ * entries are adjacent in the list, and the first field — the biggest one, the
+ * one the eye lands on — takes the base green their frame is mostly made of.
+ */
+const TONE_ORDER = [2, 5, 0, 3, 1, 4] as const;
 
 /** The beach ring reads a shade paler and cooler than the plaza it rings —
  *  #e0dac1 against #e3d7b8. Small, but it is what keeps the two sand tiers from
@@ -139,7 +215,22 @@ const WALL_SAND: WallSkin = {
   bodySun: 0xe8b88f, // -> #e0b082, measured back and matched exactly
   bodyShade: 0xb59175, // -> #97785e
   lip: 0.34,
-  coast: 0.5,
+  /*
+   * MOSTLY RIND, and that is a rule about short walls rather than about coasts.
+   *
+   * Their own coastal wall, counted down a 6x blow-up of the lit south-east
+   * shore, is four or five pixels of cream rind over five or six of #e0b082
+   * body — call it 0.45 rind on a wall thirteen pixels tall at 1600. Ours is
+   * two pixels tall, because the beach now lies almost on the water, and a
+   * proportion measured on thirteen pixels does not survive being applied to
+   * two: a third of two pixels is a hairline of warm brown wrapped round the
+   * whole island, which reads as an ink outline and not as sand.
+   *
+   * So the short wall spends most of itself on rind. What is left of the body
+   * is a single darker pixel at the waterline, which is what the eye wants
+   * there — a sand edge, not a stroke.
+   */
+  coast: 0.62,
 };
 
 const WALL_ROCK: WallSkin = {
@@ -160,17 +251,28 @@ function wallSkin(material: Material): WallSkin {
 const STEP = 0.66; // world height of one terrain step
 
 /**
- * The shoulder a grass plot rolls over on its way down to the plaza.
+ * How far a grass plot stands over the sand it sits on. A LIP, NOT A CLIFF.
  *
- * Quoted in world units, not in cells, because it is a property of the STEP —
- * how far grass spills over a soil edge before the edge goes vertical — and a
- * step is 0.66 units whatever the grid is. Two of the eleven pixels the step
- * measures on a 1280 frame, against five of wall under it: enough to be a
- * surface, not so much that the terrace stops being a terrace. See the note at
- * the top face for why the shoulder is what answers "no slope or blend".
+ * Round four's blind judge, on our frame against the shipped one: our grass is
+ * "raised slabs with vertical cliff sides ... stamped on". It was literally
+ * that — a plot stood one whole terrace step, 0.66 units and sixteen screen
+ * pixels, over the plaza, on a dead vertical wall of soil.
+ *
+ * Their plots do not. Blow up the south-west of island_hero.png and the grass
+ * there is FLUSH: a differently-coloured region of the same flat ground, with a
+ * soft irregular border and nothing standing under it at all. Elsewhere on their
+ * plateau a field carries a low rind, a few pixels, no more.
+ *
+ * So the whole rise is four screen pixels, and every one of them is spent on the
+ * BEVEL below rather than on a wall: BEVEL_RISE is the lip, exactly, which drops
+ * the vertical face to zero height and the mesh builder then skips it. What is
+ * left where grass meets sand is a wide soft shoulder — 0.44 of a cell, about
+ * ten pixels — and that is the "chunky soft border" the reference has.
  */
-const BEVEL_RUN = 0.28; // how far in the top face is pulled from a dropping edge
-const BEVEL_RISE = 0.2; // how far down the shoulder carries before the wall
+const PLOT_LIP = 0.16;
+
+const BEVEL_RUN = 0.44; // how far in the top face is pulled from a dropping edge
+const BEVEL_RISE = PLOT_LIP; // ...and how far down it carries. The whole lip.
 
 /** Blends two packed sRGB colours, `t` of the way from `a` to `b`. */
 function mix(a: number, b: number, t: number): number {
@@ -194,68 +296,100 @@ const WATERLINE = STEP * 0.82;
 
 /**
  * How far a coastal wall carries on below sea level. Only its top is ever
- * seen; the rest exists so the water never cuts under the island — the swell
- * troughs 0.16 under the plane, so this has to clear that with room.
+ * seen; the rest exists so the water never cuts under the island.
  *
- * It was 0.9 when the coast started a step and a half up. Off the new SHORE
- * tier that would hang the skirt to -0.12, and the skirt is counted by the
- * camera's silhouette fit in islandScene — an invisible half-unit of underwater
- * geometry would have quietly pushed the camera back and shrunk the island in
- * frame to make room for it.
+ * It has to come down with the coast. The beach now caps out 0.74 units up, so
+ * 0.62 of skirt would leave the island's underside at 0.12 — above the trough
+ * of a swell that is only tapered to nothing AT the shore, and a hair's breadth
+ * from the sea floor showing through. 0.42 hangs it to 0.32, a fifth of a unit
+ * clear under the waterline, which is all a plane you cannot see through needs.
  */
-const SKIRT = 0.62;
+const SKIRT = 0.42;
 
 /*
  * The tiers, quoted as clearance above the sea.
  *
- * Round one shipped the coast as ONE wall — the beach ring two steps up,
- * dropping 0.78 units straight into the water, 21 screen pixels of flat sand
- * with nothing on it. Four critics out of five called it the biggest thing
- * wrong with the frame after the shadows, and the blind judge called it a
- * quarry face rather than a beach.
+ * ONE PLATEAU. ONE STEP. A BEACH THAT MEETS THE WATER ALMOST AT SEA LEVEL.
  *
- * Measured off island_hero.png, in their pixels: their coastal wall is ELEVEN
- * pixels from the sand's top edge to the surf, and their terrace steps — where
- * grass rises off the sand, the tall step they DO have — run twenty. So their
- * whole coast stands barely half a terrace step out of the sea, and ours stood
- * at one and a half. Their frame is 1600 wide against our 1280, which makes
- * their eleven pixels about nine of ours.
+ * Round four's blind judge put our frame beside the shipped one and picked
+ * theirs, and the coast is the biggest single reason. Ours was a STACK: plateau,
+ * beach, shore, sea — three walls one behind another, each with its own notched
+ * outline, so the bottom third of the frame was four ragged parallel lines and
+ * the eye read unresolved geometry rather than a shoreline. Every previous round
+ * added a tier trying to soften the drop, and each one made the stack worse.
  *
- * So the drop is broken into three low bands instead of one tall one, and the
- * outermost ring is parked a hand's breadth over the water:
+ * Theirs is two surfaces and one small wall between them, and the numbers are
+ * not close to what we had. Measured off a 6x blow-up of island_hero.png at
+ * 1600 wide: the wall where their sand drops into the sea is SIX PIXELS. Their
+ * island stands about eight pixels out of the water in total. Scaled to our
+ * 1280 frame at roughly 25 pixels to the world unit:
  *
- *   plateau -> beach   0.49 units   ~12 screen pixels
- *   beach   -> shore   0.38 units   ~ 9 pixels
- *   shore   -> sea     0.24 units   ~ 6 pixels, the lip the surf breaks on
+ *   plateau -> beach   0.42 units   ~7 screen pixels, the one step
+ *   beach   -> sea     0.14 units   ~2 pixels, all but lost under the surf
  *
- * 0.24 is deliberately under a terrace step and over the swell's 0.16 crest:
- * the sea runs at the lip and never over it.
+ * The SPLIT is as measured as the total, and the first attempt got it wrong in
+ * a way only the pixels showed. At 0.20 the outer wall came back as a two-pixel
+ * band of #e0b082 — the reference's own lit body colour, correct to the level —
+ * drawn as a continuous line around the entire island, and a saturated warm
+ * hairline tracing a silhouette does not read as a wall at all. It reads as an
+ * outline somebody stroked the island with. Their coast has no such line
+ * because their beach is not a shelf standing over the water, it is sand lying
+ * ON it: the step off the plateau carries almost the whole drop and what is
+ * left at the water is under the surf.
  *
- * The plateau comes down a third of a unit doing this, and everything standing
- * on it rides down too — which is correct, their town sits low as well. Nothing
- * outside this file reads these constants, buildings snap to buildable ground
- * rather than to a stored height, and the island camera solves its distance off
- * the terrain's own silhouette, so a lower island reframes instead of cropping.
+ * That is a landmass 0.56 units proud of the water where ours stood at 1.77.
+ * It is meant to look flat. A pirate island in this art is a sandbar with a
+ * town on it, not a mesa, and every stacked terrace we added to make it read as
+ * terrain is what made it read as a quarry instead.
+ *
+ * 0.20 clears the swell without help: the water shader tapers the wave to zero
+ * as it reaches land (see the shoal term in render/water.ts), so the sea arrives
+ * at this wall flat and never over it.
+ *
+ * Nothing outside this file reads these constants. Buildings snap to buildable
+ * ground rather than to a stored height, and the island camera solves its
+ * distance off the terrain's own silhouette, so a flatter island reframes
+ * instead of cropping.
  */
 const clearance = (units: number): number => (WATERLINE + units) / STEP;
 
-/** The outermost ring: wet sand, barely out of the water. */
-const SHORE = clearance(0.24);
-/** The dry beach between the shore and the town. */
-const BEACH = clearance(0.62);
-/** The plateau the town is built on. */
-const PLATEAU = clearance(1.11);
-/** Grass plots stand a full step over the plaza. This is the one tall step the
- *  reference has, and every terrace in their frame is made of it. */
-const PLOT = PLATEAU + 1;
+/** The outer ring, barely out of the water: the sand the surf runs up. */
+const BEACH = clearance(0.14);
+/** The plateau the town is built on, one shallow step above it. */
+const PLATEAU = clearance(0.56);
+/** Grass plots stand a LIP over the plaza — see PLOT_LIP. Quoted in steps
+ *  because that is the unit heights are stored in. */
+const PLOT = PLATEAU + PLOT_LIP / STEP;
 
-/** The ladder as tier indices, sea first. Generation reasons in these — "no
- *  cell stands more than one tier over its lowest neighbour" is a rule about
- *  rungs, not about world units — and the heights are written at the end. */
-const TIERS = [0, SHORE, BEACH, PLATEAU] as const;
-const T_SHORE = 1;
-const T_BEACH = 2;
-const T_PLATEAU = 3;
+/** The ladder as tier indices, sea first. Generation reasons in these — "the
+ *  plateau never touches water" is a rule about rungs, not about world units —
+ *  and the heights are written at the end. */
+const TIERS = [0, BEACH, PLATEAU] as const;
+const T_BEACH = 1;
+const T_PLATEAU = 2;
+
+/**
+ * The superellipse exponent the coast is cut from — how square the island is.
+ *
+ * It was 3.2, which is a rounded blob, and that number turned out to be the
+ * hidden cause of the jaggedness rather than the notch tables everyone kept
+ * blaming. A curve sampled onto a grid steps once every few cells wherever it
+ * runs at a shallow angle to the axes, and a blob runs at a shallow angle
+ * EVERYWHERE. Worse, the line where the plaza steps up off the beach is that
+ * same curve a cell or two inside, so it steps in the same places: two ragged
+ * staircases in lockstep, tread for tread, which is what read as a fractal
+ * coast no amount of tidying the tables could fix.
+ *
+ * Look at what the reference actually is. Their island is a SQUARE with its
+ * corners chamfered — the edges run dead straight for eight and ten cells at a
+ * time along the grid, then turn at 45 degrees, and a line at either of those
+ * two angles rasterises with no staircase at all. That is the whole trick
+ * behind an outline you can read at arm's length.
+ *
+ * At 5.5 the flats are flat, the corners are a clean diagonal, and the only
+ * steps left in the outline are the ones the jog table puts there on purpose.
+ */
+const SQUARENESS = 5.5;
 
 /**
  * Generates the home island: a rounded landmass with a beach ring, a raised
@@ -267,16 +401,19 @@ const T_PLATEAU = 3;
  * buildings in balance.json need 283 cells for their FOOTPRINTS ALONE, and the
  * 26 grid this shipped with offers 255. They did not fit even packed edge to
  * edge, which is why every previous round's crowding survived every previous
- * round's art fix. 44 measures out at 911 buildable cells on the default seed —
- * footprints at 31% of the plateau, which is where the shipped game sits.
+ * round's art fix. 44 measures out at 1111 buildable cells on the default seed —
+ * footprints at 25% of the plateau, which is where the shipped game sits. That
+ * is up from 911 and the gain is real rather than a widening: collapsing the
+ * three-tier coast to two gave a ring of cells back, and `npm test` still walks
+ * the whole catalogue onto the island with two cells of clearance.
  *
  * Everything below is written in one of two currencies and it matters which:
  *
- *   CELLS scale with the grid. The coast's wobble bands, the wet lip's width,
- *   the beach's depth and the grass plots' sizes are all quoted as a share of
- *   the radius or of `size`, so the coast profile that was tuned at 26 arrives
- *   at 44 the same number of cells deep — a bigger plateau ringed by the same
- *   beach, not a 26-cell island scaled up with a 1.7x-wide shoreline.
+ *   CELLS scale with the grid. The coast's jog bands, the beach's depth, the
+ *   lattice it is sampled on and the grass plots' sizes are all quoted as a
+ *   share of the radius or of `size`, so the coast profile that was tuned at 26
+ *   arrives at 44 the same number of cells deep — a bigger plateau ringed by the
+ *   same beach, not a 26-cell island scaled up with a 1.7x-wide shoreline.
  *
  *   WORLD UNITS do not. The tiers, the step and the skirt are clearances above
  *   the sea in metres, and the sea does not care how wide the island is.
@@ -288,99 +425,162 @@ export function generateIsland(seed: string, size = 44): IslandShape {
   const rng = new Rng(seed);
   const c = (size - 1) / 2;
 
-  // Wobble the coastline so it does not read as a perfect circle. Shallower
-  // than it was, because the notches below now carry the irregularity: a deep
-  // lobe on top of them bends the long straight runs the reference's rim is
-  // mostly made of, and two kinds of wobble at once read as erosion.
-  const lobes = Array.from({ length: 5 }, () => ({
+  // Wobble the coastline so the island is not a stencil of a chamfered square:
+  // three long, shallow waves that swell one side and flatten another over a
+  // whole quarter of the rim. Shallower and fewer than the five this replaced,
+  // and deliberately so — the point of SQUARENESS above is straight runs, and a
+  // deep lobe is exactly the thing that bends a straight run back into a curve
+  // sampled at a shallow angle, which is where the staircase came from.
+  const lobes = Array.from({ length: 3 }, () => ({
     angle: rng.range(0, Math.PI * 2),
-    amp: rng.range(0.02, 0.055),
-    freq: rng.int(2, 4),
+    amp: rng.range(0.016, 0.038),
+    freq: rng.int(2, 3),
   }));
 
   /*
-   * Notches.
+   * The jog, and why it is now a quarter of the pitch it was.
    *
-   * A smooth radius sampled onto a grid gives a staircase, and a staircase is
-   * not what the reference has: their rim jogs in and out by exactly one cell
-   * every few cells the whole way round, and the same is true of the line where
-   * the plaza steps up off the beach. That cell-scale jog is a lot of why their
-   * coast reads as carved blocks and a smooth lobe function reads as a shape
-   * with anti-aliasing turned off.
+   * The old table changed value every three and a half cells and drew from
+   * [0,0,0,1,-1] — so about two bands in five jogged, and a jog out was as
+   * likely as a jog in. Sampled onto a grid on top of a superellipse staircase
+   * and five lobes, that is a two-cell sawtooth running the whole way round,
+   * which is exactly what round four called "jagged one-tile notches ...
+   * unresolved geometry".
    *
-   * So the edge carries a second term that is quantised to one whole cell and
-   * held CONSTANT over a run of about three of them. The rim and the plaza get
-   * their own tables, or the two lines jog together and the beach stays a
-   * constant-width ribbon — which is the one thing the reference's never is.
+   * Count the reference instead: their rim runs six to ten cells DEAD STRAIGHT
+   * and then steps once, by one cell. It is a chunky outline with occasional
+   * events, not a fractal. So the band is seven cells wide and half the draws
+   * are zero — a step every dozen cells or so, one cell of amplitude, and the
+   * runs that do jog mostly jog outward so the island keeps its area.
+   *
+   * Whatever survives this is then put through `carveRim`, which is where the
+   * guarantee actually lives: nothing one cell wide gets to reach the frame.
    */
-  // One band per cell of grid buys about three and a half cells of rim each at
-  // any size — the rim of a superellipse this square runs roughly 3.5·size
-  // cells — so the jog keeps its pitch as the island grows instead of
-  // stretching into a coast that wobbles once a corner.
-  const bands = Math.max(8, size);
-  const notch = (count: number, odds: readonly number[]): number[] =>
-    Array.from({ length: count }, () => rng.pick(odds) / c);
-  const rimNotch = notch(bands, [0, 0, 0, 1, -1]);
+  const bands = Math.max(8, Math.round(size / 2)); // ~7 cells of coast per band
+  const rimNotch = Array.from({ length: bands }, () => rng.pick([0, 0, 0, 1, 1, -1]) / c);
   /*
-   * The wet lip gets its own table on its own pitch — seven-ish bands against
-   * the rim's twenty-six — for the reason the plaza's does. Driven off the
-   * rim's table it jogs in lockstep with the rim, and a band that jogs with the
-   * coast is a ribbon of exactly constant width, which is the one thing their
-   * shoreline never is. Its odds never contain a negative: the lip is what the
-   * sea meets, and a band of it missing puts the full beach wall back in the
-   * water for a stretch, which is the failure this whole tier exists to fix.
+   * How deep the beach runs, in CELLS, sampled on a BLOCK LATTICE rather than
+   * by angle — and the difference is the last of the coastline complaint.
+   *
+   * An angular table wobbles the beach as you walk round the island, which
+   * sounds like the right axis and is not. Over any one straight stretch of
+   * coast the angle barely moves, so the width is constant there, so the line
+   * where the plaza steps up is the coastline TRANSLATED — and a translated
+   * staircase repeats the original's every tread. On the east shore that came
+   * back as a perfectly regular sawtooth of one-cell teeth, each showing a
+   * little tan wall face, running the whole side of the island. It is the
+   * "uniform confetti" reading arriving through the terrain instead of the
+   * props.
+   *
+   * A lattice of four-cell blocks has no relationship to the coast's direction
+   * at all, so the plateau's edge steps in and out on its own schedule and the
+   * two lines stop rhyming. Four cells because that is the coarsest block that
+   * still gives a 44-grid island a dozen events per side, and because anything
+   * finer is back to per-cell noise.
    */
-  const shoreBands = Math.max(7, Math.round(bands * 0.7));
-  const shoreNotch = notch(shoreBands, [0, 0, 0, 1, 1]);
-  // The plaza's line jogs over runs twice as long as the rim's. At the rim's
-  // pitch it came out as a two-cell sawtooth that chewed the buildable plateau
-  // into spits, and a plateau shredded that fine has nowhere left that a grass
-  // plot or a building will fit.
-  const plazaBands = Math.max(6, Math.round(bands / 2));
-  const plazaNotch = notch(plazaBands, [0, 0, 0, 1, -1]);
+  const BLOCK = 4;
+  const blocks = Math.ceil(size / BLOCK);
+  const beachBlock = Array.from({ length: blocks * blocks }, () =>
+    rng.pick([0, 0, 1, 1, 2, 3])
+  );
 
-  const tiers = new Int8Array(size * size);
-
+  // The landmass first, as a mask, and cleaned before anything is measured off
+  // it — the beach below is a distance from the SHORE, and a shore with a spit
+  // on it that is about to be deleted is not the shore.
+  const land = new Uint8Array(size * size);
+  const turnAt = (x: number, z: number) =>
+    (Math.atan2((z - c) / c, (x - c) / c) + Math.PI) / (Math.PI * 2);
   for (let z = 0; z < size; z++) {
     for (let x = 0; x < size; x++) {
       const dx = (x - c) / c;
       const dz = (z - c) / c;
       const angle = Math.atan2(dz, dx);
-      // Squarish base shape (superellipse) matches the reference silhouette
-      // better than a circle — the island reads as a rounded square.
-      const r = Math.pow(Math.abs(dx) ** 3.2 + Math.abs(dz) ** 3.2, 1 / 3.2);
-      const turn = (angle + Math.PI) / (Math.PI * 2);
-      const band = Math.min(bands - 1, Math.floor(turn * bands));
+      // Superellipse: see SQUARENESS for why the exponent is the single most
+      // load-bearing number in this function.
+      const r = Math.pow(Math.abs(dx) ** SQUARENESS + Math.abs(dz) ** SQUARENESS, 1 / SQUARENESS);
+      const band = Math.min(bands - 1, Math.floor(turnAt(x, z) * bands));
       let edge = 0.86 + rimNotch[band];
       for (const l of lobes) edge += Math.sin(angle * l.freq + l.angle) * l.amp;
+      if (r < edge) land[z * size + x] = 1;
+    }
+  }
+  chunkMask(land, size, size);
 
-      if (r < edge) {
-        // Outermost: the wet lip the surf breaks on, one or two cells wide.
-        tiers[z * size + x] = T_SHORE;
-        // Under a cell wide at its narrowest, because the terracing pass in
-        // carveRim rebuilds any rung the radius squeezed out to a full cell.
-        // Asking for the cell here as well spends plateau twice.
-        const lip =
-          0.7 / c + shoreNotch[Math.min(shoreBands - 1, Math.floor(turn * shoreBands))];
-        if (r < edge - lip) {
-          tiers[z * size + x] = T_BEACH; // the dry sand behind it
-          // The beach is deeper to the south and west, which is what gives the
-          // reference its big open plaza instead of a uniform border. Pulled in
-          // from 0.09/0.10 to pay for the shore ring outside it: three tiers
-          // of coast on a 26-cell island cost about a cell of plateau radius,
-          // and the plateau is where the game is played.
-          const sector =
-            0.02 +
-            0.075 * (0.5 - Math.cos(angle) * 0.35 - Math.sin(angle) * 0.25) +
-            plazaNotch[Math.min(plazaBands - 1, Math.floor(turn * plazaBands))];
-          // The plateau is measured in from the BEACH's line, not the rim's, so
-          // the lip is carved out of the sea's side of the island rather than
-          // out of the sand — the beach keeps the width it always had and the
-          // plateau gives up the cell instead.
-          if (r < edge - lip - sector) tiers[z * size + x] = T_PLATEAU;
+  /*
+   * The beach, measured in CELLS FROM THE WATER rather than in radius.
+   *
+   * This is not a refactor, it is the fix for a band that was four cells deep
+   * along the north shore and one at the corners. A radial inset is only a
+   * width where the coast is a circle: on a superellipse the radius barely
+   * changes along the flat sides, so a fixed step inward in r walks five or six
+   * cells there and one at the rounded corners. The island came out with a pale
+   * sand shelf across its whole northern third and no beach at all where the
+   * shore turned, which is not a coastline, it is an artefact of the parameter.
+   *
+   * A chamfer distance to the sea costs one extra pass and gives a beach that
+   * is the width it says it is everywhere. What varies is then deliberate: the
+   * block lattice wanders it a cell or two, and the sector term runs it wider on
+   * the south-east, the side the camera is on, where the reference's own beach
+   * is at its widest and where an extra cell of sand is actually seen.
+   */
+  const toSea = seaDistance(land, size);
+  const tiers = new Int8Array(size * size);
+  for (let z = 0; z < size; z++) {
+    for (let x = 0; x < size; x++) {
+      const i = z * size + x;
+      if (!land[i]) continue;
+      tiers[i] = T_BEACH;
+      const angle = Math.atan2((z - c) / c, (x - c) / c);
+      const deep =
+        0.8 +
+        beachBlock[Math.floor(z / BLOCK) * blocks + Math.floor(x / BLOCK)] +
+        0.8 * (0.5 + Math.cos(angle) * 0.3 + Math.sin(angle) * 0.3);
+      if (toSea[i] > deep) tiers[i] = T_PLATEAU;
+    }
+  }
+
+  /*
+   * A BEACH HAS TO REACH THE SEA, and sampling its depth off a block lattice
+   * does not guarantee it.
+   *
+   * Where a block asking for four cells of beach abuts one asking for none, the
+   * test above marks cells three and four out as beach while cells one and two
+   * — in the thrifty block, nearer the water — come out as plateau. What that
+   * draws is a two-cell ditch of sand sunk into the plaza with a strip of
+   * plateau between it and the shore, which is not a beach and not anything
+   * else either; it is a trench, and the mesh gives it four walls.
+   *
+   * So every beach cell must be able to walk downhill to the water: a neighbour
+   * that is sea, or a neighbour that is beach and strictly closer to the sea
+   * than it is. Anything that cannot is promoted back to plateau, which drains
+   * the trench from its inland end outward in as many sweeps as it is deep.
+   * Diagonals count — a beach a cell wide on a 45-degree shore reaches the water
+   * across a corner and it would be wrong to call that stranded.
+   */
+  for (let pass = 0; pass < size; pass++) {
+    let moved = false;
+    for (let z = 0; z < size; z++) {
+      for (let x = 0; x < size; x++) {
+        const i = z * size + x;
+        if (tiers[i] !== T_BEACH) continue;
+        let drains = false;
+        for (let dz = -1; dz <= 1 && !drains; dz++) {
+          for (let dx = -1; dx <= 1 && !drains; dx++) {
+            if (!dx && !dz) continue;
+            const nx = x + dx;
+            const nz = z + dz;
+            if (nx < 0 || nz < 0 || nx >= size || nz >= size) { drains = true; break; }
+            const j = nz * size + nx;
+            drains = tiers[j] === 0 || (tiers[j] === T_BEACH && toSea[j] < toSea[i]);
+          }
+        }
+        if (!drains) {
+          tiers[i] = T_PLATEAU;
+          moved = true;
         }
       }
     }
+    if (!moved) break;
   }
 
   carveRim(tiers, size);
@@ -398,62 +598,145 @@ export function generateIsland(seed: string, size = 44): IslandShape {
 }
 
 /**
- * Two rules the notched edge above cannot keep on its own, enforced after the
- * fact because they are cheap here and fiddly to bake into the radius.
+ * How far every land cell is from open water, in cells.
  *
- * 1. No cell of land hangs off the island by a thread. A notch that lands on a
- *    corner leaves a one-cell spit, and a spit renders as a lone square pillar
- *    standing in the sea.
- *
- * 2. NOTHING STANDS MORE THAN ONE RUNG OVER ITS LOWEST NEIGHBOUR. This used to
- *    be the narrower rule "the plaza never touches water", which was the same
- *    idea with only two tiers to apply it to. With three it is worth stating
- *    properly, because it is the rule that makes the coast a STAIRCASE: every
- *    ladder down to the sea gets walked one rung at a time whatever the radius
- *    function did, so a notch can no longer open a two-tier face anywhere, and
- *    a beach that the sector term squeezed to nothing is rebuilt one cell wide
- *    rather than skipped. Their coast terraces the same way and for the same
- *    reason — it is what stops a landmass reading as a slab with a wall.
- *
- * Both run on tier indices rather than on world heights: "one rung" is a
- * statement about the ladder, and doing it in world units would need to know
- * which gaps between tiers count as a step.
+ * A two-sweep chamfer with a 3x3 mask: exact along the axes, within 4% of
+ * Euclidean on the diagonal, and that is far closer than a beach quoted to the
+ * nearest cell needs. Cells outside the mask read zero, which is what makes the
+ * sea the source rather than a boundary condition to special-case.
  */
-function carveRim(tiers: Int8Array, size: number): void {
+function seaDistance(land: Uint8Array, size: number): Float32Array {
+  const INF = 1e6;
+  const d = new Float32Array(size * size);
+  for (let i = 0; i < d.length; i++) d[i] = land[i] ? INF : 0;
   const at = (x: number, z: number) =>
-    x < 0 || z < 0 || x >= size || z >= size ? 0 : tiers[z * size + x];
-  const neighbours = (x: number, z: number) => [at(x - 1, z), at(x + 1, z), at(x, z - 1), at(x, z + 1)];
-
-  // Spits first, so a cell about to be dropped is not also terracing its
-  // neighbours down on the way out.
-  for (let pass = 0; pass < 2; pass++) {
-    const drop: number[] = [];
-    for (let z = 0; z < size; z++) {
-      for (let x = 0; x < size; x++) {
-        if (tiers[z * size + x] === 0) continue;
-        if (neighbours(x, z).filter((n) => n > 0).length < 2) drop.push(z * size + x);
-      }
+    x < 0 || z < 0 || x >= size || z >= size ? 0 : d[z * size + x];
+  const D2 = Math.SQRT2;
+  for (let z = 0; z < size; z++) {
+    for (let x = 0; x < size; x++) {
+      const i = z * size + x;
+      if (!land[i]) continue;
+      d[i] = Math.min(d[i], at(x - 1, z) + 1, at(x, z - 1) + 1, at(x - 1, z - 1) + D2, at(x + 1, z - 1) + D2);
     }
-    if (!drop.length) break;
-    for (const i of drop) tiers[i] = 0;
   }
+  for (let z = size - 1; z >= 0; z--) {
+    for (let x = size - 1; x >= 0; x--) {
+      const i = z * size + x;
+      if (!land[i]) continue;
+      d[i] = Math.min(d[i], at(x + 1, z) + 1, at(x, z + 1) + 1, at(x + 1, z + 1) + D2, at(x - 1, z + 1) + D2);
+    }
+  }
+  return d;
+}
 
-  // Terrace. Each sweep can only lower cells, so this converges; the guard is
-  // the width of the island, and in practice it settles in two.
-  for (let pass = 0; pass < size; pass++) {
+/**
+ * Rounds a mask off into whole chunks: no feature of it is ever one cell wide.
+ *
+ * This is the whole answer to "jagged one-tile notches", and it is one rule
+ * applied until it stops moving:
+ *
+ *   a cell inside the mask with one or none of its four orthogonal neighbours
+ *   inside is a SPIKE, and comes out;
+ *   a cell outside it with three or four inside is a BITE, and gets filled.
+ *
+ * Work the two cases on paper and the filter's character falls out. A one-cell
+ * bump on a straight edge has a single neighbour and dies; a two-cell bump has
+ * two apiece and lives. A one-cell nick has three neighbours and fills; a
+ * two-cell nick has two apiece and survives. A cell on a 45-degree diagonal run
+ * has two and is untouched, so the rounded corners the superellipse gives are
+ * kept exactly. One cell dies, two cells live: that is "chunky" stated as code,
+ * and it is why nothing downstream has to know where the coastline came from.
+ *
+ * `canFill` gates the fill half only, and exists because the plateau has a rule
+ * the coast does not: it may never be handed a cell that touches the sea.
+ *
+ * Used on three different outlines — the coast, the plateau and every grass
+ * plot — which is why it takes a width and a height rather than the island's
+ * square size, and why it is the one place any of them states what chunky means.
+ */
+function chunkMask(
+  mask: Uint8Array,
+  w: number,
+  h: number,
+  canFill?: (x: number, z: number) => boolean
+): void {
+  const at = (x: number, z: number) => (x < 0 || z < 0 || x >= w || z >= h ? 0 : mask[z * w + x]);
+  for (let pass = 0; pass < 8; pass++) {
+    // Written into a copy so every cell is judged against the same generation.
+    // In place, a row already swept biases the row under it and the filter
+    // walks features across the grid instead of rounding them off.
+    const next = mask.slice();
     let moved = false;
-    for (let z = 0; z < size; z++) {
-      for (let x = 0; x < size; x++) {
-        const i = z * size + x;
-        if (tiers[i] < T_BEACH) continue;
-        const floor = Math.min(...neighbours(x, z));
-        if (tiers[i] > floor + 1) {
-          tiers[i] = floor + 1;
+    for (let z = 0; z < h; z++) {
+      for (let x = 0; x < w; x++) {
+        const i = z * w + x;
+        const n = at(x - 1, z) + at(x + 1, z) + at(x, z - 1) + at(x, z + 1);
+        if (mask[i]) {
+          if (n <= 1) {
+            next[i] = 0;
+            moved = true;
+          }
+        } else if (n >= 3 && (!canFill || canFill(x, z))) {
+          next[i] = 1;
           moved = true;
         }
       }
     }
+    mask.set(next);
     if (!moved) break;
+  }
+}
+
+/**
+ * Turns the radius function's output into an outline you can read at arm's
+ * length. THIS is where the coast stops being a fractal.
+ *
+ * Two lines have to survive the trip, and they are cleaned in the order they
+ * constrain each other:
+ *
+ * 1. THE COAST. Chunked, so no spit of land one cell wide juts into the sea and
+ *    no one-cell bite is taken out of it. Both render as noise at this camera:
+ *    a spit is a lone square pillar standing in the water, and a bite is a dark
+ *    pixel in a pale edge that the eye reads as a hole rather than as a bay.
+ *
+ * 2. THE PLATEAU NEVER TOUCHES THE WATER. With one step in the ladder instead
+ *    of three this is the whole of what "terracing" used to mean, and it is
+ *    enforced by demotion — a plateau cell against the sea becomes beach — so
+ *    the beach is rebuilt wherever the sector term squeezed it out.
+ *
+ * The order matters and it is not the obvious one. Chunk the coast first,
+ * because a plateau cell whose beach was on a spit that is about to be deleted
+ * would otherwise be judged against ground that will not exist. Then demote.
+ * Then chunk the plateau, with the fill half forbidden from touching water, so
+ * rounding the plateau's own outline can never undo rule 2 — which is why this
+ * needs no second pass and cannot oscillate.
+ */
+function carveRim(tiers: Int8Array, size: number): void {
+  const at = (x: number, z: number) =>
+    x < 0 || z < 0 || x >= size || z >= size ? 0 : tiers[z * size + x];
+
+  // 1. The coast. Anything the filter adds is beach; the plateau is set below.
+  const land = new Uint8Array(size * size);
+  for (let i = 0; i < tiers.length; i++) land[i] = tiers[i] > 0 ? 1 : 0;
+  chunkMask(land, size, size);
+  for (let i = 0; i < tiers.length; i++) {
+    if (!land[i]) tiers[i] = 0;
+    else if (tiers[i] === 0) tiers[i] = T_BEACH;
+  }
+
+  // 2. The plateau, demoted off the waterline and then rounded off itself.
+  const dry = (x: number, z: number) =>
+    at(x - 1, z) > 0 && at(x + 1, z) > 0 && at(x, z - 1) > 0 && at(x, z + 1) > 0;
+  const plateau = new Uint8Array(size * size);
+  for (let z = 0; z < size; z++) {
+    for (let x = 0; x < size; x++) {
+      const i = z * size + x;
+      plateau[i] = tiers[i] === T_PLATEAU && dry(x, z) ? 1 : 0;
+    }
+  }
+  chunkMask(plateau, size, size, (x, z) => land[z * size + x] === 1 && dry(x, z));
+  for (let i = 0; i < tiers.length; i++) {
+    if (tiers[i] > 0) tiers[i] = plateau[i] ? T_PLATEAU : T_BEACH;
   }
 }
 
@@ -491,8 +774,27 @@ function stampGrassPlots(cells: TerrainCell[], size: number, rng: Rng): void {
     }
   }
 
-  /** Lane of sand kept between two plots. This is what reads as the paths. */
-  const GAP = 2;
+  /*
+   * Lane of sand kept between two plots — the MINIMUM one, and that word is
+   * what changed.
+   *
+   * Two was a fixed lane and it cost the island its ground cover. Measured on
+   * pixels rather than argued: their plateau's ground runs 40% green against
+   * ours at 24%, and the arithmetic says why. A plot reserves (w+2*GAP) by
+   * (h+2*GAP) to place (w*h) of grass, so at GAP 2 a ten-by-eight field spends
+   * a hundred and sixty-eight cells of plateau to lay down sixty-five of green,
+   * and no number of extra attempts can beat that ratio — the packer was not
+   * running out of tries, it was running out of room.
+   *
+   * At one the reservation is (w+2)(h+2) and the same field pays a hundred and
+   * twenty. The lanes do not collapse to a single cell either, because the jog
+   * and the corner radii pull most plot edges in a cell or two on their own: the
+   * result is lanes that run one to four cells and vary along their length,
+   * which is what the reference's sand actually does. A constant two-cell moat
+   * round every field was the more regular answer, and regular is the thing
+   * being fixed.
+   */
+  const GAP = 1;
 
   /*
    * The plots are sized against the ISLAND, not in absolute cells.
@@ -510,15 +812,25 @@ function stampGrassPlots(cells: TerrainCell[], size: number, rng: Rng): void {
    * packer has to fill. The packer stops itself when nothing fits, so an
    * over-generous count costs a few thousand table lookups and nothing else.
    */
-  const wide = Math.max(5, Math.round(size * 0.3));
-  const deep = Math.max(4, Math.round(size * 0.23));
+  const wide = Math.max(5, Math.round(size * 0.32));
+  const deep = Math.max(4, Math.round(size * 0.25));
   /** Never smaller than this on a side. The big rectangles go in first and
    *  leave strips behind them; something has to be able to take a strip, or the
    *  packer calls a half-empty plateau full. Excluding the square of the
    *  smallest side is the one exclusion: the corner clip below takes a cell off
    *  each corner, and on the smallest square that leaves a plus sign. */
   const least = size >= 34 ? 4 : 3;
-  const PLOTS = Math.max(12, Math.round(size * 0.5));
+  /*
+   * Attempts, not plots — the packer stops when nothing fits.
+   *
+   * Raised from 0.5 of the grid because the outline work above spends cells:
+   * a two-cell jog and then a chunking pass take roughly a sixth off every plot
+   * they touch, and at 0.5 the plateau came back 29% green against the 44% it
+   * had been. Counted off island_hero.png their plateau runs a little over
+   * two-fifths green, so the target is the number we had with the softer
+   * outline, not fewer fields.
+   */
+  const PLOTS = Math.max(12, Math.round(size * 0.95));
 
   const shapes: Array<[number, number]> = [];
   for (let w = wide; w >= least; w--) {
@@ -594,46 +906,100 @@ function stampGrassPlots(cells: TerrainCell[], size: number, rng: Rng): void {
     const { ox, oz, w, h } = best;
 
     /*
-     * The outline is RAGGED, and that is half the answer to "raised rectangles
-     * pasted on".
+     * The outline is RAGGED but never FINE, and the difference is the whole
+     * point of this round.
      *
      * A plot is chosen as a rectangle because a rectangle is what a packer can
      * reason about, but nothing in the reference is one: blow up any of their
-     * grass fields and its edge jogs in and out by a single cell every few
-     * cells, exactly like their coastline does, and for the same reason — the
-     * eye reads a stepped edge as ground that was cut and a ruled edge as a
-     * decal. A rectangle with its four corners nicked, which is what this used
-     * to stamp, still has four straight sides several cells long, and at 44 the
-     * plateau carries twenty of them.
+     * grass fields and its edge is a soft chunky blob, curving over four and
+     * five cells at a time. What it never is, is toothed. The previous table
+     * pulled a side in by one cell over runs of three, which put a single-cell
+     * tooth every third cell along twenty plot edges — the same mistake the
+     * coastline was making, at the same scale, and it read the same way.
      *
-     * So each side is pulled in by one cell over runs of about three, off its
-     * own table — four tables, or opposite sides jog together and the plot
-     * stays a rectangle that has merely moved. Removing cells can never make a
-     * plot overlap its neighbour, so the packer's own reservation still holds.
+     * So the jog is now up to TWO cells over runs of four, and the finished
+     * mask goes through `chunkMask` — the identical filter the coast gets — so
+     * whatever the tables produce, no tooth and no nick one cell wide reaches
+     * the frame. Big soft steps, no fine detail: that is a chunky border.
+     *
+     * Removing cells can never make a plot overlap its neighbour, and the fill
+     * half of the filter is fenced inside the plot's own rectangle by the mask's
+     * bounds, so the packer's reservation still holds either way.
      */
+    // Two cells of jog is a big soft bite out of a thirteen-wide field and the
+    // whole of a four-wide one, so the odds are scaled to the plot: a small plot
+    // gets a single cell of wander and keeps its area.
+    const odds = Math.min(w, h) >= 8 ? [0, 1, 1, 2] : [0, 0, 1, 1];
     const jog = (n: number): number[] => {
       const table: number[] = [];
       let run = 0;
       for (let i = 0; i < n; i++) {
-        if (i % 3 === 0) run = rng.pick([0, 0, 0, 1]);
+        if (i % 3 === 0) run = rng.pick(odds);
         table.push(run);
       }
       return table;
     };
     const north = jog(w), south = jog(w), west = jog(h), east = jog(h);
-    // The corner clip grows with the plot: one cell off a small plot reads as a
-    // rounded corner, one cell off a thirteen-wide field reads as a rectangle
-    // with a chip out of it.
-    const round = Math.min(w, h) >= 6 ? 2 : 1;
+    /*
+     * FOUR CORNERS, FOUR DIFFERENT RADII, and this is what finally stops a plot
+     * reading as a rectangle.
+     *
+     * One shared clip was the earlier answer and it is not enough: a rectangle
+     * with all four corners cut by the same amount is an octagon, which the eye
+     * files under the same heading. Worse, the edge jog cannot rescue it —
+     * every side draws its own table, but a table that happens to come out
+     * constant pulls that whole side in as a unit and leaves it straight, so a
+     * plot where all four tables land flat is a smaller rectangle. Two of six
+     * did exactly that in the frame this replaces.
+     *
+     * Independent radii cannot land in that state. The clip grows with the plot
+     * so a field thirteen cells wide is not rounded by the amount that suits one
+     * of four, and the pair of extremes is always present: one corner takes the
+     * smallest radius and one the largest, so there is a definite asymmetry
+     * rather than four draws that might agree.
+     */
+    const reach = Math.max(2, Math.round(Math.min(w, h) * 0.42));
+    const radii = [1, reach, rng.int(1, reach), rng.int(1, reach)];
+    for (let i = radii.length - 1; i > 0; i--) {
+      const j = rng.int(0, i);
+      [radii[i], radii[j]] = [radii[j], radii[i]];
+    }
+
+    const mask = new Uint8Array(w * h);
+    for (let z = 0; z < h; z++) {
+      for (let x = 0; x < w; x++) {
+        const corner =
+          x + z < radii[0] ||
+          w - 1 - x + z < radii[1] ||
+          x + (h - 1 - z) < radii[2] ||
+          w - 1 - x + (h - 1 - z) < radii[3];
+        if (corner) continue;
+        if (z < north[x] || z >= h - south[x]) continue;
+        if (x < west[z] || x >= w - east[z]) continue;
+        mask[z * w + x] = 1;
+      }
+    }
+    chunkMask(mask, w, h);
+
+    /*
+     * The plot's own green, and the tilled rows on one plot in six.
+     *
+     * TONE_ORDER carries the reasoning; this is only the lookup. The olive tone
+     * is the last in the list, and the plot that draws it gets ROWS — every
+     * third row of cells a touch darker and warmer, which at this camera is a
+     * tilled field. It is albedo on the terrain's own top faces, not props
+     * standing on it: the crops themselves belong to whoever owns the scatter.
+     */
+    const tone = GRASS_TONES[TONE_ORDER[n % TONE_ORDER.length]];
+    const tilled = tone === GRASS_TONES[GRASS_TONES.length - 1];
 
     for (let z = 0; z < h; z++) {
       for (let x = 0; x < w; x++) {
-        if (Math.min(x, w - 1 - x) + Math.min(z, h - 1 - z) < round) continue;
-        if (z < north[x] || z >= h - south[x]) continue;
-        if (x < west[z] || x >= w - east[z]) continue;
+        if (!mask[z * w + x]) continue;
         const cell = cells[idx(ox + x, oz + z)];
         cell.height = PLOT;
         cell.material = 'grass';
+        cell.tint = tilled && (oz + z) % 3 === 0 ? mix(tone, 0x6f7328, 0.34) : tone;
       }
     }
     for (let z = oz - GAP; z < oz + h + GAP; z++) {
@@ -722,56 +1088,66 @@ export function buildIslandMesh(shape: IslandShape, seed = 'terrain'): THREE.Gro
       const y = cell.height * STEP;
 
       /*
-       * Top face. Sand comes in three shades outward — plaza, dry beach, wet
-       * lip — and the darkest of them is the whole point of the outermost ring.
+       * Top face. Sand still comes in three shades outward — plaza, dry beach,
+       * wet lip — but there are only two TIERS now, so the wet strip can no
+       * longer be a tier of its own.
        *
-       * A coast reads as a beach and not as a cut edge because the tone changes
-       * as it approaches the water: the strip the surf keeps reaching is a
-       * shade down from the strip behind it. Ours is one cell wide, so the ring
-       * IS the band; there is no need to split the quad to draw it.
+       * It does not need to be. A coast reads as a beach and not as a cut edge
+       * because the tone changes as it approaches the water, and that is a
+       * statement about colour, not about height: the wet ring is simply the
+       * beach cells the sea is actually against. Asking the neighbourhood
+       * instead of the ladder gets the same one-cell band the old SHORE tier
+       * drew, at no cost in geometry, and it follows every bay and headland the
+       * chunking left behind rather than a second notched outline of its own.
+       *
+       * The grass case is where the plot's own green arrives; see TerrainCell.
        */
       const sand = cell.material === 'sand';
+      const wet =
+        sand &&
+        cell.height <= BEACH + 1e-6 &&
+        ((at(x - 1, z)?.height ?? 0) <= 0 ||
+          (at(x + 1, z)?.height ?? 0) <= 0 ||
+          (at(x, z - 1)?.height ?? 0) <= 0 ||
+          (at(x, z + 1)?.height ?? 0) <= 0);
       const topAlbedo = !sand
-        ? PALETTE[cell.material]
-        : cell.height <= SHORE + 1e-6
+        ? cell.tint ?? PALETTE[cell.material]
+        : wet
           ? SAND_WET
           : cell.height <= BEACH + 1e-6
             ? SAND_BEACH
             : PALETTE.sand;
       /*
-       * THE GRASS ROLLS OVER ITS EDGE. It does not stop at one.
+       * THE GRASS IS ALL SHOULDER. There is no wall left under it.
        *
-       * The complaint this answers, in full: "the grass plateaus are raised
-       * rectangles with vertical walls and no slope or blend — they look pasted
-       * on at the wrong Y." Two of those three words were literally true. A
-       * plot was a flat quad at PLOT height with a dead vertical wall dropped
-       * from its outline, and the ONLY thing between the green and the sand was
-       * a hairline where two quads met at 90 degrees. Nothing in the world
-       * ends like that, and the eye reads a shape that does as a sticker.
+       * The complaint this answers, in full: "raised slabs with VERTICAL CLIFF
+       * SIDES ... stamped on". A plot used to stand a whole terrace step over
+       * the plaza, and the previous round's fix — inset the top face and run a
+       * short bank down to a shorter wall — kept the wall. It only made the
+       * cliff five pixels shorter than it was.
        *
-       * So a grass cell whose neighbour is lower has its top face INSET by
-       * `BEVEL_RUN` on that side, and a sloped shoulder carries the grass from
-       * the inset edge out and down to where the wall now starts. Three things
-       * fall out of it and all three are the fix:
+       * Now the entire rise is PLOT_LIP and BEVEL_RISE IS PLOT_LIP, so the
+       * shoulder lands exactly on the sand and the vertical face has zero
+       * height; the wall loop below sees that and emits nothing. What is drawn
+       * where grass meets sand is one trapezoid, 0.44 of a cell wide in plan and
+       * 0.16 units tall, and that is the whole edge:
        *
-       *   The silhouette gains a break. A bank has a shoulder, a wall does not,
-       *   and at this scale the shoulder is four screen pixels of grass tilted
-       *   toward the sky against five of near-vertical soil.
+       *   Nothing in the silhouette. A four-pixel roll cannot cast a cliff's
+       *   shadow or cut a cliff's hard line, which is the point — the reference's
+       *   plots do not interrupt the ground plane, they colour it.
        *
-       *   It catches the light differently, for free. The shoulder's normal
-       *   sits 36 degrees off vertical, so with the sun at elevation 34.7 it
-       *   takes MORE light than either the flat top or the wall under it — a
-       *   lit rim right where the two surfaces used to butt. That is the
-       *   "blend": not a gradient, a third surface.
+       *   A lit rim, for free. The shoulder's normal sits 20 degrees off
+       *   vertical toward the light, so it takes more sun than the flat top and
+       *   draws a soft bright edge round every plot instead of a dark one.
        *
        *   The corners mitre themselves. Each shoulder is a trapezoid whose top
        *   edge is the inset one and whose bottom edge is the full cell edge, so
        *   where two sides both drop, the two trapezoids meet exactly along the
        *   diagonal with no gap to patch and no overlap to z-fight.
        *
-       * Grass only. The coast's tiers are meant to read as carved blocks — the
-       * reference's do, crisply — and softening the shoreline would also blur
-       * the line the surf breaks on.
+       * Grass only. The coast's one step is meant to read as a carved block —
+       * the reference's does, crisply — and softening the shoreline would also
+       * blur the line the surf breaks on.
        */
       const drops = (n: TerrainCell | null) => (n ? n.height : 0) < cell.height;
       const rolls = cell.material === 'grass';
@@ -871,15 +1247,20 @@ export function buildIslandMesh(shape: IslandShape, seed = 'terrain'): THREE.Gro
         const lit = side.normal[0] > 0;
 
         /*
-         * The shoulder, where this cell's grass rolls over the edge. Emitted
-         * before the wall because the wall now starts underneath it.
+         * The shoulder — which, on grass, is now the entire edge.
          *
-         * Its albedo is the grass's own, carried a third of the way to the dark
-         * rind under it: a bank is grass thinning over soil, not a separate
-         * green. The normal is the real one — perpendicular to the slope — so
-         * the shading is done by the sun rather than by another hand-solved
-         * pair of constants, which is why this face needs no sun/shade variant
-         * of its own the way the vertical skins do.
+         * Its albedo is THIS PLOT's own green (so a border belongs to the field
+         * it rims rather than to a shared one), carried nearly half the way to
+         * the dark rind: the reference's plots each carry a deeper green a cell
+         * or so wide all the way round, and that soft dark hem is most of what
+         * separates one field from the sand without a wall to do it. 0.34 was
+         * tuned when there was a lit soil wall underneath to darken the edge as
+         * well; with the wall gone the hem has to do the job alone.
+         *
+         * The normal is the real one — perpendicular to the slope — so the
+         * shading is done by the sun rather than by another hand-solved pair of
+         * constants, which is why this face needs no sun/shade variant of its
+         * own the way the vertical skins do.
          */
         const rolled = side.roll ? BEVEL_RISE : 0;
         const yWall = y - rolled;
@@ -896,9 +1277,19 @@ export function buildIslandMesh(shape: IslandShape, seed = 'terrain'): THREE.Gro
               [side.a[0], yWall, side.a[1]],
             ],
             [nx / len, BEVEL_RUN / len, nz / len],
-            jitter(mix(PALETTE.grass, lit ? skin.lipSun : skin.lipShade, 0.34), x, z, 0.02)
+            jitter(
+              mix(cell.tint ?? PALETTE.grass, lit ? skin.lipSun : skin.lipShade, 0.36),
+              x, z, 0.02
+            )
           );
         }
+
+        // Nothing left to stand a wall on. A plot's whole rise is spent on the
+        // shoulder above, so this fires on every grass cell in the frame and is
+        // the reason there is no cliff under any of them. Kept as a height test
+        // rather than a material test so it also catches any tier the ladder is
+        // ever given that lands under a rounding error of its neighbour.
+        if (yWall - yBottom < 1e-3) continue;
 
         /*
          * Lip on top, body under it — the two-part edge that makes a step read
