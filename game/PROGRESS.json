@@ -101,6 +101,49 @@
           "biggestGap": "Add the white chip tier to the near-field lane only: reference runs 4.9% of pixels above L=200 there, we run 0.36%."
         }
       ]
+    },
+    {
+      "round": 3,
+      "title": "Framing restored, shadows lengthened, chip lane, one architectural voice",
+      "a": "shots/blind/island-r3/a.png",
+      "b": "shots/blind/island-r3/b.png",
+      "key": {
+        "a": "the shipped game",
+        "b": "ours"
+      },
+      "better": "A",
+      "weWon": false,
+      "gapSize": "obvious",
+      "biggestFlaw": "The settlement is one undifferentiated brown mass jammed into the upper-right quadrant while the lower-left half of the island is blank sand. A dozen structures share the same tan thatch and cream wall, packed roof-edge to roof-edge, so their silhouettes merge \u2014 you cannot count the buildings, let alone tell a workshop from a market. The reference uses red shingle, a blue-trimmed tavern, a grey stone forge with a smoking chimney, striped market awnings, a windmill: you identify every building's FUNCTION from 500 pixels away.",
+      "differences": [
+        "BUGS, not art: detached chevron slabs hovering in the water under two islets, an orphaned slab off another, a cluster of palms floating on open ocean with no landmass under it, and a stray white cursor-shaped glyph over the town centre.",
+        "The ocean is a flat backdrop \u2014 one uniform cobalt with a mechanical diagonal dither and evenly-spaced white dashes. It reads as static noise, not sunlight, and it is 60% of the frame.",
+        "Grass plateaus are raised rectangles with vertical walls and no blend \u2014 they look pasted on at the wrong Y.",
+        "The moored ship is a placeholder: flat orange hull, no sails, no rigging, no shadow, no wake. It is the one moving object in frame.",
+        "Lighting still nearly flat \u2014 shadows exist but are pale and low-contrast, so nothing has weight."
+      ],
+      "pieces": [
+        {
+          "piece": "architecture",
+          "verdict": "ours-much-worse",
+          "biggestGap": "MY BRIEFING ERROR. I asked for 'one architectural voice' and got uniformity, which destroyed legibility. The reference has one vocabulary with VARIED materials and colours per function \u2014 that is the opposite of what I asked for."
+        },
+        {
+          "piece": "composition",
+          "verdict": "ours-much-worse",
+          "biggestGap": "Everything crammed north-east, the whole foreground a featureless sand slab with one palm and a barrel."
+        },
+        {
+          "piece": "water",
+          "verdict": "ours-worse",
+          "biggestGap": "Reads as static noise rather than glare. Needs a real depth ramp and sparkle that clumps instead of spacing evenly."
+        },
+        {
+          "piece": "geometry",
+          "verdict": "ours-much-worse",
+          "biggestGap": "Floating and orphaned slabs, palms on open water, a stray glyph. These are defects to fix, not taste to tune."
+        }
+      ]
     }
   ]
 }
