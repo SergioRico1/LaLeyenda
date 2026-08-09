@@ -328,6 +328,18 @@ export interface Voyage {
   nextId: number;
   /** Set once the ship goes down; the voyage is over but readable. */
   sunk: boolean;
+  /**
+   * Set once the ship has actually left home water.
+   *
+   * You cannot come BACK from somewhere you never went, and without this latch
+   * the game said you had. A voyage spawns at exactly (0, 0) — the harbour —
+   * so the arrival test was true from the first frame, and the only thing
+   * holding the modal back was a `step > 60` guard worth two seconds. A player
+   * who paused to look at the sea before touching the throttle was told they
+   * were home and handed an end-of-voyage card, with the open sea unreachable
+   * behind it. Distance travelled is not the condition; having gone is.
+   */
+  departed: boolean;
   /** Set when the player has made it back to home water with the hold. */
   home: boolean;
 }
@@ -349,7 +361,7 @@ export function startVoyage(seed: string, shipType = 'skiff'): Voyage {
     reloadPort: 0, reloadStarboard: 0,
     helm: { turn: 0, throttle: 0 },
     cargo: {}, mobs: [], shots: [], taken: [], seen: [], nextId: 1,
-    sunk: false, home: false,
+    sunk: false, departed: false, home: false,
   };
 }
 
@@ -607,11 +619,16 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
       v.cargo[res] = amount - half;
     }
     events.push({ kind: 'sunk', lost });
-  } else if (!v.home && ringOf(Math.round(v.x / SEA_CELL), Math.round(v.y / SEA_CELL)) === 0
-             && Math.hypot(v.x, v.y) < SEA_CELL * 0.3 && v.step > 60) {
+  } else if (!v.home && v.departed
+             && ringOf(Math.round(v.x / SEA_CELL), Math.round(v.y / SEA_CELL)) === 0
+             && Math.hypot(v.x, v.y) < SEA_CELL * 0.3) {
     v.home = true;
     events.push({ kind: 'home' });
   }
+
+  // The latch, set well outside the arrival radius so no amount of bobbing on
+  // the harbour mouth can arm and trip it in the same breath.
+  if (!v.departed && Math.hypot(v.x, v.y) > SEA_CELL * 0.9) v.departed = true;
 
   return { voyage: v, events };
 }

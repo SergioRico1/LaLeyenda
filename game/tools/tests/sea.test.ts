@@ -304,28 +304,73 @@ describe('loot and the hold', () => {
 });
 
 describe('the loop closes', () => {
-  test('coming back to home water is an event the island can hear', () => {
-    // Well outside the harbour, pointed at it, under way.
-    const out = startVoyage('home');
-    out.x = SEA_CELL * 0.55;
+  /** Outside the harbour, pointed at it, under way, and marked as having gone. */
+  const outbound = (seed: string) => {
+    const out = startVoyage(seed);
+    out.x = SEA_CELL * 1.2;
+    out.departed = true;
     out.heading = Math.PI;
     for (let cx = -3; cx <= 3; cx++) for (let cy = -3; cy <= 3; cy++) out.seen.push(`${cx}:${cy}`);
+    return out;
+  };
 
-    const early = sail(out, 1, { throttle: 1 });
+  test('coming back to home water is an event the island can hear', () => {
+    const early = sail(outbound('home'), 1, { throttle: 1 });
     ok(!early.events.some((e) => e.kind === 'home'), 'still at sea one second in');
 
-    const arriving = sail(early.voyage, 4, { throttle: 1 });
+    const arriving = sail(early.voyage, 20, { throttle: 1 });
     ok(arriving.events.some((e) => e.kind === 'home'), 'and it reports reaching home water');
     ok(arriving.voyage.home, 'the flag the island reads is set');
   });
 
   test('arriving home is announced once, not every step', () => {
-    const out = startVoyage('home');
-    out.x = SEA_CELL * 0.55;
-    out.heading = Math.PI;
-    for (let cx = -3; cx <= 3; cx++) for (let cy = -3; cy <= 3; cy++) out.seen.push(`${cx}:${cy}`);
-    const { events } = sail(out, 8, { throttle: 1 });
+    const { events } = sail(outbound('home'), 30, { throttle: 1 });
     eq(events.filter((e) => e.kind === 'home').length, 1, 'exactly one arrival');
+  });
+
+  /**
+   * The bug a player found on a phone: sail out, and before the sea had
+   * finished loading he was handed "De vuelta a puerto — sin carga esta vez"
+   * with the open ocean unreachable behind it.
+   *
+   * A voyage spawns at exactly (0, 0), which IS home water, so the arrival
+   * condition was true from frame one. The only thing holding it back was a
+   * `step > 60` guard worth two seconds — pause to look at the water and the
+   * voyage ended before it began. The suite missed it because every arrival
+   * test teleported the ship outside the harbour first, so nothing ever
+   * exercised the state every real voyage actually starts in.
+   */
+  test('a voyage that has only just begun is not an arrival', () => {
+    let v = startVoyage('fresh');
+    ok(!v.departed, 'a fresh voyage has not left yet');
+
+    // Sit at the spawn doing nothing at all for a full minute.
+    const idle = sail(v, 60, { throttle: 0 });
+    ok(!idle.events.some((e) => e.kind === 'home'), 'drifting at the spawn is not coming home');
+    ok(!idle.voyage.home, 'and the flag stays down');
+
+    // Now potter about near the harbour mouth without ever really leaving.
+    v = idle.voyage;
+    for (let i = 0; i < 6; i++) {
+      const leg = sail(v, 5, { throttle: 1, turn: i % 2 === 0 ? 1 : -1 });
+      ok(!leg.events.some((e) => e.kind === 'home'), `still has not left on leg ${i}`);
+      v = leg.voyage;
+    }
+    ok(!v.home, 'circling the harbour never counts as a return');
+  });
+
+  test('leaving arms the latch, and only then can you come back', () => {
+    // Ten seconds out, which clears the latch radius with room to spare and is
+    // short enough that the ring-1 mobs have not finished the ship off. Thirty
+    // seconds of open throttle from the spawn sinks it — see the balance note
+    // in PRODUCTION.md section 3.
+    const away = sail(startVoyage('round-trip'), 10, { throttle: 1 });
+    ok(!away.voyage.sunk, 'the ship survived the outbound leg');
+    ok(away.voyage.departed, 'a real voyage out sets the latch');
+    ok(!away.voyage.home, 'and it is not home while it is out there');
+
+    const back = sail({ ...away.voyage, x: SEA_CELL * 0.1, y: 0 }, 1, { throttle: 0 });
+    ok(back.events.some((e) => e.kind === 'home'), 'having gone, arriving is an event');
   });
 
   test('a cell is only ever stocked once per voyage', () => {
