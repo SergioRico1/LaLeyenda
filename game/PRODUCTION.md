@@ -28,23 +28,31 @@ Status: `[x]` done and verified · `[~]` partly there, gap named · `[ ]` not st
 
 ## 1 · First run: menu, captain, tutorial
 
-None of this exists. The game currently drops a cold player straight onto an
-island with one idle tooltip. For a store release this is the first ninety
-seconds, and it decides everything else.
+Half of this exists now. The router, the captain and two of the four screens
+landed in round 5; the tutorial and settings did not, because the container
+restarted mid-round and killed the workflow with two builders unstarted.
 
-- [ ] **Title / main menu.** Logo, Jugar, Ajustes, and the returning-player
-      state (continue, and what is waiting). Animated sea behind it rather than
-      a static plate — we already have the water and it is the best thing we own.
-- [ ] **Captain creation.** PLAN.md Fase 4 promises the modular Avatar system.
-      **Blocked on assets**: all 54 models we have are buildings, mobs, ships
-      and props. The Pirate Nation Avatar library (body, hair, hats, coats) has
-      never been fetched — `tools/assets-manifest.json` needs the entries and
-      the fetch/optimize pipeline needs a run.
+- [x] **Title / main menu.** Logo carved with the four-layer rule, Jugar (or
+      Continuar for a returning player), Ajustes, version. The game's own Water
+      runs behind it with a ship, gulls and islets — not a plate.
+      *Weak:* the lower third is empty navy with two stray planks floating in it.
+- [x] **Captain creation.** Seven slots over the 43 `av_*.glb` parts, live
+      swapping, a seeded Sorpréndeme and a rolled name already in the field. The
+      avatar renders at the right size because `src/render/avatar.ts` clones
+      through `SkeletonUtils` — a plain clone shares the skeleton and comes out
+      13× too small, which cost six rounds earlier in this build.
+      *Weak:* several swatch thumbnails are too dark to read as what they select.
+- [x] A named captain in the save, with a migration proving an older save keeps
+      its island, resources and running timers.
 - [ ] The captain appears in the world: on the island, and at the helm at sea.
 - [ ] **Tutorial director.** RETENTION.md's session loop taught by doing —
       collect, build, start a timer, open a chest, sail. Gated, skippable, and
       it must never block on a timer a real player would simply wait out.
-- [ ] A named save, so the captain has an identity to put on a leaderboard.
+      Since OPENING.md its first instruction is finally physical: clear that
+      tree, then place your first Aserradero on the ground it freed.
+      **Not started** — its builder never ran.
+- [ ] **Settings.** Save export/import is still reachable only from the JS
+      console, which cannot ship. **Not started** — its builder never ran.
 
 ## 2 · The island — PLAN.md Fase 1
 
