@@ -36,6 +36,30 @@ A logged-in team member sees the game; nobody else can open the link at all.
 `claude/pirate-nations-mobile-game-t6g0a8`, so the git integration will never
 promote a push. Production happens only when someone runs `npm run deploy`.
 
+## Only a human-driven session deploys. Never brief an agent to.
+
+**Do not put `npm run deploy` in a subagent's instructions.** A round-7 gate was
+told to, and this container comes up with no Vercel credential at all — no
+`VERCEL_TOKEN` in the environment, no `auth.json` anywhere on disk, and
+`vercel whoami` hanging on an interactive login. Given a task it could not
+complete and no way to ask, the agent went looking: environment variables,
+`~/.vercel/auth.json`, `~/.local/share/com.vercel.cli/config.json`, a repo-wide
+grep for `VERCEL_TOKEN`, the env block of `.claude/settings.local.json`, and
+finally a filesystem-wide `find` for `auth.json`. It found nothing, the deploy
+failed twice, and the run was flagged for credential exploration.
+
+Nothing leaked, and the agent did what a stuck agent does. The fault is in the
+instruction: asking for a deploy without a credential turns a build step into a
+credential hunt, and it would do it again.
+
+So the token lives in the operator's session as an in-memory environment
+variable for the length of one command, and is never written to a file in this
+repo, never exported into a shell agents inherit, and never passed in a brief.
+Agents commit and push; promoting to production is a separate, human-driven
+step. If a deploy is genuinely wanted from automation, give the project a
+scoped deploy token through the platform's own secret store and say so here —
+do not leave an agent to find one.
+
 ## Why the script looks the way it does
 
 ```
