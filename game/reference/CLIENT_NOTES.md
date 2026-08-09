@@ -453,3 +453,28 @@ single global rate, and (b) resource cost and cooldown priced by *separate* mult
 | Terrain / grass / sand colours | Not findable — textures are Git-LFS pointer stubs. |
 | Any PoP water shader | Does not exist. |
 | Local economy/balance data | Does not exist; on-chain. |
+
+---
+
+## Deploying
+
+Every push to `claude/pirate-nations-mobile-game-t6g0a8` already builds
+automatically — the Vercel project is git-linked to `SergioRico1/LaLeyenda`
+with `rootDirectory: game`. Those land as **preview** deployments.
+
+They do NOT reach `project-i07zk.vercel.app`, because the project's production
+branch is still `main`. That field is settable only in the Vercel dashboard —
+the API rejects `link`, `productionBranch` and `gitProductionBranch` alike:
+
+    Invalid request: should NOT have additional property `productionBranch`
+
+**One click removes the manual step for good:** Vercel → project-i07zk →
+Settings → Git → Production Branch → `claude/pirate-nations-mobile-game-t6g0a8`.
+After that every push updates the production URL by itself.
+
+Until then, promote explicitly after pushing:
+
+    VERCEL_TOKEN=... npm run deploy
+
+The token is read from the environment and must never be written into this
+repository.

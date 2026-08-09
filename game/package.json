@@ -15,7 +15,8 @@
     "assets:ui": "node tools/ui-assets.mjs",
     "audit:layers": "node tools/audit-layers.mjs",
     "audit:sea": "npm run shoot -- island --mobile --hud 0 --out shots/sea.png && node tools/sea-metrics.mjs reference/island_hero.png shots/sea.png --bands",
-    "test:roundtrip": "node tools/roundtrip.mjs"
+    "test:roundtrip": "node tools/roundtrip.mjs",
+    "deploy": "cd .. && npx vercel@latest --prod --yes --scope sergiorico1-s-team"
   },
   "dependencies": {
     "three": "^0.171.0"
