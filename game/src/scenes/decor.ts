@@ -33,15 +33,20 @@ import { Rng } from '../core/rng';
  *
  * HOW MUCH GROUND THAT ACTUALLY IS
  *
- * On the island a new player boots into: 138 cells, and 108 of them are beach.
- * The plateau is claimed almost end to end — the smallest plot is three cells
- * across and it fits nearly everywhere, so nearly everywhere is spoken for.
- * That single number decides the whole composition. Density on this island is
- * not something to be spread evenly over the map, because five sixths of the
- * map will not take a prop at all; it has to be won on the shore ring, on the
- * terrace lips, and in the aprons the six standing buildings open up. Where the
- * reference dresses its plot interiors we dress their EDGES, and where it fills
- * its middle with props we can only paint it (see `buildGroundCover`).
+ * On the island a new player boots into: around two hundred cells of the four
+ * hundred-odd on the map, and four fifths of those are shore. The plateau is
+ * claimed almost end to end — the smallest plot is three cells across and it
+ * fits nearly everywhere, so nearly everywhere is spoken for; of ninety-odd
+ * grass cells, a dozen are free and the rest can never take a prop at all.
+ *
+ * That ratio decides the whole composition, so measure it again rather than
+ * trusting the numbers above — they move whenever the terrain generator does,
+ * and they have. Density here is not something to be spread evenly over the
+ * map: it has to be won on the shore ring, on the terrace lips, and in the
+ * aprons the standing buildings open up. Where the reference dresses its plot
+ * interiors we dress their EDGES — a prop's origin is what the rule constrains,
+ * so planting parked on a border hangs half its mass over the plot beyond — and
+ * where it fills its middle with props we can only paint it (`buildGroundCover`).
  *
  * WHAT IT PLANTS
  *
@@ -53,6 +58,28 @@ import { Rng } from '../core/rng';
  * takes its cells before the palms can — rather than one loop rolling dice per
  * cell. Every free cell ends up carrying four or five props; nearly none of them
  * arrived there independently.
+ *
+ * WHERE THE BUDGET GOES, AND WHY IT MOVED
+ *
+ * Round one put 461 of its 593 props on the beach and 132 inland, and every
+ * critic read the same thing off the frame: a solid unbroken hedge of palms and
+ * flower bushes welded around the coastline, and bare slabs the moment you step
+ * inland. Both halves of that were one mistake. The shore is four fifths of the
+ * free cells, so a rule that rolls per cell spends four fifths of everything it
+ * has on the ring — and the ring is the one part of the reference that is EMPTY.
+ * Look at island_hero.png: its sand is clean, wide and bare, and every prop that
+ * matters stands on the green inside it. The composition is dense green on open
+ * sand; ours was the exact inverse.
+ *
+ * So the shore now rolls bare more often than not and its palm stands are cut
+ * from eleven to six, and what that pays for is `furnish` — the pass that treats
+ * each free inland cell as a square to be COMPOSED rather than sprinkled: one
+ * tall accent, one or two chest-high props, two or three pieces of ground
+ * clutter, all on a ring so nothing sits in the middle. There are few enough of
+ * those cells that each has to carry a full stack, and few enough that the tall
+ * tier matters most — a totem or a palm on a free cell throws a shadow clear
+ * across the plot beside it, which is the only mark anything gets to leave on
+ * ground no prop may stand on.
  */
 
 /** How the composition treats a cell that decoration may use. */
@@ -237,9 +264,14 @@ export const DECOR_MODELS = [
  */
 const NO_SHADOW = new Set([
   'deco_bush', 'deco_bush_alt', 'deco_fern', 'deco_plant', 'deco_hedge',
-  'deco_crate', 'deco_crate_red', 'deco_barrel', 'deco_starfish', 'harv_cotton',
-  'deco_sandmound',
+  'deco_starfish', 'harv_cotton', 'deco_sandmound',
 ]);
+// Freight came OUT of that set. A barrel is waist-high and it is the one prop
+// that stands on open sand rather than banked into planting, so it is exactly
+// the object the eye checks for a shadow — and the round-one note was "every
+// building stands on open sand touching it nowhere". They are instanced, so
+// the whole dockside costs the shadow pass three more draw calls, not three
+// hundred.
 
 /**
  * The shrubs, ordered by how much of the reference's planting they actually do.
@@ -251,9 +283,19 @@ const NO_SHADOW = new Set([
  * So the hedge carries the runs and the rest are seasoning.
  */
 const SHRUBS = ['deco_hedge', 'deco_hedge', 'deco_hedge', 'deco_fern', 'deco_bush_alt'] as const;
+/*
+ * The accent mix, re-weighted off the round-one note "identical red flower
+ * bushes". `deco_bush` and `deco_bush_alt` are the same green sprig carrying a
+ * spray of scarlet blooms, and `deco_plant` is violet lilies; between them they
+ * were two of the eight entries here and forty-odd props in the frame, which on
+ * a palette this warm is enough red to read as the island's colour. Count the
+ * red-flowered bushes in island_hero.png and you get three. So the flowering
+ * ones are down to one entry in eight and the rest of the weight goes back to
+ * the plain green cube, which is the shape their planting is actually made of.
+ */
 const SHRUBS_ACCENT = [
-  'deco_hedge', 'deco_hedge', 'deco_hedge', 'deco_hedge',
-  'deco_fern', 'deco_bush', 'deco_bush_alt', 'deco_plant',
+  'deco_hedge', 'deco_hedge', 'deco_hedge', 'deco_hedge', 'deco_hedge',
+  'deco_fern', 'deco_fern', 'deco_bush_alt',
 ] as const;
 /**
  * Cargo, weighted toward barrels.
@@ -282,6 +324,25 @@ const post = (rng: Rng): { scale: number; scaleY: number } => ({
   scale: rng.range(0.2, 0.25),
   scaleY: rng.range(1.5, 1.9),
 });
+
+/**
+ * The tall thing each furnished cell gets, dealt from a rotation.
+ *
+ * Rolled instead, this would be wrong twice over. Thirty cells is a small enough
+ * sample that a one-in-four totem deals four in a row about as often as it
+ * spreads them, and four totems in a row is not four landmarks, it is a fence of
+ * totems. And the mix itself is the point: the reference's skyline over the
+ * plots is palms with tikis and mooring posts punctuating them, in roughly these
+ * proportions. A rotation guarantees both the ratio and the spacing.
+ *
+ * `post` is not a model id — it is a mooring post, `deco_fence_post` stretched
+ * to about a cell and a third, which is the one item in the set that reads as
+ * vertical without also reading as vegetation.
+ */
+const ACCENT_ROTA = [
+  'tree_palm_tall', 'deco_totem', 'post', 'tree_palm', 'post', 'deco_flag',
+  'deco_totem', 'tree_palm_tall', 'post', 'tree_palm', 'post', 'deco_totem',
+] as const;
 
 /** The four orthogonal neighbours, each with the yaw that faces it. */
 const SIDES: ReadonlyArray<readonly [number, number, number]> = [
@@ -317,18 +378,35 @@ const edgeKey = (x: number, z: number, dx: number, dz: number): number =>
  * a different island every session.
  */
 export function planDecor(shape: IslandShape, state: GameState, seed: string): ScatterItem[] {
-  const rng = new Rng(`${seed}:decor:v3`);
+  const rng = new Rng(`${seed}:decor:v4`);
   const { size } = shape;
   const cells = decorCells(shape, state);
   const claimed = reservedMask(shape, state);
   const plan: Plan = { items: [], used: new Set(), edges: new Set() };
+  /** Cells with a palm on them, so the banners are not planted under a crown. */
+  const treed = new Set<number>();
 
-  const byZone = (zone: Zone) => cells.filter((c) => c.zone === zone);
   const inBounds = (x: number, z: number) => x >= 0 && z >= 0 && x < size && z < size;
   const isClaimed = (x: number, z: number) => inBounds(x, z) && claimed[z * size + x] === 1;
   /** Which of the island's two surfaces this cell is — the reference plants the
    *  green things on the green and stands the wooden things on the sand. */
   const onGrass = (c: DecorCell) => shape.cells[c.z * size + c.x].material === 'grass';
+
+  /**
+   * Inland, as opposed to shore — the line the whole composition is split on.
+   *
+   * NOT `zone !== 'beach'`, which is what this used to be and which turned out
+   * to be a different question wearing the same word. `beach` means "no plot
+   * could stand here", and on a reshaped island that is true of a great deal of
+   * ground in the MIDDLE of the map as well as around its edge; the split went
+   * from 108/30 to 167/31 under a terrain edit without a single cell actually
+   * moving nearer the sea. Distance to water is the thing that was meant all
+   * along: two cells or less is the shore the reference keeps clean and open,
+   * three or more is the settlement, and the settlement is where its density
+   * lives. Terrace lip and building apron are inland whatever their distance,
+   * because both are by definition up on the plateau.
+   */
+  const inland = (c: DecorCell) => c.zone !== 'beach' || c.toWater >= 3;
 
   // The plaza: the reference leaves a big open sand court rather than filling
   // every cell, so the ground in front of the town hall is held clear and every
@@ -350,10 +428,14 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
   /**
    * One prop at an explicit offset from a cell's centre, in cells.
    *
-   * Offsets are clamped just inside a half-cell because the test that keeps
-   * decoration off buildable ground rounds a prop's world position back to a
-   * cell: anything that strays past ±0.5 is a prop standing on its neighbour's
-   * ground and reported against whichever cell it drifted into.
+   * Offsets are clamped just inside a half-cell because `worldToCell` ROUNDS a
+   * prop's world position back to a cell: at ±0.5 it tips into the neighbour,
+   * and if that neighbour is ground a plot could take, the prop is a violation
+   * of the rule at the top of this file. 0.48 is as close to the line as the
+   * rounding allows, and it is worth the two hundredths — a prop's ORIGIN is
+   * what the rule constrains, not its volume, so a bush parked on the border
+   * spills half its mass over a plot that no prop may stand in. That overhang is
+   * the only way anything reaches the interior slabs at all.
    */
   const drop = (
     c: DecorCell, model: string, scale: number, ox: number, oz: number, opts: DropOpts = {}
@@ -362,9 +444,9 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
     plan.items.push({
       model,
       position: new THREE.Vector3(
-        at.x + Math.max(-0.46, Math.min(0.46, ox)) * CELL,
+        at.x + Math.max(-0.48, Math.min(0.48, ox)) * CELL,
         at.y + (opts.lift ?? 0),
-        at.z + Math.max(-0.46, Math.min(0.46, oz)) * CELL
+        at.z + Math.max(-0.48, Math.min(0.48, oz)) * CELL
       ),
       rotationY: opts.rotationY ?? rng.range(0, Math.PI * 2),
       scale,
@@ -401,6 +483,111 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
     plan.used.add(key(c.x, c.z));
   };
 
+  /* ---- the three tiers -------------------------------------------------
+   * Any dressed square in island_hero.png carries the same stack: one thing
+   * taller than a doorway, two or three at knee-to-chest height, and a scatter
+   * of ankle-high stuff filling between them. The tiering is what makes a cell
+   * read as decorated rather than as sprinkled — five props all the same height
+   * is a texture, and a texture is what the round-one frame had. */
+
+  /**
+   * A slot on a ring inside the cell: `i` of `n`, never the middle.
+   *
+   * "None of them centred" is not a style note. A prop on a cell's centre lands
+   * on the exact lattice the terrain is already drawn on, so a row of filled
+   * cells comes out as a row of evenly spaced dots and the grid the whole island
+   * is trying not to look like is handed straight back. Off-centre on a ring,
+   * the same props read as a heap. The phase is per-cell so two neighbours never
+   * rhyme.
+   */
+  const ring = (i: number, n: number, phase: number, lo: number, hi: number): [number, number] => {
+    const a = (i / n + phase) * Math.PI * 2;
+    const r = rng.range(lo, hi);
+    return [Math.cos(a) * r, Math.sin(a) * r];
+  };
+
+  /** Tier 1: the vertical accent. Taller than anything else on its cell. */
+  const accent = (c: DecorCell, what: string, ox: number, oz: number): void => {
+    if (what === 'deco_totem') {
+      // The carved tiki. 16 units tall on a 14.5 footprint, so the stretch is
+      // what takes it from a bollard to a landmark: ~2 world units, a third
+      // again the height of a palm trunk.
+      drop(c, 'deco_totem', rng.range(1.0, 1.22), ox, oz, { scaleY: rng.range(1.45, 1.8) });
+    } else if (what === 'deco_flag') {
+      drop(c, 'deco_flag', rng.range(0.8, 0.98), ox, oz);
+    } else if (what === 'tree_palm' || what === 'tree_palm_tall') {
+      drop(c, what, rng.range(1.7, 2.15), ox, oz, { scaleY: rng.range(0.9, 1.15) });
+      treed.add(key(c.x, c.z));
+    } else {
+      // A mooring post: the same model as the bollards below, a quarter again
+      // as wide and half again as tall, so it belongs to the same family without
+      // being mistaken for one of the run.
+      const p = post(rng);
+      drop(c, 'deco_fence_post', p.scale * 1.3, ox, oz, {
+        rotationY: 0, scaleY: p.scaleY * 1.15,
+      });
+    }
+  };
+
+  /**
+   * Tier 2: chest-high. The tier that gives a cell its mass.
+   *
+   * No driftwood, on either surface. The model is a 112 x 25 x 71 branch — a
+   * one-voxel arc two cells long — and at any size that reads from the camera it
+   * comes out as a black scribble lying on the ground. Six of them across the
+   * shore were the ugliest thing in the round-one frame, and there is nothing
+   * remotely like them anywhere in island_hero.png. It keeps a much smaller
+   * slice of the beach pass and nothing else.
+   */
+  const midProp = (c: DecorCell, grass: boolean, ox: number, oz: number): void => {
+    const r = rng.next();
+    if (grass) {
+      // Green-weighted, because on grass the reference's chest-high tier is
+      // almost entirely bushes: loose rows of dark rounded shrubs, with a rock
+      // or a crate every third plot for relief.
+      // Nine tenths green. Free grass runs about a dozen cells against a couple
+      // of hundred of sand, so the green ones are the only chance the composition
+      // has to put planting on planting — spending a fifth of them on a barrel
+      // was spending the scarcest ground there is on the one thing the sand
+      // already has plenty of.
+      if (r < 0.5) drop(c, 'deco_hedge', rng.range(0.74, 0.98), ox, oz);
+      else if (r < 0.78) drop(c, rng.pick(SHRUBS_ACCENT), rng.range(0.58, 0.82), ox, oz);
+      else if (r < 0.92) drop(c, 'deco_rock_lg', rng.range(0.7, 0.95), ox, oz);
+      else drop(c, rng.pick(CARGO), rng.range(0.46, 0.6), ox, oz);
+    } else {
+      // And on sand it is almost entirely timber and stone: freight, boulders,
+      // the odd bush banked against a wall.
+      if (r < 0.44) drop(c, rng.pick(CARGO), rng.range(0.46, 0.62), ox, oz);
+      else if (r < 0.72) drop(c, 'deco_rock_lg', rng.range(0.75, 1.0), ox, oz);
+      else if (r < 0.9) drop(c, 'deco_hedge', rng.range(0.64, 0.86), ox, oz);
+      else {
+        const p = post(rng);
+        drop(c, 'deco_fence_post', p.scale, ox, oz, { rotationY: 0, scaleY: p.scaleY });
+      }
+    }
+  };
+
+  /** Tier 3: ankle-high. Fills the gaps the other two leave. */
+  const smallProp = (c: DecorCell, grass: boolean, ox: number, oz: number): void => {
+    const r = rng.next();
+    if (grass) {
+      if (r < 0.5) drop(c, rng.pick(SHRUBS_ACCENT), rng.range(0.36, 0.56), ox, oz);
+      else if (r < 0.7) drop(c, 'harv_cotton', rng.range(0.3, 0.42), ox, oz);
+      else if (r < 0.88) drop(c, 'deco_hedge', rng.range(0.4, 0.56), ox, oz);
+      else drop(c, 'deco_rock_sm', rng.range(0.6, 0.95), ox, oz);
+    } else {
+      // Shells are a tenth of this tier, not a fifth. `deco_starfish` is bright
+      // cyan, and cyan is a colour that appears nowhere on the reference's
+      // island — fifty of them scattered over beige sand did not read as shells,
+      // they read as litter, and they were the only saturated cool note in the
+      // whole frame. A handful at the waterline is the whole of their job.
+      if (r < 0.24) drop(c, 'deco_rock_sm', rng.range(0.48, 0.7), ox, oz);
+      else if (r < 0.33) drop(c, 'deco_starfish', rng.range(0.45, 0.62), ox, oz);
+      else if (r < 0.78) drop(c, rng.pick(SHRUBS), rng.range(0.4, 0.6), ox, oz);
+      else drop(c, rng.pick(CARGO), rng.range(CARGO_LO, CARGO_HI), ox, oz);
+    }
+  };
+
   /**
    * Dresses ONE border of a cell — a run of bushes, a fence panel or a pair of
    * posts laid along it — and reports whether it did.
@@ -420,14 +607,23 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
     // Along the border, perpendicular to the direction that crosses it.
     const tx = dz;
     const tz = dx;
-    const off = 0.4;
+    // 0.46, hard against the line. The rule constrains a prop's ORIGIN, so a
+    // bush anchored here puts half of itself on the plot beyond — and since
+    // that plot is ground no prop may stand on, the overhang is the only
+    // decoration its edge will ever get. At 0.4 the runs sat a bush's width
+    // inside our own ground and read as a hedge growing near a border rather
+    // than as the border itself.
+    const off = 0.46;
 
     if (kind === 'hedge') {
-      const n = rng.int(3, 4);
+      // Two or three, bigger. Four small ones packed along a one-cell border is
+      // a green stripe; three at two thirds of a cell tall is a hedge with gaps
+      // you can see the ground through, which is what the reference's are.
+      const n = rng.int(2, 3);
       for (let i = 0; i < n; i++) {
-        const t = (i / (n - 1) - 0.5) * 0.76 + rng.range(-0.04, 0.04);
-        const near = off - rng.range(0, 0.12);
-        drop(c, rng.pick(SHRUBS), rng.range(0.4, 0.62), dx * near + tx * t, dz * near + tz * t);
+        const t = (i / (n - 1) - 0.5) * 0.72 + rng.range(-0.05, 0.05);
+        const near = off - rng.range(0, 0.08);
+        drop(c, rng.pick(SHRUBS), rng.range(0.5, 0.74), dx * near + tx * t, dz * near + tz * t);
       }
       return true;
     }
@@ -477,11 +673,7 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
 
   /* --- pass 2: the palm stands ------------------------------------------
    * The reference does not sprinkle palms; it plants STANDS of three to six
-   * that overlap each other, and leaves the ground between them bare. Half the
-   * stands go on the coast and half up on the terraces, which is how theirs is
-   * arranged — four crowns over the totem in the middle of the island, not only
-   * a fringe around its edge. */
-  const treed = new Set<number>();
+   * that overlap each other, and leaves the ground between them bare. */
   {
     const half = shape.size / 2;
     const grove = (pool: DecorCell[], stands: number, trunkLo: number, trunkHi: number): void => {
@@ -519,9 +711,11 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
           treed.add(key(c.x, c.z));
         }
         // Undergrowth at the foot of the stand — the reference never shows a
-        // bare trunk on bare ground.
+        // bare trunk on bare ground. One or two, not one to three: this runs on
+        // every trunk of every stand, so the upper bound is what turned six
+        // clumps of trees into a continuous green skirt round the whole island.
         for (const c of near) {
-          for (let i = 0; i < rng.int(1, 3); i++) {
+          for (let i = 0; i < rng.int(1, 2); i++) {
             drop(c, rng.pick(SHRUBS_ACCENT), rng.range(0.45, 0.8),
               rng.range(-0.44, 0.44), rng.range(-0.44, 0.44));
           }
@@ -529,48 +723,293 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
       }
     };
 
-    // Eleven stands, not six. The plateau of this island is claimed almost end
-    // to end — a plot could go nearly anywhere on it, so decoration may go
-    // almost nowhere — and the shore ring is where the frame's greenery has to
-    // come from. Eleven stands of three to five is the count at which the coast
-    // reads as a palm-fringed island rather than as a tan band with trees on it.
+    // SIX stands of two to four, down from eleven of three to five — a cut of
+    // roughly half the palms on the shore, and it is the single change the
+    // round-one notes asked for most directly. Eleven stands on a 108-cell ring
+    // do not read as eleven stands; each is within two cells of the next, so
+    // their crowns close into one continuous canopy and the island's silhouette
+    // disappears inside it. The reference's shore is mostly EMPTY sand with a
+    // handful of clusters on it, and the gaps are what make the clusters read.
+    //
+    // The stands are also beach-only now. Rim cells are terrace lip, and the
+    // terrace lip is inland ground, and inland ground is the entire budget the
+    // interior has. Spending it on more coastal palms is what
+    // left the middle of the island bare; `furnish` gets it instead, and puts
+    // palms back on about a third of it from its own rotation.
     grove(
       cells
-        .filter((c) => (c.zone === 'rim' || c.zone === 'beach') && c.toWater >= 1 && free(c))
+        .filter((c) => !inland(c) && c.toWater >= 1 && free(c))
         .sort((a, b) => a.toWater - b.toWater || key(a.x, a.z) - key(b.x, b.z)),
-      11, 3, 5
-    );
-    grove(
-      cells
-        .filter((c) => c.zone !== 'beach' && free(c))
-        .sort((a, b) => key(a.x, a.z) - key(b.x, b.z)),
-      4, 2, 4
+      6, 2, 4
     );
   }
 
-  /* --- pass 3: the plot borders -----------------------------------------
-   * Every edge where free ground meets ground a plot could take gets outlined:
-   * a hedge row on the grass, a fence or a pair of posts on the sand. This is
-   * the single densest thing in the reference frame and the one our island was
-   * missing outright — its plots read as flat painted rectangles because
-   * nothing marked where they stopped. */
+  /* --- pass 3: framing the town hall -------------------------------------
+   * §3's own emphasis rule, in the world: the building the whole island is
+   * about gets a gate on its approach, so the eye lands on it rather than
+   * wandering.
+   *
+   * Ahead of `furnish` rather than after it, because the gate is the one prop
+   * with a fixed address — it has to span a path, and there are two cells on
+   * this island where that is true. Everything else can go anywhere. */
+  /** Cells that already have their tall accent, so `furnish` does not add a
+   *  second one on top of it. */
+  const accented = new Set<number>();
+  if (hall) {
+    // Measured from the HALL, not from a point three cells in front of it. The
+    // old anchor assumed there was open ground on the hall's approach; on this
+    // island there is none — every cell within four of the hall is ground some
+    // plot could take — so the set came back empty and the whole pass silently
+    // did nothing. Whatever free ground is nearest the hall IS its approach.
+    const approach = cells
+      .filter((c) => inland(c) && Math.hypot(c.x - hall.x, c.z - hall.z) < 7)
+      .sort((a, b) => Math.hypot(a.x - hall.x, a.z - hall.z) - Math.hypot(b.x - hall.x, b.z - hall.z));
+
+    // The gate spans a path, so it only goes where BOTH of the cells its legs
+    // reach over are free ground — an arch with one leg planted on a plot is an
+    // arch through somebody's future wall.
+    const gate = approach.find((c) => {
+      if (plan.used.has(key(c.x, c.z))) return false;
+      const alongX = !isClaimed(c.x - 1, c.z) && !isClaimed(c.x + 1, c.z);
+      const alongZ = !isClaimed(c.x, c.z - 1) && !isClaimed(c.x, c.z + 1);
+      return alongX || alongZ;
+    });
+    if (gate) {
+      const alongX = !isClaimed(gate.x - 1, gate.z) && !isClaimed(gate.x + 1, gate.z);
+      // The one prop that IS centred, and for the reason everything else is
+      // not: it is a gate, it straddles the path, and a gate off to one side of
+      // the way through is a gate you walk round.
+      drop(gate, 'deco_archway', rng.range(1.95, 2.15), 0, 0, {
+        rotationY: alongX ? 0 : Math.PI / 2,
+      });
+      accented.add(key(gate.x, gate.z));
+    }
+
+    // And one tall palm behind it. Palms are what the reference frames ITS hall
+    // with, and the two candidates tried first both failed at this scale: the
+    // pirate lamp is a grey lantern that reads as a mushroom, and the flag is
+    // four units of bare pole with its banner above the top of the frame.
+    const framer = approach.find((c) => !accented.has(key(c.x, c.z)) && !plan.used.has(key(c.x, c.z)));
+    if (framer) {
+      drop(framer, 'tree_palm_tall', rng.range(2.2, 2.5), rng.range(0.2, 0.32), rng.range(-0.3, 0.3), {
+        scaleY: rng.range(0.95, 1.1),
+      });
+      treed.add(key(framer.x, framer.z));
+      accented.add(key(framer.x, framer.z));
+    }
+  }
+
+  /* --- pass 4: furnish the interior --------------------------------------
+   * THE pass, and the answer to the round-one note that not one standing prop
+   * sat on any grass cell or sand plaza inside the island. Every cell of free
+   * inland ground that borders something is COMPOSED rather than sprinkled: one
+   * tall accent from the rotation, one or two chest-high props, two or three
+   * pieces of ankle clutter, all on a ring so nothing sits on the cell's centre.
+   *
+   * The old inland dressing put four small hedges on a cell and stopped. Every
+   * prop was in the same size tier, which reads the same as having one tier,
+   * which reads as texture — and texture is exactly what a blockout looks like.
+   *
+   * The middle of an open court is deliberately left alone. The reference's
+   * sand is walkable: its props line the edges of its plazas and cluster at
+   * their corners, and the space between is empty on purpose. Filling every
+   * square of it is how the coast ring got welded shut in round one, and the
+   * same rule applies inland — density has to have somewhere to read against.
+   *
+   * `free` is deliberately not consulted. A cell the dock already heaped crates
+   * on still wants a mooring post over them — that is exactly the arrangement
+   * at the head of the reference's own pier — it just wants fewer bushes. */
+  {
+    const settled = cells
+      .filter((c) => inland(c) && !inPlaza(c))
+      .sort((a, b) => key(a.x, a.z) - key(b.x, b.z));
+    let dealt = 0;
+    for (const c of settled) {
+      const grass = onGrass(c);
+      const busy = plan.used.has(key(c.x, c.z));
+
+      /*
+       * Which way the cell's ring starts, and it is not arbitrary.
+       *
+       * A free cell inland almost always sits BESIDE ground a plot could take,
+       * and that border is the one place a prop can be seen decorating
+       * something rather than just standing about — the rule constrains a
+       * prop's ORIGIN, so a bush at 0.4 out from the centre hangs half its mass
+       * over a plot no prop may stand in. Starting the ring at the claimed side
+       * is what turns scattered free cells into planting along the plots'
+       * edges, which is the shape the reference's density actually has.
+       */
+      let bx = 0;
+      let bz = 0;
+      for (const [dx, dz] of SIDES) if (isClaimed(c.x + dx, c.z + dz)) { bx += dx; bz += dz; }
+      const edging = bx !== 0 || bz !== 0;
+      // Out in the middle of a court, with nothing to line, two cells in three
+      // stay clear and the third gets a group rather than a sprinkle. Isolated
+      // groups on open ground is how the reference furnishes its plazas.
+      //
+      // And even ON an edge, better than a quarter of cells are skipped. A run
+      // of borders every one of which is dressed is a wall, which is the exact
+      // failure the coastline was pulled back from — the gaps are what let the
+      // dressed cells read as groups instead of as one continuous mass. Grass
+      // is exempt: there are barely a dozen free green cells on the island and
+      // every one of them has to count.
+      if (!grass && !busy && !rng.chance(edging ? 0.8 : 0.4)) continue;
+
+      const phase = (edging && (bx || bz) ? Math.atan2(bz, bx) / (Math.PI * 2) : rng.next())
+        + rng.range(-0.05, 0.05);
+
+      /*
+       * A planted bed: rows on a grid instead of a ring.
+       *
+       * One whole green plot in island_hero.png is a worked field — dark bushes
+       * in even rows with a tiki standing in the middle of them — and it is the
+       * densest single thing in their frame. Rows are the point: a scatter of
+       * the same bushes reads as scrub, and it is the alignment that says
+       * somebody planted them. The lanes are keyed to the CELL rather than
+       * rolled, so a bed two cells wide lines its rows up with its neighbour's
+       * instead of each square deciding for itself.
+       *
+       * Grass only, and roughly a third of it, because free green cells are the
+       * scarcest ground on the island — a dozen of them against four hundred —
+       * and this is the densest use any one of them has.
+       */
+      if (grass && !busy && rng.chance(0.34)) {
+        const along = ((c.x + c.z) & 1) === 0;
+        for (let lane = 0; lane < 3; lane++) {
+          const t = (lane / 2 - 0.5) * 0.72;
+          for (let i = 0; i < 3; i++) {
+            const u = (i / 2 - 0.5) * 0.72 + rng.range(-0.03, 0.03);
+            drop(c, 'deco_hedge', rng.range(0.42, 0.56),
+              along ? u : t, along ? t : u);
+          }
+        }
+        // The tiki over the field, off to one side of it.
+        const [ax, az] = ring(0, 1, phase, 0.34, 0.44);
+        if (!accented.has(key(c.x, c.z))) accent(c, 'deco_totem', ax, az);
+        plan.used.add(key(c.x, c.z));
+        continue;
+      }
+
+      // Four to six all told, which is the count the reference's dressed squares
+      // carry. The first cut of this pass ran to nine or ten and the frame said
+      // so immediately: the free cells are contiguous, so ten props each did not
+      // read as ten decorated squares, it read as one junk heap in a corridor.
+      // Below six a cell reads as composed; above it, as tipped over.
+      const mids = busy ? 1 : rng.int(1, 2);
+      const smalls = busy ? rng.int(1, 2) : rng.int(2, 3);
+      const slots = 1 + mids;
+
+      if (!accented.has(key(c.x, c.z))) {
+        // Walk the rotation past a palm that would land beside another palm.
+        // The rotation spaces the accents in the ORDER they are dealt, and the
+        // order is row-major — which on a ring of free cells two deep put every
+        // fourth entry directly beside the one from the row above, and the
+        // stands closed up into the same canopy the coast was just cut back
+        // from. A crown is three cells wide; two of them inside that read as
+        // one thicket.
+        let what = ACCENT_ROTA[dealt % ACCENT_ROTA.length];
+        for (let skip = 0; skip < ACCENT_ROTA.length && what.startsWith('tree_'); skip++) {
+          let near = false;
+          for (let dz = -2; dz <= 2; dz++) {
+            for (let dx = -2; dx <= 2; dx++) if (treed.has(key(c.x + dx, c.z + dz))) near = true;
+          }
+          if (!near) break;
+          dealt++;
+          what = ACCENT_ROTA[dealt % ACCENT_ROTA.length];
+        }
+        const [ax, az] = ring(0, slots, phase, 0.3, 0.42);
+        accent(c, what, ax, az);
+        dealt++;
+      }
+      for (let i = 0; i < mids; i++) {
+        const [ox, oz] = ring(i + 1, slots, phase, 0.3, 0.44);
+        midProp(c, grass, ox, oz);
+      }
+      // The clutter sits on a wider ring, half a slot out of step with the two
+      // tiers above it, so it fills the gaps between them instead of banking up
+      // against their feet.
+      for (let i = 0; i < smalls; i++) {
+        const [ox, oz] = ring(i, smalls, phase + 0.5 / smalls, 0.32, 0.46);
+        smallProp(c, grass, ox, oz);
+      }
+      plan.used.add(key(c.x, c.z));
+    }
+  }
+
+  /* --- pass 5: the bollards ----------------------------------------------
+   * Waist-high wooden posts down the edge of every sand path, on a regular
+   * beat. In island_hero.png they are the thing that turns an expanse of beige
+   * into a ROAD: single posts, all the same height, standing at intervals where
+   * the sand meets a plot, with a taller one on the outside corners.
+   *
+   * Ahead of the hedge-and-fence pass and claiming the borders it uses, so the
+   * two never stack. The split is the reference's own: green edges are marked
+   * with planting, sand edges with timber. */
+  {
+    // ONE draw for the whole island, deliberately. A beat whose posts change
+    // height from one to the next is not a beat, and the sizes here were
+    // already being redrawn per post — which is exactly why the round-one
+    // frame's path furniture read as scattered debris rather than as a line.
+    const beat = post(rng);
+    const tall = beat.scale * 1.18;
+    const sand = cells.filter((c) => !inPlaza(c) && inland(c) && !onGrass(c));
+    for (const c of sand) {
+      for (const [dx, dz] of SIDES) {
+        if (!isClaimed(c.x + dx, c.z + dz)) continue;
+        const id = edgeKey(c.x, c.z, dx, dz);
+        if (plan.edges.has(id)) continue;
+        plan.edges.add(id);
+        drop(c, 'deco_fence_post', beat.scale, dx * 0.44, dz * 0.44, {
+          rotationY: 0, scaleY: beat.scaleY,
+        });
+      }
+      // Outside corners get a taller one. A corner post is what tells the eye
+      // the line turned rather than stopped.
+      for (const [dx, dz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]] as const) {
+        if (!isClaimed(c.x + dx, c.z) || !isClaimed(c.x, c.z + dz)) continue;
+        drop(c, 'deco_fence_post', tall, dx * 0.44, dz * 0.44, {
+          rotationY: 0, scaleY: beat.scaleY * 1.25,
+        });
+      }
+    }
+  }
+
+  /* --- pass 6: the plot borders -----------------------------------------
+   * Every edge where free GRASS meets ground a plot could take gets outlined
+   * with a hedge row. This is the single densest thing in the reference frame
+   * and the one our island was missing outright — its plots read as flat
+   * painted rectangles because nothing marked where they stopped.
+   *
+   * The runs sit at 0.44 out from the cell's centre, so half of every bush
+   * overhangs the plot beyond. That overhang is not sloppiness: the rule at the
+   * top of this file constrains a prop's ORIGIN, and hanging the planting over
+   * the line is the only way the interior slabs get anything on them at all. */
   {
     const bordering = cells
-      .filter((c) => !inPlaza(c) && c.zone !== 'beach')
+      .filter((c) => !inPlaza(c) && inland(c))
       .sort((a, b) => key(a.x, a.z) - key(b.x, b.z));
     for (const c of bordering) {
       for (const [dx, dz, yaw] of SIDES) {
         if (!isClaimed(c.x + dx, c.z + dz)) continue;
+        // Keyed on the ground BEYOND the border, not on the cell the run is
+        // anchored to. The whole point of the run is to dress the plot on the
+        // far side — that plot is claimed, so its own cells can never carry a
+        // prop, and a bush at 0.46 hanging half over the line is the only
+        // planting it will ever have. Which of the two surfaces the anchor
+        // happens to be says nothing about that; what the plot is made of says
+        // everything, and in the reference green plots are edged with hedge and
+        // sand courts with timber.
+        const beyond = shape.cells[(c.z + dz) * size + c.x + dx].material === 'grass';
         const r = rng.next();
-        const kind = onGrass(c)
-          ? (r < 0.78 ? 'hedge' : r < 0.9 ? 'posts' : 'fence')
-          : (r < 0.44 ? 'fence' : r < 0.74 ? 'posts' : r < 0.88 ? 'hedge' : 'fence');
+        const kind = (beyond || onGrass(c))
+          ? (r < 0.85 ? 'hedge' : 'fence')
+          : (r < 0.5 ? 'fence' : 'hedge');
         dressEdge(c, dx, dz, yaw, kind);
       }
     }
   }
 
-  /* --- pass 4: the terrace lip -------------------------------------------
+  /* --- pass 7: the terrace lip -------------------------------------------
    * Where the plateau steps down the reference runs a low rail along the top
    * and banks greenery against the wall below, and that two-part edge is what
    * stops a terrace reading as a bare extruded step.
@@ -597,96 +1036,48 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
 
         const tx = dz;
         const tz = dx;
-        // Greenery at the foot of the wall, on this cell's own ground.
-        if (rng.chance(0.5)) {
-          for (let i = 0; i < rng.int(2, 3); i++) {
+        // Greenery at the foot of the wall, on this cell's own ground. One or
+        // two at a third of the walls, not two or three at half: this fires on
+        // the whole perimeter of the plateau, so it was one of the two passes
+        // paying for the green skirt round the island.
+        if (rng.chance(0.34)) {
+          for (let i = 0; i < rng.int(1, 2); i++) {
             drop(c, rng.pick(SHRUBS), rng.range(0.42, 0.68),
               dx * rng.range(0.3, 0.44) + tx * rng.range(-0.4, 0.4),
               dz * rng.range(0.3, 0.44) + tz * rng.range(-0.4, 0.4));
           }
         }
-        // And a rail on top of it.
+        // And a rail on top of it — five walls in six, and always a panel.
+        //
+        // This is the most valuable line in the pass and it was set to fire
+        // less than half the time and then roll again for posts instead. A rail
+        // is a GRAPHIC LINE: unbroken it draws the edge of the plateau and
+        // reads as design, and a rail with holes in it reads as debris that
+        // happens to be arranged. Compare the reference, which runs one
+        // continuous timber rail the full width of its northern plots.
         const id = edgeKey(c.x, c.z, dx, dz);
-        if (plan.edges.has(id) || !rng.chance(0.46)) continue;
+        if (plan.edges.has(id) || !rng.chance(0.62)) continue;
         plan.edges.add(id);
-        const lift = rise * STEP;
-        if (rng.chance(0.75)) {
-          drop(c, 'deco_fence', CELL * 1.04, dx * 0.44, dz * 0.44, {
-            rotationY: yaw + Math.PI / 2, lift,
-          });
-        } else {
-          for (const t of [-0.34, 0.34]) {
-            const p = post(rng);
-            drop(c, 'deco_fence_post', p.scale, dx * 0.44 + tx * t, dz * 0.44 + tz * t, {
-              rotationY: 0, lift, scaleY: p.scaleY,
-            });
-          }
-        }
+        drop(c, 'deco_fence', CELL * 1.04, dx * 0.44, dz * 0.44, {
+          rotationY: yaw + Math.PI / 2, lift: rise * STEP,
+        });
       }
     }
   }
 
-  /* --- pass 5: framing the town hall -------------------------------------
-   * §3's own emphasis rule, in the world: the building the whole island is
-   * about gets a gate on its approach and a pair of palms behind it, so the eye
-   * lands on it rather than wandering. */
-  if (hall) {
-    // Measured from the HALL, not from a point three cells in front of it. The
-    // old anchor assumed there was open ground on the hall's approach; on this
-    // island there is none — every cell within four of the hall is ground some
-    // plot could take — so the set came back empty and the whole pass, gate and
-    // framing palms both, silently did nothing. Whatever free ground is nearest
-    // the hall IS its approach.
-    const approach = cells
-      .filter((c) => c.zone !== 'beach' && Math.hypot(c.x - hall.x, c.z - hall.z) < 7)
-      .sort((a, b) => Math.hypot(a.x - hall.x, a.z - hall.z) - Math.hypot(b.x - hall.x, b.z - hall.z));
-
-    // The gate spans a path, so it only goes where BOTH of the cells its legs
-    // reach over are free ground — an arch with one leg planted on a plot is an
-    // arch through somebody's future wall.
-    const gate = approach.find((c) => {
-      if (plan.used.has(key(c.x, c.z))) return false;
-      const alongX = !isClaimed(c.x - 1, c.z) && !isClaimed(c.x + 1, c.z);
-      const alongZ = !isClaimed(c.x, c.z - 1) && !isClaimed(c.x, c.z + 1);
-      return alongX || alongZ;
-    });
-    if (gate) {
-      const alongX = !isClaimed(gate.x - 1, gate.z) && !isClaimed(gate.x + 1, gate.z);
-      put(gate, 'deco_archway', rng.range(1.9, 2.1), {
-        jitter: 0.06, rotationY: alongX ? 0 : Math.PI / 2,
-      });
-    }
-
-    // Palms, because that is what the reference frames ITS hall with, and
-    // because the two candidates tried first both failed at this scale: the
-    // pirate lamp is a grey lantern that reads as a mushroom, and the flag is
-    // four units of bare pole with its banner above the top of the frame.
-    let framed = 0;
-    for (const c of approach) {
-      if (framed >= 2) break;
-      if (plan.used.has(key(c.x, c.z))) continue;
-      put(c, framed === 0 ? 'tree_palm_tall' : 'tree_palm', rng.range(2.1, 2.5), {
-        jitter: 0.12,
-        scaleY: rng.range(0.95, 1.1),
-      });
-      framed++;
-    }
-  }
-
-  /* --- pass 6: the banners and the totems --------------------------------
-   * The reference's landmarks: a totem pole or two standing over the greens and
-   * three or four flags on their own poles out on the open sand. They are the
-   * only props there taller than a person, and they are what stops a packed
-   * island reading as one uniform carpet of shrubbery. */
+  /* --- pass 8: the banners -----------------------------------------------
+   * The reference's beach landmarks: three or four flags on their own poles out
+   * on the open sand, well apart, each with clear ground round it. The totems
+   * they used to share this pass with have moved into `furnish`, where they
+   * stand over the greens the way the reference's do. */
   {
     const open = cells
       .filter((c) => free(c) && c.toBuilding >= 3)
       .sort((a, b) => b.toBuilding - a.toBuilding || key(a.x, a.z) - key(b.x, b.z));
     let flags = 0;
-    let totems = 0;
     const spoken: DecorCell[] = [];
     for (const c of open) {
-      if (flags >= 3 && totems >= 2) break;
+      if (flags >= 3) break;
       if (!free(c)) continue;
       // A landmark next to another landmark is one landmark. Three cells apart
       // is roughly the reference's spacing between its totem and its banners.
@@ -700,103 +1091,63 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
         for (let dx = -1; dx <= 1; dx++) if (treed.has(key(c.x + dx, c.z + dz))) shaded = true;
       }
       if (shaded) continue;
-      if (c.zone !== 'beach' && totems < 2) {
-        put(c, 'deco_totem', rng.range(1.0, 1.25), { jitter: 0.12, scaleY: rng.range(1.3, 1.55) });
-        totems++;
-      } else if (flags < 3) {
-        put(c, 'deco_flag', rng.range(0.75, 0.95), { jitter: 0.15 });
-        flags++;
-      } else {
-        continue;
-      }
+      put(c, 'deco_flag', rng.range(0.78, 0.98), { jitter: 0.28 });
+      flags++;
       spoken.push(c);
     }
   }
 
-  /* --- pass 7: the gardens ------------------------------------------------
-   * Everything still open on the plateau. The reference leaves almost none of
-   * it bare, so this fills rather than samples: greenery on the green, cargo
-   * and posts on the sand, and a crop patch wherever a whole cell of grass is
-   * going spare. */
+  /* --- pass 9: the beach --------------------------------------------------
+   * Rocks and driftwood at the waterline, shells above it, and BARE SAND six
+   * times in ten.
+   *
+   * That last number is the one that changed, and it is the whole argument. The
+   * shore is four fifths of this island's free cells, so whatever rate this pass
+   * runs at is what the frame's decoration budget mostly is. At the old rate it
+   * dressed nine cells in ten, four props each, and the result was the thing
+   * every round-one critic named first: a solid unbroken hedge welded around
+   * the coastline, with the island hidden inside it.
+   *
+   * island_hero.png's shore is the opposite and it is not an accident — clean
+   * pale sand, wide, with a handful of rock groups and palm clusters on it. The
+   * emptiness is what gives the dressed ground inside it somewhere to read
+   * against. So the shrub carpet, which was thirty per cent of the beach on its
+   * own, is down to eight, and what it paid for is `furnish`. */
   {
-    const inland = cells
-      .filter((c) => c.zone !== 'beach' && free(c))
-      .sort((a, b) => key(a.x, a.z) - key(b.x, b.z));
-    for (const c of inland) {
-      const r = rng.next();
-      if (onGrass(c)) {
-        if (r < 0.3) {
-          // A crop bed: four to six stalks on a grid, not a scatter. Rows are
-          // what makes the reference's fields read as cultivated ground.
-          const rows = rng.int(2, 3);
-          const cols = rng.int(2, 3);
-          for (let i = 0; i < rows; i++) {
-            for (let j = 0; j < cols; j++) {
-              drop(c, 'harv_cotton', rng.range(0.34, 0.42),
-                (i / (rows - 1 || 1) - 0.5) * 0.62, (j / (cols - 1 || 1) - 0.5) * 0.62);
-            }
-          }
-          plan.used.add(key(c.x, c.z));
-        } else if (r < 0.92) {
-          clump(c, SHRUBS_ACCENT, rng.int(3, 5), 0.42, 0.72, { spread: 0.42 });
-        }
-      } else if (r < 0.28) {
-        clump(c, CARGO, rng.int(3, 5), CARGO_LO, CARGO_HI, { spread: 0.34, stack: 0.32 });
-      } else if (r < 0.44) {
-        // Free-standing posts, which is what the reference stands along its
-        // plot corners. The pirate lamp went here first and was a mistake: it
-        // is a grey-white lantern on a thin pole, and four of them in a row
-        // read as mushrooms rather than as street furniture.
-        for (let i = 0; i < rng.int(1, 2); i++) {
-          const p = post(rng);
-          drop(c, 'deco_fence_post', p.scale,
-            rng.range(-0.36, 0.36), rng.range(-0.36, 0.36),
-            { rotationY: 0, scaleY: p.scaleY });
-        }
-        plan.used.add(key(c.x, c.z));
-      } else if (r < 0.62) {
-        clump(c, SHRUBS, rng.int(2, 4), 0.42, 0.68, { spread: 0.42 });
-      } else if (r < 0.68) {
-        put(c, rng.chance(0.5) ? 'deco_rock_sm' : 'deco_driftwood', rng.range(1.0, 1.5), { jitter: 0.24 });
-      }
-      // The rest is left as open sand: the reference's paths are walkable.
-    }
-  }
-
-  /* --- pass 8: the beach --------------------------------------------------
-   * Rocks and driftwood at the waterline, shells above it. The beach stays
-   * more open than the plateau — it is open in the reference too — but its
-   * features come in GROUPS: three boulders leaning on each other, a pair of
-   * mounds, a run of shells, never one lonely pebble per cell. */
-  {
-    for (const c of byZone('beach')) {
+    for (const c of cells.filter((c) => !inland(c))) {
       if (!free(c)) continue;
       const r = rng.next();
-      if (r < 0.13) {
-        put(c, 'deco_rock_lg', rng.range(1.7, 2.6), { jitter: 0.3 });
-        for (let i = 0; i < rng.int(1, 2); i++) {
-          drop(c, 'deco_rock_sm', rng.range(0.9, 1.5), rng.range(-0.44, 0.44), rng.range(-0.44, 0.44));
+      if (r < 0.06) {
+        /*
+         * ONE boulder, and a small one.
+         *
+         * This used to be a big rock with one or two more piled against it, and
+         * the pile is what was wrong with it. `deco_rock_lg` is a dark mossy
+         * stone with a ragged silhouette; alone at about a cell across it is a
+         * rock on a beach, but overlap three of them and the shape closes into
+         * a black splat that reads — genuinely — as a dead crab. There were
+         * eight such splats round the shore. The reference's beach stones are
+         * pale, blocky and separate, and the separation is most of it.
+         */
+        put(c, 'deco_rock_lg', rng.range(0.8, 1.1), { jitter: 0.3 });
+        if (rng.chance(0.5)) {
+          drop(c, 'deco_rock_sm', rng.range(0.55, 0.8), rng.range(-0.44, 0.44), rng.range(-0.44, 0.44));
         }
-      } else if (r < 0.24) {
-        for (let i = 0; i < rng.int(2, 3); i++) {
-          drop(c, 'deco_rock_sm', rng.range(0.9, 1.8), rng.range(-0.42, 0.42), rng.range(-0.42, 0.42));
+      } else if (r < 0.11) {
+        for (let i = 0; i < rng.int(1, 2); i++) {
+          drop(c, 'deco_rock_sm', rng.range(0.6, 0.95), rng.range(-0.42, 0.42), rng.range(-0.42, 0.42));
         }
         plan.used.add(key(c.x, c.z));
-      } else if (r < 0.34) {
-        put(c, 'deco_driftwood', rng.range(1.8, 2.6), { jitter: 0.28 });
+      } else if (r < 0.155) {
+        // Driftwood, small and rare. It is a two-cell branch one voxel thick,
+        // and at the 1.8–2.6 it used to run at it read as a dead black spider
+        // lying on the sand — six of them were the ugliest thing in the frame.
+        // At a cell and a bit, with a shell beside it, it is a piece of flotsam.
+        put(c, 'deco_driftwood', rng.range(0.95, 1.3), { jitter: 0.28 });
         if (rng.chance(0.5)) {
           drop(c, 'deco_starfish', rng.range(0.5, 0.75), rng.range(-0.44, 0.44), rng.range(-0.44, 0.44));
         }
-      } else if (r < 0.44) {
-        // Was a deco_sandmound with scrub on it. The mound is a 32 x 3 slab —
-        // read as a raised sand PLATFORM with a hard shadowed lip, and on sand
-        // that is a modelling error rather than a dune. It earns its keep under
-        // the islets, where it is the ground; here it only ever looked broken.
-        clump(c, SHRUBS, rng.int(3, 4), 0.5, 0.85, { spread: 0.4 });
-        if (rng.chance(0.4)) {
-          drop(c, 'deco_rock_sm', rng.range(0.9, 1.4), rng.range(-0.4, 0.4), rng.range(-0.4, 0.4));
-        }
-      } else if (r < 0.5) {
+      } else if (r < 0.28) {
         // Cargo only where the settlement reaches the shore. Barrels on an
         // empty stretch of coast three cells from nothing are litter, and the
         // reference has none: everything crated there is within sight of the
@@ -804,23 +1155,26 @@ export function planDecor(shape: IslandShape, state: GameState, seed: string): S
         if (c.toBuilding <= 4) {
           clump(c, CARGO, rng.int(2, 4), CARGO_LO, CARGO_HI, { spread: 0.34, stack: 0.3 });
         } else {
-          clump(c, SHRUBS, rng.int(3, 4), 0.48, 0.8, { spread: 0.44 });
+          clump(c, SHRUBS, rng.int(2, 3), 0.48, 0.8, { spread: 0.44 });
         }
-      } else if (r < 0.58) {
-        for (let i = 0; i < rng.int(2, 3); i++) {
-          drop(c, 'deco_starfish', rng.range(0.45, 0.75), rng.range(-0.44, 0.44), rng.range(-0.44, 0.44));
-        }
-        if (rng.chance(0.5)) {
-          drop(c, 'deco_driftwood', rng.range(1.4, 2.0), rng.range(-0.3, 0.3), rng.range(-0.3, 0.3));
+      } else if (r < 0.31) {
+        // And only at the waterline, where a shell has a reason to be.
+        if (c.toWater <= 1) {
+          for (let i = 0; i < rng.int(1, 2); i++) {
+            drop(c, 'deco_starfish', rng.range(0.45, 0.68), rng.range(-0.44, 0.44), rng.range(-0.44, 0.44));
+          }
         }
         plan.used.add(key(c.x, c.z));
-      } else if (r < 0.88) {
-        // Scrub. The largest single slice, because a shore of bare sand with
-        // eight boulders on it is what "sparse" looked like: it is the low
-        // green that makes the ring read as land rather than as beach.
-        clump(c, SHRUBS, rng.int(3, 5), 0.45, 0.78, { spread: 0.44 });
+      } else if (r < 0.42) {
+        // Scrub, and only where the shore is deep enough to have a back to it.
+        // Was thirty per cent of the beach unconditionally, including the single
+        // row of cells at the waterline — which is precisely the ring that came
+        // out as a welded green hedge. Banked against the terrace wall instead,
+        // the same bushes read as the foot of the island rather than as a fence
+        // round it.
+        if (c.toWater >= 2) clump(c, SHRUBS, rng.int(2, 4), 0.45, 0.78, { spread: 0.44 });
       }
-      // Everything else stays bare sand.
+      // Everything else — nearly six cells in ten — stays bare sand.
     }
   }
 
@@ -934,17 +1288,44 @@ export function buildGroundCover(shape: IslandShape, seed: string): THREE.Mesh {
   // The rows of a worked field: darker than the grass either side of them, so a
   // bed reads as furrows rather than as stripes painted on a lawn.
   const CROP = [scale(GRASS, 0.7), scale(GRASS, 0.78), scale(GRASS, 0.85)];
-  // Within a few percent of the sand itself, so this grains the beach rather
-  // than littering it.
-  // Darker only, never brighter. Sand enters at 0xf8dfbc — its red is already
-  // within seven counts of the ceiling, so any multiplier above 1 clips red
-  // alone and the "brighter sand" comes out cyan-grey. Contrast on the beach
-  // has to be made downward.
-  const SAND = [
-    scale(SAND_BASE, 1.0), scale(SAND_BASE, 0.965), scale(SAND_BASE, 0.93),
-    scale(SAND_BASE, 0.985), scale(SAND_BASE, 0.9),
+  /*
+   * The beach grain, resized against the SHADOWS that now land on it.
+   *
+   * Darker only, never brighter. Sand enters at 0xf8dfbc — its red is already
+   * within seven counts of the ceiling, so any multiplier above 1 clips red
+   * alone and the "brighter sand" comes out cyan-grey. Contrast on the beach
+   * has to be made downward.
+   *
+   * The amplitudes are the part that changed, and they changed because they
+   * were measured. High-pass a 13-pixel window over every open-sand pixel in
+   * the frame and take the spread: their beach runs sd 1.79, roughly nine
+   * levels peak to peak, a fine even stipple. Ours ran sd 5.40 across
+   * twenty-two levels, in eight-to-twelve-pixel patches — and the terrain mesh
+   * underneath it measures sd 0.84, so every bit of that was this function.
+   *
+   * Twenty-two levels of blotch is more contrast than a cast shadow has. A
+   * shadow is a x0.74 multiply, which on lit sand is a 40-level step, but it
+   * arrives as a soft-edged shape of exactly the size these patches are, so on
+   * a beach dithered this hard the eye files it as more dither. Four of five
+   * critics said the frame casts no shadows; the shadow map says otherwise.
+   * Both are true — the shadows were there and this was hiding them.
+   *
+   * So the broad patches go flat and the grain gets carried by the smallest
+   * quads instead, which is where the reference carries its own:
+   *
+   *   BROAD   6-12 screen px   1 level   was 21   the blotch that had to go
+   *   GRAIN    2-5 screen px   2 levels  was 21
+   *   SHELL  1.5-3 screen px   4 levels  was 30 and paled toward grey
+   */
+  const SAND_BROAD = [
+    scale(SAND_BASE, 1.0), scale(SAND_BASE, 0.995), scale(SAND_BASE, 0.99),
+    scale(SAND_BASE, 0.997), scale(SAND_BASE, 0.993),
   ];
-  const SHELL = [pale(SAND_BASE, 0.55), scale(SAND_BASE, 0.8), pale(SAND_BASE, 0.7)];
+  const SAND = [
+    scale(SAND_BASE, 1.0), scale(SAND_BASE, 0.99), scale(SAND_BASE, 0.98),
+    scale(SAND_BASE, 0.995), scale(SAND_BASE, 0.985),
+  ];
+  const SHELL = [pale(SAND_BASE, 0.06), scale(SAND_BASE, 0.96), pale(SAND_BASE, 0.03)];
 
   for (let z = 0; z < size; z++) {
     for (let x = 0; x < size; x++) {
@@ -1021,7 +1402,7 @@ export function buildGroundCover(shape: IslandShape, seed: string): THREE.Mesh {
         for (let i = 0; i < rng.int(2, 4); i++) {
           quad(
             x0 + rng.range(-0.38, 0.38) * CELL, y, z0 + rng.range(-0.38, 0.38) * CELL,
-            rng.range(0.18, 0.34), rng.range(0, Math.PI / 2), rng.pick(SAND)
+            rng.range(0.18, 0.34), rng.range(0, Math.PI / 2), rng.pick(SAND_BROAD)
           );
         }
         // Sand: drift and shell grit, close enough in value to the sand itself

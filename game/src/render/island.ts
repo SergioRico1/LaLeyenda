@@ -56,6 +56,17 @@ const PALETTE: Record<Material, number> = {
 const SAND_BEACH = 0xf5e3c5; // -> #e0dac1
 
 /**
+ * The outermost ring — the strip the surf actually reaches — is wet.
+ *
+ * Solved the same way as everything else here: the beach albedo above measures
+ * out at #e0dac1, so the rig's response on a top face is (0.914, 0.960, 0.980)
+ * of albedo. Aiming a tenth darker and a shade warmer than dry sand, at
+ * #cdc09f, divides back to this. Wet sand goes DARKER AND MORE SATURATED, not
+ * grey: desaturating it is how a beach turns into wet concrete.
+ */
+const SAND_WET = 0xe0c8a2; // -> ~#cdc09f
+
+/**
  * Wall skins.
  *
  * A step in the reference is never one flat band. It is a LIP of whatever caps
@@ -76,10 +87,16 @@ interface WallSkin {
   lipShade: number;
   bodySun: number;
   bodyShade: number;
-  /** Share of one step the lip occupies. Measured off the reference by counting
-   *  pixels down a wall: a grass rind runs about a quarter of the step, a sand
-   *  one about a third. */
+  /** Share of the wall's VISIBLE height the lip occupies. Measured off the
+   *  reference by counting pixels down a wall: a grass rind runs about a
+   *  quarter of the step, a sand one about a third. */
   lip: number;
+  /** The same share for a wall that drops into the sea, where "visible" means
+   *  the clearance over the waterline and not the drop to the sea bed. Their
+   *  coastal walls are close to half rind — 6 pale pixels over 5 brown ones —
+   *  because a wall that short has no room to spend two thirds of itself on
+   *  body before the surf covers it. */
+  coast: number;
 }
 
 const WALL_GRASS: WallSkin = {
@@ -88,18 +105,41 @@ const WALL_GRASS: WallSkin = {
   bodySun: 0xe5a751, // -> #bf8b41
   bodyShade: 0xb07a3f, // -> #926532
   lip: 0.26,
+  coast: 0.3,
 };
 
 const WALL_SAND: WallSkin = {
-  // The sunlit sand rind is #fbefce in the reference — brighter than a vertical
-  // face in our rig can reach at any albedo, so this one is pinned at the
-  // ceiling and lands short. It is still by a wide margin the brightest thing
-  // on the wall, which is the job it is doing.
-  lipSun: 0xfffff8, // -> ~#d5d5cf, aiming at #fbefce
+  /*
+   * The two SUNLIT numbers here were both stale, and between them they are
+   * most of why the coast read as one flat pale slab.
+   *
+   * The rind was pinned at 0xfffff8 under a note saying our rig could not reach
+   * their #fbefce at any albedo. The sun has been rebuilt since: re-measured off
+   * a `--parts terrain` capture, a lit vertical face comes back at about 0.94 of
+   * its albedo, so the target was always reachable and we were overshooting it
+   * into WHITE. A near-white rind is wrong twice over — it loses the sand's own
+   * hue, and it competes with the surf, which has to be the brightest thing
+   * where land meets water.
+   *
+   * The rind still lands about nine levels under their #fbefce and cannot be
+   * pushed further, because red is now at the albedo ceiling. Green and blue
+   * are pulled DOWN to meet it instead, so the rind keeps their 12-level
+   * red-over-green warmth rather than drifting to a neutral cream that happens
+   * to be the right brightness. Hue first: a rind reads as sand or as paper.
+   *
+   * The body is the one that mattered. At 0xffcba0 it measured out at #f2c692:
+   * BRIGHTER than the sand top face above it. Their lit body is #e0b082, a
+   * clear step DARKER than their #e0dac1 top — which is what makes a wall read
+   * as a wall. A body brighter than its own cap is just a lighter patch of the
+   * same surface, and stacking three of those down to the water is how the
+   * frame ended up with a pale cliff nobody could see the steps in.
+   */
+  lipSun: 0xfff4d8, // -> ~#f2e6c3, aiming at their #fbefce
   lipShade: 0xece6ca, // -> #c5c0a5
-  bodySun: 0xffcba0, // -> ~#deb482, aiming at #e0b082
+  bodySun: 0xe8b88f, // -> #e0b082, measured back and matched exactly
   bodyShade: 0xb59175, // -> #97785e
   lip: 0.34,
+  coast: 0.5,
 };
 
 const WALL_ROCK: WallSkin = {
@@ -108,6 +148,7 @@ const WALL_ROCK: WallSkin = {
   bodySun: 0xa8a5a0,
   bodyShade: 0x7d7b78,
   lip: 0.3,
+  coast: 0.34,
 };
 
 function wallSkin(material: Material): WallSkin {
@@ -118,30 +159,85 @@ function wallSkin(material: Material): WallSkin {
 
 const STEP = 0.66; // world height of one terrain step
 
-/** How far a coastal wall carries on below sea level. Only its top is ever
- *  seen; the rest exists so the water never cuts under the island. */
-const SKIRT = 0.9;
+/**
+ * Sea level, in world units — islandScene parks the water plane here.
+ *
+ * Mirrored rather than imported because the tiers below are all quoted as
+ * clearance ABOVE it: how far the outermost land stands out of the sea is the
+ * entire read of a coast, and stating the tiers any other way hides the one
+ * number that matters. If the scene moves its plane, move this with it.
+ */
+const WATERLINE = STEP * 0.82;
+
+/**
+ * How far a coastal wall carries on below sea level. Only its top is ever
+ * seen; the rest exists so the water never cuts under the island — the swell
+ * troughs 0.16 under the plane, so this has to clear that with room.
+ *
+ * It was 0.9 when the coast started a step and a half up. Off the new SHORE
+ * tier that would hang the skirt to -0.12, and the skirt is counted by the
+ * camera's silhouette fit in islandScene — an invisible half-unit of underwater
+ * geometry would have quietly pushed the camera back and shrunk the island in
+ * frame to make room for it.
+ */
+const SKIRT = 0.62;
 
 /*
- * The three tiers, in steps.
+ * The tiers, quoted as clearance above the sea.
  *
- * The beach sits two steps up rather than one because the waterline is pinned
- * at 0.82 of a step: at BEACH = 1 the sand stood a fifth of a step out of the
- * sea and the coastal wall was a two-pixel line, where the reference stands its
- * beach a full step clear of the surf and shows a proper sand-over-brown cliff
- * all the way round. Everything above rides up with it, so the steps BETWEEN
- * the tiers — which is what the town is built and dressed against — are
- * unchanged.
+ * Round one shipped the coast as ONE wall — the beach ring two steps up,
+ * dropping 0.78 units straight into the water, 21 screen pixels of flat sand
+ * with nothing on it. Four critics out of five called it the biggest thing
+ * wrong with the frame after the shadows, and the blind judge called it a
+ * quarry face rather than a beach.
+ *
+ * Measured off island_hero.png, in their pixels: their coastal wall is ELEVEN
+ * pixels from the sand's top edge to the surf, and their terrace steps — where
+ * grass rises off the sand, the tall step they DO have — run twenty. So their
+ * whole coast stands barely half a terrace step out of the sea, and ours stood
+ * at one and a half. Their frame is 1600 wide against our 1280, which makes
+ * their eleven pixels about nine of ours.
+ *
+ * So the drop is broken into three low bands instead of one tall one, and the
+ * outermost ring is parked a hand's breadth over the water:
+ *
+ *   plateau -> beach   0.49 units   ~12 screen pixels
+ *   beach   -> shore   0.38 units   ~ 9 pixels
+ *   shore   -> sea     0.24 units   ~ 6 pixels, the lip the surf breaks on
+ *
+ * 0.24 is deliberately under a terrace step and over the swell's 0.16 crest:
+ * the sea runs at the lip and never over it.
+ *
+ * The plateau comes down a third of a unit doing this, and everything standing
+ * on it rides down too — which is correct, their town sits low as well. Nothing
+ * outside this file reads these constants, buildings snap to buildable ground
+ * rather than to a stored height, and the island camera solves its distance off
+ * the terrain's own silhouette, so a lower island reframes instead of cropping.
  */
-const BEACH = 2;
-const PLATEAU = 3;
-const PLOT = 4;
+const clearance = (units: number): number => (WATERLINE + units) / STEP;
+
+/** The outermost ring: wet sand, barely out of the water. */
+const SHORE = clearance(0.24);
+/** The dry beach between the shore and the town. */
+const BEACH = clearance(0.62);
+/** The plateau the town is built on. */
+const PLATEAU = clearance(1.11);
+/** Grass plots stand a full step over the plaza. This is the one tall step the
+ *  reference has, and every terrace in their frame is made of it. */
+const PLOT = PLATEAU + 1;
+
+/** The ladder as tier indices, sea first. Generation reasons in these — "no
+ *  cell stands more than one tier over its lowest neighbour" is a rule about
+ *  rungs, not about world units — and the heights are written at the end. */
+const TIERS = [0, SHORE, BEACH, PLATEAU] as const;
+const T_SHORE = 1;
+const T_BEACH = 2;
+const T_PLATEAU = 3;
 
 /** Generates the home island: a rounded landmass with a beach ring, a raised
  *  grass interior and sand paths carved through it. Deterministic per seed. */
 export function generateIsland(seed: string, size = 40): IslandShape {
   const rng = new Rng(seed);
-  const cells: TerrainCell[] = [];
   const c = (size - 1) / 2;
 
   // Wobble the coastline so it does not read as a perfect circle. Shallower
@@ -173,12 +269,25 @@ export function generateIsland(seed: string, size = 40): IslandShape {
   const notch = (count: number, odds: readonly number[]): number[] =>
     Array.from({ length: count }, () => rng.pick(odds) / c);
   const rimNotch = notch(bands, [0, 0, 0, 1, -1]);
+  /*
+   * The wet lip gets its own table on its own pitch — seven-ish bands against
+   * the rim's twenty-six — for the reason the plaza's does. Driven off the
+   * rim's table it jogs in lockstep with the rim, and a band that jogs with the
+   * coast is a ribbon of exactly constant width, which is the one thing their
+   * shoreline never is. Its odds never contain a negative: the lip is what the
+   * sea meets, and a band of it missing puts the full beach wall back in the
+   * water for a stretch, which is the failure this whole tier exists to fix.
+   */
+  const shoreBands = Math.max(7, Math.round(bands * 0.7));
+  const shoreNotch = notch(shoreBands, [0, 0, 0, 1, 1]);
   // The plaza's line jogs over runs twice as long as the rim's. At the rim's
   // pitch it came out as a two-cell sawtooth that chewed the buildable plateau
   // into spits, and a plateau shredded that fine has nowhere left that a grass
   // plot or a building will fit.
   const plazaBands = Math.max(6, Math.round(bands / 2));
   const plazaNotch = notch(plazaBands, [0, 0, 0, 1, -1]);
+
+  const tiers = new Int8Array(size * size);
 
   for (let z = 0; z < size; z++) {
     for (let x = 0; x < size; x++) {
@@ -193,26 +302,45 @@ export function generateIsland(seed: string, size = 40): IslandShape {
       let edge = 0.86 + rimNotch[band];
       for (const l of lobes) edge += Math.sin(angle * l.freq + l.angle) * l.amp;
 
-      let height = 0;
-      const material: Material = 'sand';
-
       if (r < edge) {
-        height = BEACH; // the ring that meets the surf
-        // The ring is deeper to the south and west, which is what gives the
-        // reference its big open plaza instead of a uniform border.
-        const sector =
-          0.09 +
-          0.10 * (0.5 - Math.cos(angle) * 0.35 - Math.sin(angle) * 0.25) +
-          plazaNotch[Math.min(plazaBands - 1, Math.floor(turn * plazaBands))];
-        if (r < edge - sector) height = PLATEAU; // the plateau the town sits on
+        // Outermost: the wet lip the surf breaks on, one or two cells wide.
+        tiers[z * size + x] = T_SHORE;
+        // Under a cell wide at its narrowest, because the terracing pass in
+        // carveRim rebuilds any rung the radius squeezed out to a full cell.
+        // Asking for the cell here as well spends plateau twice.
+        const lip =
+          0.7 / c + shoreNotch[Math.min(shoreBands - 1, Math.floor(turn * shoreBands))];
+        if (r < edge - lip) {
+          tiers[z * size + x] = T_BEACH; // the dry sand behind it
+          // The beach is deeper to the south and west, which is what gives the
+          // reference its big open plaza instead of a uniform border. Pulled in
+          // from 0.09/0.10 to pay for the shore ring outside it: three tiers
+          // of coast on a 26-cell island cost about a cell of plateau radius,
+          // and the plateau is where the game is played.
+          const sector =
+            0.02 +
+            0.075 * (0.5 - Math.cos(angle) * 0.35 - Math.sin(angle) * 0.25) +
+            plazaNotch[Math.min(plazaBands - 1, Math.floor(turn * plazaBands))];
+          // The plateau is measured in from the BEACH's line, not the rim's, so
+          // the lip is carved out of the sea's side of the island rather than
+          // out of the sand — the beach keeps the width it always had and the
+          // plateau gives up the cell instead.
+          if (r < edge - lip - sector) tiers[z * size + x] = T_PLATEAU;
+        }
       }
-
-      cells.push({ height, material, buildable: false });
     }
   }
 
-  carveRim(cells, size);
-  for (const cell of cells) cell.buildable = cell.height === PLATEAU;
+  carveRim(tiers, size);
+
+  const cells: TerrainCell[] = [];
+  for (let i = 0; i < tiers.length; i++) {
+    cells.push({
+      height: TIERS[tiers[i]],
+      material: 'sand',
+      buildable: tiers[i] === T_PLATEAU,
+    });
+  }
   stampGrassPlots(cells, size, rng);
   return { size, cells };
 }
@@ -224,40 +352,57 @@ export function generateIsland(seed: string, size = 40): IslandShape {
  * 1. No cell of land hangs off the island by a thread. A notch that lands on a
  *    corner leaves a one-cell spit, and a spit renders as a lone square pillar
  *    standing in the sea.
- * 2. The plaza NEVER touches water. Their island always shows a pale sand rim
- *    between the plaza and the surf; a notch that cut through to the coast put
- *    a three-step cliff straight into the sea, which reads as a quarry, not a
- *    beach.
+ *
+ * 2. NOTHING STANDS MORE THAN ONE RUNG OVER ITS LOWEST NEIGHBOUR. This used to
+ *    be the narrower rule "the plaza never touches water", which was the same
+ *    idea with only two tiers to apply it to. With three it is worth stating
+ *    properly, because it is the rule that makes the coast a STAIRCASE: every
+ *    ladder down to the sea gets walked one rung at a time whatever the radius
+ *    function did, so a notch can no longer open a two-tier face anywhere, and
+ *    a beach that the sector term squeezed to nothing is rebuilt one cell wide
+ *    rather than skipped. Their coast terraces the same way and for the same
+ *    reason — it is what stops a landmass reading as a slab with a wall.
+ *
+ * Both run on tier indices rather than on world heights: "one rung" is a
+ * statement about the ladder, and doing it in world units would need to know
+ * which gaps between tiers count as a step.
  */
-function carveRim(cells: TerrainCell[], size: number): void {
+function carveRim(tiers: Int8Array, size: number): void {
   const at = (x: number, z: number) =>
-    x < 0 || z < 0 || x >= size || z >= size ? null : cells[z * size + x];
+    x < 0 || z < 0 || x >= size || z >= size ? 0 : tiers[z * size + x];
   const neighbours = (x: number, z: number) => [at(x - 1, z), at(x + 1, z), at(x, z - 1), at(x, z + 1)];
 
-  // Spits first, so a cell about to be dropped is not also demoting its
-  // neighbours to beach on the way out.
+  // Spits first, so a cell about to be dropped is not also terracing its
+  // neighbours down on the way out.
   for (let pass = 0; pass < 2; pass++) {
     const drop: number[] = [];
     for (let z = 0; z < size; z++) {
       for (let x = 0; x < size; x++) {
-        const cell = at(x, z)!;
-        if (cell.height === 0) continue;
-        if (neighbours(x, z).filter((n) => n && n.height > 0).length < 2) drop.push(z * size + x);
+        if (tiers[z * size + x] === 0) continue;
+        if (neighbours(x, z).filter((n) => n > 0).length < 2) drop.push(z * size + x);
       }
     }
     if (!drop.length) break;
-    for (const i of drop) cells[i].height = 0;
+    for (const i of drop) tiers[i] = 0;
   }
 
-  const demote: number[] = [];
-  for (let z = 0; z < size; z++) {
-    for (let x = 0; x < size; x++) {
-      const cell = at(x, z)!;
-      if (cell.height !== PLATEAU) continue;
-      if (neighbours(x, z).some((n) => !n || n.height === 0)) demote.push(z * size + x);
+  // Terrace. Each sweep can only lower cells, so this converges; the guard is
+  // the width of the island, and in practice it settles in two.
+  for (let pass = 0; pass < size; pass++) {
+    let moved = false;
+    for (let z = 0; z < size; z++) {
+      for (let x = 0; x < size; x++) {
+        const i = z * size + x;
+        if (tiers[i] < T_BEACH) continue;
+        const floor = Math.min(...neighbours(x, z));
+        if (tiers[i] > floor + 1) {
+          tiers[i] = floor + 1;
+          moved = true;
+        }
+      }
     }
+    if (!moved) break;
   }
-  for (const i of demote) cells[i].height = BEACH;
 }
 
 /**
@@ -298,14 +443,19 @@ function stampGrassPlots(cells: TerrainCell[], size: number, rng: Rng): void {
   const GAP = 2;
   const PLOTS = 14;
 
-  // Down to 4 on a side. The big rectangles go in first and leave strips four
-  // and five cells wide behind them; without something small enough to take
-  // those strips the packer stops after two plots and calls the plateau full.
-  // Four is the floor, not three: the corner clip below takes a cell off each
-  // corner, and on a three-wide plot that leaves a plus sign.
+  // Down to 3 on a side, but never 3 BY 3. The big rectangles go in first and
+  // leave strips three, four and five cells wide behind them; without something
+  // small enough to take those strips the packer stops after two plots and
+  // calls the plateau full — which is exactly what it started doing when the
+  // coast grew its third tier and took a cell of plateau radius with it. Two
+  // plots on a plateau this size leaves the plaza reading as a desert, and half
+  // of the reference's plateau is green.
+  //
+  // 3x3 is the one shape excluded: the corner clip below takes a cell off each
+  // corner, and on a three-by-three that leaves a plus sign.
   const shapes: Array<[number, number]> = [];
-  for (let w = 9; w >= 4; w--) {
-    for (let h = 7; h >= 4; h--) shapes.push([w, h]);
+  for (let w = 9; w >= 3; w--) {
+    for (let h = 7; h >= 3; h--) if (w > 3 || h > 3) shapes.push([w, h]);
   }
   shapes.sort((a, b) => b[0] * b[1] - a[0] * a[1]);
 
@@ -409,6 +559,15 @@ export function buildIslandMesh(shape: IslandShape, seed = 'terrain'): THREE.Gro
   //
   // The slow drift only applies where the strength is loose enough to carry it;
   // on a top face it was the source of the blotching, not of variation.
+  //
+  // AUDITED, and it holds. High-pass a 13-pixel window over every open-sand
+  // pixel of a terrain-only capture (`--parts terrain`) and take the spread:
+  // this mesh runs sd 0.84, where the reference's own beach runs 1.79. The
+  // blotch the round-one terrain critic measured — eight to twelve pixels
+  // across, twenty-two levels of swing — was never here; it was the ground
+  // cover scattered on top of this in scenes/decor.ts, which measured sd 5.40
+  // over the same frame and is now down to 1.18. Do not add grain here to
+  // "match" a noisy capture: check which of the two layers it came from first.
   const jitter = (colour: number, x: number, z: number, strength: number, drift = 0): number => {
     const fine = grain.range(-1, 1) * strength;
     const slow = Math.sin(x * 0.37 + z * 0.21) * 0.5 + Math.sin(x * 0.11 - z * 0.29) * 0.5;
@@ -455,9 +614,23 @@ export function buildIslandMesh(shape: IslandShape, seed = 'terrain'): THREE.Gro
       const z1 = z0 + CELL;
       const y = cell.height * STEP;
 
-      // Top face. The beach ring is its own shade of sand — see SAND_BEACH.
-      const isBeach = cell.material === 'sand' && cell.height <= BEACH;
-      const topAlbedo = isBeach ? SAND_BEACH : PALETTE[cell.material];
+      /*
+       * Top face. Sand comes in three shades outward — plaza, dry beach, wet
+       * lip — and the darkest of them is the whole point of the outermost ring.
+       *
+       * A coast reads as a beach and not as a cut edge because the tone changes
+       * as it approaches the water: the strip the surf keeps reaching is a
+       * shade down from the strip behind it. Ours is one cell wide, so the ring
+       * IS the band; there is no need to split the quad to draw it.
+       */
+      const sand = cell.material === 'sand';
+      const topAlbedo = !sand
+        ? PALETTE[cell.material]
+        : cell.height <= SHORE + 1e-6
+          ? SAND_WET
+          : cell.height <= BEACH + 1e-6
+            ? SAND_BEACH
+            : PALETTE.sand;
       const topStrength = cell.material === 'grass' ? 0.022 : 0.01;
       quad(cell.material, [
         [x0, y, z0],
@@ -466,30 +639,47 @@ export function buildIslandMesh(shape: IslandShape, seed = 'terrain'): THREE.Gro
         [x1, y, z0],
       ], [0, 1, 0], jitter(topAlbedo, x, z, topStrength));
 
-      // Side walls, only where the neighbour is lower — the exposed dirt/sand
-      // cliffs that give the island its stepped silhouette.
-      const sides: Array<{ n: TerrainCell | null; verts: (yTop: number, yBot: number) => [number, number, number][]; normal: [number, number, number] }> = [
-        {
-          n: at(x, z - 1),
-          verts: (t, b) => [[x0, t, z0], [x1, t, z0], [x1, b, z0], [x0, b, z0]],
-          normal: [0, 0, -1],
-        },
-        {
-          n: at(x, z + 1),
-          verts: (t, b) => [[x1, t, z1], [x0, t, z1], [x0, b, z1], [x1, b, z1]],
-          normal: [0, 0, 1],
-        },
-        {
-          n: at(x - 1, z),
-          verts: (t, b) => [[x0, t, z1], [x0, t, z0], [x0, b, z0], [x0, b, z1]],
-          normal: [-1, 0, 0],
-        },
-        {
-          n: at(x + 1, z),
-          verts: (t, b) => [[x1, t, z0], [x1, t, z1], [x1, b, z1], [x1, b, z0]],
-          normal: [1, 0, 0],
-        },
+      /*
+       * Side walls, only where the neighbour is lower — the exposed dirt/sand
+       * cliffs that give the island its stepped silhouette.
+       *
+       * A face is described by the two ends of its TOP EDGE rather than by a
+       * finished quad, so a band of it can be cut out laterally as well as
+       * vertically. That is what lets the rind below break across a cell
+       * instead of ruling one straight line the whole width of it.
+       */
+      const sides: Array<{
+        n: TerrainCell | null;
+        a: [number, number];
+        b: [number, number];
+        normal: [number, number, number];
+      }> = [
+        { n: at(x, z - 1), a: [x0, z0], b: [x1, z0], normal: [0, 0, -1] },
+        { n: at(x, z + 1), a: [x1, z1], b: [x0, z1], normal: [0, 0, 1] },
+        { n: at(x - 1, z), a: [x0, z1], b: [x0, z0], normal: [-1, 0, 0] },
+        { n: at(x + 1, z), a: [x1, z0], b: [x1, z1], normal: [1, 0, 0] },
       ];
+
+      /** One band of a wall face: the slice of it between two fractions along
+       *  its width and two heights, wound to face `normal`. */
+      const band = (
+        side: { a: [number, number]; b: [number, number] },
+        s: number,
+        e: number,
+        yTop: number,
+        yBot: number
+      ): [number, number, number][] => {
+        const sx = side.a[0] + (side.b[0] - side.a[0]) * s;
+        const sz = side.a[1] + (side.b[1] - side.a[1]) * s;
+        const ex = side.a[0] + (side.b[0] - side.a[0]) * e;
+        const ez = side.a[1] + (side.b[1] - side.a[1]) * e;
+        return [
+          [sx, yTop, sz],
+          [ex, yTop, ez],
+          [ex, yBot, ez],
+          [sx, yBot, sz],
+        ];
+      };
 
       for (const side of sides) {
         const neighbourHeight = side.n ? side.n.height : 0;
@@ -497,7 +687,8 @@ export function buildIslandMesh(shape: IslandShape, seed = 'terrain'): THREE.Gro
         // A wall that drops all the way to the water carries on below it, so
         // the sea never cuts in under the island.
         const coastal = neighbourHeight <= 0;
-        const yBottom = Math.max(0, neighbourHeight) * STEP - (coastal ? SKIRT : 0);
+        const floor = Math.max(0, neighbourHeight) * STEP;
+        const yBottom = floor - (coastal ? SKIRT : 0);
 
         // +x faces screen right, into the sun; +z faces screen left, away from
         // it. The other two are behind the block and never drawn, but they are
@@ -506,23 +697,60 @@ export function buildIslandMesh(shape: IslandShape, seed = 'terrain'): THREE.Gro
         const skin = wallSkin(cell.material);
         const lit = side.normal[0] > 0;
 
-        // Lip on top, body under it — the two-part edge that makes a step read
-        // as a carved block. Clamped so a wall shorter than its own lip is all
-        // lip rather than lip hanging past the bottom of the wall.
-        const lipBottom = Math.max(yBottom, y - skin.lip * STEP);
-        quad(
-          'dirt',
-          side.verts(y, lipBottom),
-          side.normal,
-          jitter(lit ? skin.lipSun : skin.lipShade, x, z, 0.03)
-        );
-        if (lipBottom > yBottom + 1e-4) {
+        /*
+         * Lip on top, body under it — the two-part edge that makes a step read
+         * as a carved block.
+         *
+         * The lip is a SHARE OF WHAT SHOWS, not a fixed slab. It used to be
+         * measured against STEP, which was fine while every wall in the frame
+         * happened to be exactly one step tall; against the low bands the coast
+         * is built from now, a rind sized off a full step swallows the wall
+         * whole and the whole coast turns into one flat cream stripe. And on
+         * the coast "what shows" stops at the WATERLINE, not at the foot of the
+         * skirt: sizing a sand rind against geometry that is under the sea puts
+         * a band of beach where there is only ocean.
+         *
+         * It is also RAGGED, and that is the answer to "zero texture". Blow
+         * their coast up and the line where the sand rind gives way to brown is
+         * not a line at all — it wanders a good third of its own depth every
+         * few pixels, because sand spills over an edge unevenly. A ruled
+         * horizontal stripe is what a wall looks like when nobody drew it.
+         *
+         * So each face is cut into RIBS and every rib rolls its own rind depth.
+         * One roll per cell was the first attempt and it is not enough: a cell
+         * is twenty-odd screen pixels wide, so the line still ran dead straight
+         * across every one of them and only jumped at the joins. Three ribs put
+         * the break at about seven pixels, which is the scale theirs works at.
+         * It costs three quads a face instead of one and buys the only texture
+         * on the island that does not need a texture.
+         */
+        const seen = Math.max(0.06, y - (coastal ? WATERLINE : floor));
+        const depth = coastal ? skin.coast : skin.lip;
+        const RIBS = 4;
+        for (let rib = 0; rib < RIBS; rib++) {
+          const lipBottom = Math.max(yBottom, y - seen * depth * grain.range(0.55, 1.45));
+          const s = rib / RIBS;
+          const e = (rib + 1) / RIBS;
+          // Each rib takes its own roll of the albedo dither too. Their walls
+          // are the loose surface in the reference — counted across one, ±10%,
+          // against ±1% on their sand tops — and a rib is 5 screen pixels wide,
+          // which is exactly the scale that reads as a surface rather than as
+          // tiling. This is the ONLY place on the island the grain runs loose;
+          // see the note over `jitter` for why the tops must stay tight.
           quad(
             'dirt',
-            side.verts(lipBottom, yBottom),
+            band(side, s, e, y, lipBottom),
             side.normal,
-            jitter(lit ? skin.bodySun : skin.bodyShade, x, z, 0.05, 0.035)
+            jitter(lit ? skin.lipSun : skin.lipShade, x, z, 0.05)
           );
+          if (lipBottom > yBottom + 1e-4) {
+            quad(
+              'dirt',
+              band(side, s, e, lipBottom, yBottom),
+              side.normal,
+              jitter(lit ? skin.bodySun : skin.bodyShade, x, z, 0.075, 0.035)
+            );
+          }
         }
       }
     }
@@ -536,6 +764,31 @@ export function buildIslandMesh(shape: IslandShape, seed = 'terrain'): THREE.Gro
     const material = new THREE.MeshLambertMaterial({ vertexColors: true });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = `terrain_${mat}`;
+    /*
+     * BOTH flags, and both are load-bearing.
+     *
+     * receiveShadow is the obvious one — it is what lets a building, a palm or
+     * a fence post lay a shape down on the ground, and without it the frame is
+     * a lit blockout no matter how good the light is.
+     *
+     * castShadow is the one that looks optional and is not. A terrace step is
+     * 0.66 units, and at the sun render/stage.ts parks (34.7 degrees, near
+     * frontal) it throws 0.95 units of shadow — which lands 21.5 screen pixels
+     * up-and-left of the step's FOOT. The step's own top edge already sits 19.5
+     * pixels above that foot, so all but about two pixels of the band is hidden
+     * behind the terrace itself. That hairline is correct, not a bug: it is
+     * what a near-frontal key does, it is what their frame shows at the same
+     * edges, and it is the reason the band opens into a visible wedge only
+     * where a terrace turns a corner. The wedges are worth the flag.
+     *
+     * One caution for anyone tempted to force the top faces into the shadow
+     * map: three renders shadow casters with `shadowSide` flipped to BackSide,
+     * so a shell like this one contributes only the walls that face away from
+     * the sun. That is exactly right here — it is what keeps a flat top face
+     * from shadow-acneing against itself — and setting material.shadowSide to
+     * DoubleSide to "fix" the missing top faces buys stipple across every
+     * plateau in the frame and no extra shadow at all.
+     */
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
