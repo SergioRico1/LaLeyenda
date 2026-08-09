@@ -1,6 +1,6 @@
 import { generateIsland, isBuildable, worldToCell } from '../../src/render/island';
-import { createDemoIsland, createNewGame, plotHalf, spotRefusal, type GameState } from '../../src/sim';
-import { decorCells, planDecor, reservedMask } from '../../src/scenes/decor';
+import { BALANCE, createDemoIsland, createNewGame, plotHalf, spotRefusal, type GameState } from '../../src/sim';
+import { decorCells, planDecor, planObstacles, reservedMask } from '../../src/scenes/decor';
 import { describe, eq, ok, test } from './harness';
 
 /**
@@ -18,7 +18,12 @@ import { describe, eq, ok, test } from './harness';
 
 const SEED = 'la-leyenda';
 const T0 = Date.UTC(2026, 0, 5, 12, 0, 0);
-const SIZE = 26;
+// The island that SHIPS, not a number typed here. OPENING.md fixed the grid at
+// 44 and islandScene.ts generates its terrain from `island.grid`; this file was
+// still asserting the rule against a 26-cell island nobody renders, so the whole
+// suite was passing on a map with a different coastline, different plateau and a
+// different free set from the one a player boots into.
+const SIZE = BALANCE.island.grid;
 
 // The non-waterfront catalogue: a Muelle is placed at its stored cell rather
 // than snapped onto the plateau, so the plateau test below does not describe it.
@@ -78,6 +83,43 @@ describe('the island dressing never stands on buildable ground', () => {
       ok(checked > 80, `the plan should actually contain props (saw ${checked})`);
     });
   }
+
+  test('the dressing and the wilderness never claim the same cell', () => {
+    // OPENING.md's one warning about obstacles: "Two systems, one visual
+    // language, and they must not fight over the same cells." Mostly the two are
+    // complements — an obstacle stands on buildable ground and a prop may not —
+    // but not entirely: the terrace lip and the building aprons are buildable
+    // ground no FOOTPRINT fits on, so they fall out of the reserved mask and
+    // back into the set decoration draws from. A bush standing in the hole a
+    // player paid a builder to clear is the failure this catches.
+    const shape = generateIsland(SEED, SIZE);
+    const state = createNewGame(SEED, T0, 0);
+    ok(state.obstacles.length > 20, `the island should have a field (saw ${state.obstacles.length})`);
+
+    const wild = new Set(state.obstacles.map((o) => o.z * SIZE + o.x));
+    for (const prop of planDecor(shape, state, SEED)) {
+      const cell = worldToCell(shape, prop.position.x, prop.position.z);
+      ok(
+        !wild.has(cell.z * SIZE + cell.x),
+        `${prop.model} at cell ${cell.x},${cell.z} stands on an obstacle`
+      );
+    }
+
+    // And the wilderness stays on the island it was seeded for: the sim owns no
+    // terrain, so it seeds inside a superellipse that is conservative rather
+    // than exact, and a palm floating over the sea is the way that goes wrong.
+    let drawn = 0;
+    for (const prop of planObstacles(shape, state, SEED)) {
+      const cell = worldToCell(shape, prop.position.x, prop.position.z);
+      ok(
+        cell.x >= 0 && cell.z >= 0 && cell.x < SIZE && cell.z < SIZE
+        && shape.cells[cell.z * SIZE + cell.x].height > 0,
+        `${prop.model} at cell ${cell.x},${cell.z} stands on water`
+      );
+      drawn++;
+    }
+    ok(drawn > state.obstacles.length, `every obstacle should be drawn (saw ${drawn})`);
+  });
 
   test('decor.ts and the sim agree on which cells are reserved', () => {
     const shape = generateIsland(SEED, SIZE);

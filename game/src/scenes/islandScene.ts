@@ -8,7 +8,9 @@ import {
 import { createGhost, type Ghost } from '../render/ghost';
 import { createCameraRig, type CameraRig } from '../render/cameraRig';
 import { buildScatter } from '../render/scatter';
-import { DECOR_MODELS, buildGroundCover, planDecor, planIslets } from './decor';
+import {
+  DECOR_MODELS, OBSTACLE_MODELS, buildGroundCover, planDecor, planIslets, planObstacles,
+} from './decor';
 import { instantiate, preload } from '../render/assets';
 import { Rng } from '../core/rng';
 import { createGame, type Game } from '../core/game';
@@ -38,8 +40,10 @@ import { COPY, refusalText, type RefusalKey } from '../ui/copy';
 
 /** Every model the island can need, so preload() gets one pass. */
 export const ISLAND_MODELS = [
-  ...new Set(Object.values(BALANCE.buildings).map((b) => b.model)),
-  ...DECOR_MODELS, 'ship_skiff', 'chest_bandit',
+  ...new Set([
+    ...Object.values(BALANCE.buildings).map((b) => b.model),
+    ...DECOR_MODELS, ...OBSTACLE_MODELS, 'ship_skiff', 'chest_bandit',
+  ]),
 ];
 
 export interface IslandScene {
@@ -195,6 +199,14 @@ export async function createIslandScene(
   if (parts.has('decor')) {
     const props = [
       ...planDecor(shape, game.state(), seed),
+      // The wilderness. OPENING.md part 3: without it a day-one island is a vast
+      // void with one building in the middle, and the whole point of the fixed
+      // 44-cell map is that the emptiness is EARNED SPACE rather than content
+      // that is missing. It comes from its own planner because the two systems
+      // are opposites — decoration is barred from ground a building could claim
+      // and an obstacle stands squarely on it — and it is drawn by the same
+      // instancer because it is the same kind of static prop.
+      ...planObstacles(shape, game.state(), seed),
       ...planIslets(shape, seed),
     ];
     const scatter = await buildScatter(props);
