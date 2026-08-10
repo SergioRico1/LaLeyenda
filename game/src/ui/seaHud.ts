@@ -1,6 +1,7 @@
 import './seaHud.css';
 import type { ResourceId } from '../sim';
 import { HARBOUR, SHIPS, bearingHome, holdUsed, ringOf, SEA_CELL, type Voyage } from '../sim/sea';
+import { CAPTURE } from './env';
 import { HELM_STEER } from './stick';
 
 /**
@@ -57,6 +58,21 @@ import { HELM_STEER } from './stick';
 const RESOURCE_LABEL: Record<string, string> = {
   oro: 'Oro', madera: 'Madera', metal: 'Metal', ron: 'Ron',
 };
+
+/** The hulls, named for the player. Lives here because this HUD is the screen
+ *  that says them; the sim speaks only ids. */
+const SHIP_LABEL: Record<string, string> = {
+  skiff: 'Esquife', sloop: 'Balandra', galleon: 'Galeón',
+  frigate: 'Fragata', marauder: 'Merodeador',
+};
+
+/** The two lines the sea can shout. Keyed, so the scene never carries copy. */
+const BANNER_TEXT = {
+  'deep-chest': '¡El Cofre de las Profundidades!',
+  frenzy: '¡El kraken se enfurece!',
+} as const;
+
+export type SeaBanner = keyof typeof BANNER_TEXT;
 
 /**
  * The hull fractions the presentation changes at.
@@ -172,6 +188,12 @@ export interface SeaHud {
    * without hiding what they need is the border they are not looking at.
    */
   setHurt(seconds: number): void;
+  /**
+   * One of the sea's two shouted lines — the boss's phase turn and the chest
+   * of the deep. A moment either announces itself or it did not happen; the
+   * scene raises the key and this screen owns the Spanish.
+   */
+  banner(kind: SeaBanner): void;
   /** Shows the end-of-voyage card. Resolves when the player dismisses it. */
   finish(voyage: Voyage, reason: 'home' | 'sunk' | 'left'): Promise<void>;
   dispose(): void;
@@ -240,6 +262,17 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
 
     <div class="sea__alert" data-alert hidden></div>
 
+    <!-- The shipyard's product, named at the dock. Stands while the ship is
+         still in home water and steps aside the moment the voyage is really
+         on, so it teaches the hull without ever costing fighting screen. -->
+    <div class="sea__dock" data-dock>
+      <span class="sea__dockName" data-dockname></span>
+      <span class="sea__dockStats num" data-dockstats></span>
+    </div>
+
+    <!-- The sea's two shouted lines (boss phase, chest of the deep). -->
+    <div class="sea__banner" data-banner hidden></div>
+
     <button class="sea__leave tap" type="button">Volver</button>
 
     <div class="sea__compass" data-compass="port">
@@ -265,17 +298,22 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
 
   const bar = root.querySelector('.sea__bar') as HTMLElement;
   const hullFill = root.querySelector('.sea__hullFill') as HTMLElement;
+  const hullLabel = root.querySelector('.sea__cell--hull .sea__cellLabel') as HTMLElement;
   const hullPct = root.querySelector('[data-hullpct]') as HTMLElement;
   const holdOut = root.querySelector('[data-hold]') as HTMLElement;
   const holdLabel = root.querySelector('[data-holdlabel]') as HTMLElement;
   const ringOut = root.querySelector('[data-ring]') as HTMLElement;
   const alertOut = root.querySelector('[data-alert]') as HTMLElement;
+  const dockName = root.querySelector('[data-dockname]') as HTMLElement;
+  const dockStats = root.querySelector('[data-dockstats]') as HTMLElement;
+  const bannerOut = root.querySelector('[data-banner]') as HTMLElement;
   const compass = root.querySelector('.sea__compass') as HTMLElement;
   const homeOut = root.querySelector('[data-home]') as HTMLElement;
   const arrow = root.querySelector('.sea__arrow') as HTMLElement;
   const hurtVeil = root.querySelector('.sea__hurt') as HTMLElement;
   const leave = root.querySelector('.sea__leave') as HTMLButtonElement;
   leave.addEventListener('click', () => opts.onLeave());
+  let bannerTimer: ReturnType<typeof setTimeout> | null = null;
 
   // `update` runs once per rendered frame. Writing an attribute, a textContent
   // or a custom property invalidates style for that element whether or not the
@@ -352,6 +390,20 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
   return {
     update(voyage) {
       const spec = SHIPS[voyage.shipType];
+      const shipName = SHIP_LABEL[voyage.shipType] ?? 'Casco';
+
+      // --- the ship itself ---------------------------------------------------
+      // The hull cell is captioned with the hull's NAME — a bar under a name is
+      // that thing's health, and the name is how five otherwise similar decks
+      // stay tellable apart. The dock card carries the numbers and stands only
+      // in home water; the moment the voyage is truly on it steps aside.
+      setText(hullLabel, shipName);
+      setText(dockName, shipName);
+      setText(dockStats, `Casco ${spec.hull} · Cañones ${spec.damage} · Bodega ${spec.hold}`);
+      const departed = voyage.departed || voyage.sunk;
+      if (root.classList.contains('is-departed') !== departed) {
+        root.classList.toggle('is-departed', departed);
+      }
 
       // --- hull ------------------------------------------------------------
       const fraction = Math.max(0, voyage.hull / spec.hull);
@@ -379,14 +431,19 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
       setData(bar, 'hull', hullState);
 
       // --- the one line that names the remedy -------------------------------
+      // A dying hull outranks everything; the boarding wait outranks the full
+      // hold, because it is the one state where "stay right here" is the
+      // remedy and the compass, the mobs and every instinct say leave.
       const alert = hullState === 'crit'
         ? 'Casco crítico · vuelve a puerto'
-        : holdFull
-          ? 'Bodega llena · vuelve a puerto'
-          : '';
+        : voyage.boarding
+          ? `Abordando el pecio… ${Math.ceil(voyage.boarding.left)}s`
+          : holdFull
+            ? 'Bodega llena · vuelve a puerto'
+            : '';
       if (alert) {
         setText(alertOut, alert);
-        setData(alertOut, 'kind', hullState === 'crit' ? 'hull' : 'hold');
+        setData(alertOut, 'kind', hullState === 'crit' ? 'hull' : voyage.boarding ? 'board' : 'hold');
         if (alertOut.hidden) alertOut.hidden = false;
       } else if (!alertOut.hidden) {
         alertOut.hidden = true;
@@ -424,6 +481,22 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
     setHurt(seconds) {
       // 0.42s is the scene's full hit; anything longer is the sinking cue.
       hurtVeil.style.opacity = String(Math.min(1, seconds / 0.42));
+    },
+
+    banner(kind) {
+      setText(bannerOut, BANNER_TEXT[kind]);
+      setData(bannerOut, 'kind', kind);
+      bannerOut.hidden = false;
+      // Restart the entrance even if one line lands on another's heels.
+      bannerOut.classList.remove('is-live');
+      void bannerOut.offsetWidth;
+      bannerOut.classList.add('is-live');
+      if (bannerTimer !== null) clearTimeout(bannerTimer);
+      // The moment outlives its timeout in a capture: the harness advances the
+      // SIM synchronously but this timer runs on the wall clock, so the one
+      // frame a critic can inspect had already dropped the line by the time it
+      // was taken. A frozen frame keeps its banner.
+      if (!CAPTURE) bannerTimer = setTimeout(() => { bannerOut.hidden = true; }, 3400);
     },
 
     finish(voyage, reason) {
@@ -466,6 +539,7 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
 
     dispose() {
       if (coachTimer !== null) clearTimeout(coachTimer);
+      if (bannerTimer !== null) clearTimeout(bannerTimer);
       window.removeEventListener(HELM_STEER, onSteer);
       root.remove();
     },

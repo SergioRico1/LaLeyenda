@@ -684,6 +684,235 @@ describe('somebody has played this', () => {
   });
 });
 
+/**
+ * The boss fight — ROADMAP round 10's "no phases, no tell, no reward moment",
+ * closed. Every claim below is the design: damage is telegraphed and dodgeable
+ * on the stick, half health changes the pattern, standing off is answered by
+ * the dive, and the kill pays a guaranteed chest through the same stow() as
+ * everything else.
+ */
+describe('the giant squid has a fight', () => {
+  /**
+   * A voyage that is only the boss: spawner blocked, squid placed by hand —
+   * ON THE STARBOARD BEAM, because a boss dead ahead is a boss the automatic
+   * broadsides can never answer, and half of these cases are about the guns.
+   */
+  function bossVoyage(distance: number, opts: { hp?: number; deepChest?: boolean; ship?: string } = {}) {
+    const v = startVoyage('kraken', opts.ship ?? 'skiff', { deepChest: opts.deepChest });
+    v.mobs.push({
+      id: 1, kind: 'squid', x: 0, y: distance, heading: -Math.PI / 2,
+      hp: opts.hp ?? MOBS.squid.hp, state: 'patrol', cooldown: 0,
+      homeX: 0, homeY: distance, tether: 400, cell: '1:0',
+    });
+    for (let cx = -4; cx <= 4; cx++) for (let cy = -4; cy <= 4; cy++) v.seen.push(`${cx}:${cy}`);
+    return v;
+  }
+
+  const bossDown = (events: SeaEvent[]) =>
+    events.some((e) => e.kind === 'mob-killed' && e.mob === 'squid');
+
+  test('every point of boss damage is telegraphed first', () => {
+    // Dead in the water inside its reach: the worst place to be, on purpose.
+    const { events } = sail(bossVoyage(16), 12, { throttle: 0 });
+    const order: string[] = [];
+    for (const e of events) {
+      if (e.kind === 'squid-tell' || e.kind === 'squid-strike') order.push(e.kind);
+      if (e.kind === 'hit' && e.target === 'ship') order.push('hit');
+    }
+    ok(order.includes('hit'), 'a ship that sits still is eventually hit');
+    eq(order[0], 'squid-tell', 'and nothing lands before a tell has been up');
+    for (let i = 0; i < order.length; i++) {
+      if (order[i] !== 'hit') continue;
+      ok(order.slice(0, i).includes('squid-tell'), `hit #${i} was telegraphed`);
+    }
+    const tell = events.find((e) => e.kind === 'squid-tell');
+    ok(tell?.kind === 'squid-tell' && tell.seconds > 0.6, 'the warning is a real beat, not a frame');
+    eq(tell?.kind === 'squid-tell' && tell.targets.length, 1, 'phase one drops one circle');
+  });
+
+  test('the strike window is a dodge the stick can make', () => {
+    // Same squid, same clock — but this ship has way on and keeps it. The
+    // starting speed is the test's honesty: the dodge the design promises is
+    // "keep moving", not "out-accelerate a strike from a standing start" —
+    // a ship dead in the water is SUPPOSED to be hit, and the case above
+    // proves it is.
+    const v = bossVoyage(20);
+    v.speed = SHIPS.skiff.speed;
+    const { voyage, events } = sail(v, 6, { throttle: 1, turn: 0 });
+    const strikes = events.filter((e) => e.kind === 'squid-strike');
+    ok(strikes.length > 0, 'the squid did try');
+    ok(
+      !events.some((e) => e.kind === 'hit' && e.target === 'ship'),
+      'a hull under way walks out of the circle: the tell is a real dodge window'
+    );
+    eq(voyage.hull, SHIPS.skiff.hull, 'not one point of hull lost');
+  });
+
+  test('at half health the pattern changes, and says so once', () => {
+    // Under way, so the volley has a course to lead.
+    const v = bossVoyage(16, { hp: Math.floor(MOBS.squid.hp * 0.5) - 1 });
+    v.speed = SHIPS.skiff.speed;
+    const { events } = sail(v, 10, { throttle: 1 });
+    eq(events.filter((e) => e.kind === 'squid-phase').length, 1, 'the turn announces itself exactly once');
+    const tell = events.find((e) => e.kind === 'squid-tell');
+    ok(tell?.kind === 'squid-tell' && tell.frenzy, 'the casts are frenzied');
+    ok(tell?.kind === 'squid-tell' && tell.targets.length === 3, 'three circles now, not one');
+    ok(tell?.kind === 'squid-tell' && tell.seconds < 1, 'and the warning beat is shorter');
+    // The volley leads the course, so the circles are a LINE along it: holding
+    // the phase-one dodge — straight ahead — now sails INTO the second and
+    // third circle, and the dodge becomes a turn.
+    if (tell?.kind === 'squid-tell') {
+      const [a, b, c] = tell.targets;
+      const spread = Math.hypot(c.x - a.x, c.y - a.y);
+      ok(spread > 8, `a real line, not a point (${spread.toFixed(1)} units long)`);
+      ok(Math.hypot(b.x - a.x, b.y - a.y) < spread, 'laid out in order along the course');
+    }
+  });
+
+  test('standing off at gun range is answered, not allowed', () => {
+    // Just outside its strike but well inside the guns: the piñata position.
+    // It dives on sight, and while it is under, the broadsides hold — a
+    // battery emptied into a shadow would teach the player their guns are
+    // broken. It closes at a speed every hull outruns, surfaces in its own
+    // pocket, and the rhythm resumes; the standoff bought nothing.
+    const opening = sail(bossVoyage(45), 1, { throttle: 0 });
+    ok(opening.events.some((e) => e.kind === 'squid-dive'), 'the boss refuses the deck-chair fight');
+    ok(opening.voyage.mobs[0].dive === 1, 'and is under the water');
+    ok(!opening.events.some((e) => e.kind === 'fired'), 'with not a broadside spent on it');
+
+    const under = sail(opening.voyage, 0.5, { throttle: 0 });
+    ok(!under.events.some((e) => e.kind === 'fired'), 'still nothing to shoot while it closes');
+
+    const surfaced = sail(under.voyage, 8, { throttle: 0 });
+    ok(surfaced.events.some((e) => e.kind === 'squid-surface'), 'it comes up in the pocket');
+    ok(surfaced.events.some((e) => e.kind === 'squid-tell'), 'and the rhythm resumes');
+    ok(surfaced.events.some((e) => e.kind === 'fired'), 'where the guns finally have their answer too');
+  });
+
+  test('the kill pays the chest of the deep, once, through the hold', () => {
+    // One volley from dead, on a frigate — the chest is sized to be worth a
+    // boss trip, which means it is deliberately more than a skiff's whole
+    // hold; the hulls that can realistically win the fight can also carry it.
+    const first = sail(bossVoyage(14, { hp: 1, ship: 'frigate' }), 8, { throttle: 0 });
+    const chest = first.events.find((e) => e.kind === 'deep-chest');
+    ok(bossDown(first.events), 'the squid went down');
+    ok(chest?.kind === 'deep-chest', 'and the Cofre de las Profundidades came up with it');
+    const paid = chest?.kind === 'deep-chest'
+      ? Object.values(chest.loot).reduce((a, b) => a + (b ?? 0), 0) : 0;
+    ok(paid > 400, `worth the trip (${paid} units of cargo)`);
+    ok(holdUsed(first.voyage) >= paid, 'and it is really in the hold');
+    ok(!first.voyage.deepChest, 'the voyage remembers it has been paid');
+
+    // A second boss on the same voyage pays only its bounty.
+    const again = first.voyage;
+    again.mobs.push({
+      id: 99, kind: 'squid', x: 0, y: 14, heading: -Math.PI / 2, hp: 1,
+      state: 'patrol', cooldown: 0, homeX: 0, homeY: 14, tether: 400, cell: '2:0',
+    });
+    const second = sail(again, 8, { throttle: 0 });
+    ok(second.events.some((e) => e.kind === 'mob-killed' && e.mob === 'squid'), 'second kill lands');
+    ok(!second.events.some((e) => e.kind === 'deep-chest'), 'no second chest');
+  });
+
+  test('a voyage the season already paid gets no chest at all', () => {
+    const { events } = sail(bossVoyage(14, { hp: 1, deepChest: false }), 8, { throttle: 0 });
+    ok(bossDown(events), 'the kill still lands');
+    ok(!events.some((e) => e.kind === 'deep-chest'), 'the chest does not: once per season means once');
+  });
+});
+
+/**
+ * Boarding — the other half of ROADMAP round 10's "a site is taken by sailing
+ * over it, which is the placeholder, not the design". Wrecks only: the party
+ * rows over, the sea keeps happening, and the loot lands as a burst or not at
+ * all. Everything else in the sea still pays on touch.
+ */
+describe('boarding a wreck is a beat, not a touch', () => {
+  /** The nearest wreck in a seeded sea, and a voyage parked on it. */
+  function atWreck(seed: string) {
+    let wreck = null as ReturnType<typeof siteAt>;
+    for (let cx = -8; cx <= 8 && !wreck; cx++) {
+      for (let cy = -8; cy <= 8 && !wreck; cy++) {
+        const s = siteAt(seed, cx, cy);
+        if (s?.kind === 'wreck') wreck = s;
+      }
+    }
+    ok(wreck !== null, `${seed} has a wreck to board`);
+    const v = startVoyage(seed);
+    v.x = wreck!.x;
+    v.y = wreck!.y;
+    for (let cx = -9; cx <= 9; cx++) for (let cy = -9; cy <= 9; cy++) v.seen.push(`${cx}:${cy}`);
+    return { v, wreck: wreck! };
+  }
+
+  test('the party rows over, and the loot lands only when they are back', () => {
+    const { v } = atWreck('la-leyenda');
+    const first = sail(v, 1, { throttle: 0 });
+    ok(first.events.some((e) => e.kind === 'boarding-started'), 'the party goes over the side');
+    ok(!first.events.some((e) => e.kind === 'looted'), 'and nothing has paid yet');
+    ok(first.voyage.boarding !== null, 'the voyage knows they are away');
+    eq(holdUsed(first.voyage), 0, 'the hold is still empty');
+
+    const done = sail(first.voyage, 5, { throttle: 0 });
+    const looted = done.events.find((e) => e.kind === 'looted');
+    ok(looted?.kind === 'looted' && looted.site === 'wreck', 'they come back with the wreck\'s cargo');
+    ok(holdUsed(done.voyage) > 0, 'which is really in the hold');
+    eq(done.voyage.boarding, null, 'and everyone is back aboard');
+  });
+
+  test('sailing off mid-boarding pays nothing, and coming back starts over', () => {
+    const { v, wreck } = atWreck('la-leyenda');
+    const started = sail(v, 1, { throttle: 0 });
+    ok(started.voyage.boarding !== null, 'the party is away');
+
+    // Open the throttle and leave. The wreck pays nothing.
+    const fled = sail(started.voyage, 3, { throttle: 1 });
+    ok(fled.events.some((e) => e.kind === 'boarding-broken'), 'the party rows back empty');
+    ok(!fled.events.some((e) => e.kind === 'looted'), 'no drive-by looting');
+    eq(holdUsed(fled.voyage), 0, 'the hold says so too');
+
+    // Come round again: the clock starts from zero, and serving it pays.
+    const back = { ...fled.voyage, x: wreck.x, y: wreck.y };
+    const second = sail(back, 1, { throttle: 0 });
+    ok(second.events.some((e) => e.kind === 'boarding-started'), 'a fresh party, a fresh clock');
+    const done = sail(second.voyage, 5, { throttle: 0 });
+    ok(done.events.some((e) => e.kind === 'looted'), 'commitment is what pays');
+  });
+
+  test('everything that is not a wreck still pays on touch', () => {
+    const islet = (() => {
+      for (let cx = -8; cx <= 8; cx++) {
+        for (let cy = -8; cy <= 8; cy++) {
+          const s = siteAt('la-leyenda', cx, cy);
+          if (s && (s.kind === 'islet' || s.kind === 'harvest')) return s;
+        }
+      }
+      return null;
+    })();
+    ok(islet !== null, 'the sea has something instant to take');
+    const v = startVoyage('la-leyenda');
+    v.x = islet!.x;
+    v.y = islet!.y;
+    for (let cx = -9; cx <= 9; cx++) for (let cy = -9; cy <= 9; cy++) v.seen.push(`${cx}:${cy}`);
+    const { events } = sail(v, 0.5, { throttle: 0 });
+    ok(events.some((e) => e.kind === 'looted'), 'picked clean from the deck, no party, no wait');
+  });
+
+  test('the wait has teeth: the sea keeps biting while the party is away', () => {
+    const { v } = atWreck('la-leyenda');
+    v.mobs.push({
+      id: 77, kind: 'kelpling', x: v.x + 5, y: v.y, heading: Math.PI, hp: 999,
+      state: 'attack', cooldown: 0, homeX: v.x + 5, homeY: v.y, tether: 0, cell: '9:9',
+    });
+    const { events } = sail(v, 5, { throttle: 0 });
+    ok(events.some((e) => e.kind === 'looted'), 'the boarding still completes');
+    ok(
+      events.some((e) => e.kind === 'hit' && e.target === 'ship' && e.by === 'mob'),
+      'but the hull paid for the wait — boarding under fire is a choice'
+    );
+  });
+});
+
 describe('a swarm is a swarm, not a pile', () => {
   test('an attacking mob holds its distance instead of parking in the hull', () => {
     const v = startVoyage('spacing');

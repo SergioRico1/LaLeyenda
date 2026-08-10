@@ -2,10 +2,12 @@
  * leaderboard.css — la Clasificación: fifty captains in one dark well.
  *
  * The chrome references: Clash's league panel (reference/clash/coc_league.jpg)
- * for the cream-frame / charcoal-well split and the medal weight, Kingshot for
- * the row density — a ranking is a LIST, and a list earns exactly one framed
- * object: the player's own row, which appears twice (in place, and pinned
- * under the scroll) and is the only gold thing here.
+ * for the cream-frame / charcoal-well split and the MATERIAL ladder — its
+ * badges climb bronze → silver → gold, ours climb madera → bronce → plata →
+ * oro as league shields drawn in leaderboard.ts. Kingshot holds the row
+ * density: a ranking is a LIST. The player's own row appears twice (in place,
+ * and pinned under the scroll) and is the only gold BAND here — the shields
+ * are heraldry, the band is you.
  * ========================================================================== */
 
 .board {
@@ -67,29 +69,56 @@
   text-shadow: 0 2px 0 rgba(255, 255, 255, 0.6);
 }
 
-/* Season and countdown on one line: signage, not a paragraph. */
-.board__season {
+/* The season PLATE: a raised charcoal capsule under the title — a small §0.2
+   object (ink, hard step, warm rim, lip) — not a line of body text. */
+.board__plate {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  margin: 4px 0 0;
-  color: #6E645C;
-  -webkit-text-stroke-width: 0;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+  width: fit-content;
+  margin: 6px auto 1px;
+  padding: 3px 15px 5px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  border-radius: 999px;
+  background: linear-gradient(180deg,
+    #57524C 0%, #47433F 46%,
+    #38342F 46.01%, #38342F 86%,
+    #232019 86.01%, #232019 100%);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 250, 0.3),
+    0 3px 0 rgba(0, 0, 0, 0.24),
+    0 1px 0 rgba(255, 255, 255, 0.45);
 }
-.board__season:empty { display: none; }
-.board__season-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 2px;
-  background: #A39B8E;
-}
-.board__season-clock {
-  font-size: 14px;
-  color: #4A4238;
+.board__plate:empty { display: none; }
+.board__plate-season {
+  font-size: 13px;
+  white-space: nowrap;
+  color: #F1EADB;
   -webkit-text-stroke-width: 0;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
+}
+.board__plate-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 3px 1px;
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: -1px 0 0 rgba(0, 0, 0, 0.4);
+}
+.board__plate-dial { width: 15px; height: 15px; }
+.board__plate-ends {
+  font-size: 12px;
+  white-space: nowrap;
+  color: #B5ACA0;
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
+}
+.board__plate-clock {
+  font-size: 14.5px;
+  white-space: nowrap;
+  color: var(--ui-gold-text);
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.55);
 }
 
 /* --- the scrolling body --------------------------------------------------- */
@@ -117,50 +146,56 @@
 }
 
 /* --- a row ----------------------------------------------------------------
- * Rank, name, score. Hairlines divide; nothing floats. Kingshot's density:
- * the whole row is 40px, and fifty of them still scroll like one object. */
+ * League shield with the rank, name, trophy + score. Hairlines divide;
+ * nothing floats. Kingshot's density, plus heraldry: fifty rows still scroll
+ * like one object. */
 .board__row {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 7px 2px;
+  padding: 5px 2px;
 }
 .board__row + .board__row { border-top: 1px solid rgba(255, 255, 255, 0.10); }
 
-/* The rank plate: a small §0.2 object — ink contour, one hard step, lip. */
+/* §0.2 layer 1 for everything leaderboard.ts draws: constant-weight ink. */
+.board__ink {
+  stroke: var(--ui-ink);
+  stroke-width: 2px;
+  paint-order: stroke;
+  stroke-linejoin: round;
+}
+
+/* The rank rides its league's shield — the material IS the information. */
 .board__rank {
+  position: relative;
   flex: 0 0 auto;
-  width: 34px;
-  padding: 2px 0 3px;
-  text-align: center;
-  font-size: 15px;
-  border: var(--ui-ink-w-sm) solid var(--ui-ink);
-  border-radius: var(--ui-r-badge);
-  background: linear-gradient(180deg,
-    #6A6660 0%, #57534E 55%,
-    #45423D 55.01%, #45423D 88%,
-    #2E2C29 88.01%, #2E2C29 100%);
-  box-shadow: inset 0 1.5px 0 rgba(255, 255, 250, 0.34), 0 2px 0 rgba(0, 0, 0, 0.3);
+  width: 29px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+}
+.board__shield {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.3));
+}
+.board__rank-num {
+  position: relative;
+  padding-bottom: 5px;
+  font-size: 13.5px;
+  letter-spacing: -0.02em;
   -webkit-text-stroke-width: 1.7px;
 }
-/* The podium — Clash's medal hues, at plate size. */
-.board__rank--m1 {
-  background: linear-gradient(180deg,
-    #FFE083 0%, var(--ui-gold-a) 55%,
-    var(--ui-gold-b) 55.01%, var(--ui-gold-b) 88%,
-    var(--ui-gold-lip) 88.01%, var(--ui-gold-lip) 100%);
-}
-.board__rank--m2 {
-  background: linear-gradient(180deg,
-    #F2F4F6 0%, #C9CDD3 55%,
-    #9AA1AB 55.01%, #9AA1AB 88%,
-    #6E7681 88.01%, #6E7681 100%);
-}
-.board__rank--m3 {
-  background: linear-gradient(180deg,
-    #E8A96A 0%, var(--ui-res-wood) 55%,
-    #9E5F1D 55.01%, #9E5F1D 88%,
-    #6E4213 88.01%, #6E4213 100%);
+/* Rank 1's crown, breaking the shield's top edge (§6.8: icons overhang). */
+.board__crown {
+  position: absolute;
+  top: -7px;
+  left: 50%;
+  width: 19px;
+  translate: -50%;
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.3));
 }
 
 .board__name {
@@ -174,24 +209,69 @@
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
 }
 
-.board__score {
+/* Trophy + count, one unit — the score reads as trophies won, not a float. */
+.board__pts {
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.board__trophy {
+  width: 15px;
+  height: 15.4px;
+  filter: drop-shadow(0 1.5px 0 rgba(0, 0, 0, 0.3));
+}
+.board__score {
   font-size: 17px;
   white-space: nowrap;   /* format.ts's thin-space separator breaks lines */
 }
 
-/* --- the player's row — the ONE gold object in the well ------------------- */
+/* --- the league caption — where the material changes ---------------------- */
+.board__league {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 2px 3px;
+}
+.board__league .board__shield {
+  position: static;
+  width: 14px;
+  height: 16.3px;
+  filter: none;
+}
+.board__league-name {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: #C9C2B4;
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
+}
+/* Hairlines flank the caption, tying it into the well's list grammar. */
+.board__league::before,
+.board__league::after {
+  content: '';
+  flex: 1 1 0;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+}
+/* A caption provides the separation; the row under it needs no hairline. */
+.board__league + .board__row { border-top: none; }
+
+/* --- the player's row — the ONE gold band in the well --------------------- */
 .board__row--you {
-  margin: 2px -9px;
-  padding: 7px 11px;
+  margin: 3px -9px;
+  padding: 6px 11px;
   border-top: none !important;
   border-block: var(--ui-ink-w-sm) solid var(--ui-ink);
   background: linear-gradient(180deg,
-    var(--board-you-a) 0%, var(--board-you-b) 55%,
-    #D9A32C 55.01%, #D9A32C 100%);
+    #FBE292 0%, var(--board-you-a) 46%,
+    var(--board-you-b) 46.01%, var(--board-you-b) 86%,
+    #C08A1C 86.01%, #C08A1C 100%);
   box-shadow:
-    inset 0 2px 0 rgba(255, 255, 250, 0.6),
-    inset 0 -2px 0 rgba(0, 0, 0, 0.14);
+    inset 0 2px 0 rgba(255, 255, 250, 0.65),
+    0 4px 0 rgba(0, 0, 0, 0.3);
 }
 /* A gold band needs no second hairline under it. */
 .board__row--you + .board__row { border-top: none; }
@@ -218,21 +298,32 @@
 
 /* --- the pinned strip -----------------------------------------------------
  * The player's row again, OUTSIDE the scroll, so rank 40 is readable without
- * hunting. It sits on the cream between body and frame, cast like a bar that
- * is physically over the list it summarises. */
+ * hunting — and VISIBLY HEAVIER than any row in the well: full ink weight,
+ * a taller band, a bigger shield, and the deepest extrusion on the sheet.
+ * This is the object the whole panel exists to move up the board. */
 .board__me {
   flex: 0 0 auto;
-  margin: 0 12px 12px;
-  border-radius: 11px;
-  overflow: hidden;
-  border: var(--ui-ink-w-sm) solid var(--ui-ink);
-  box-shadow: var(--ui-drop-sm), var(--ui-cast);
+  margin: 2px 12px 14px;
+  border-radius: 12px;
+  overflow: visible;         /* the crown may break the strip's top edge */
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.34), var(--ui-cast);
 }
 .board__me[hidden] { display: none !important; }
 .board__me .board__row--you {
   margin: 0;
+  padding: 8px 12px;
   border-block: none;
+  border-radius: 9px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 250, 0.65),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.18);
 }
+.board__me .board__rank { width: 34px; height: 40px; }
+.board__me .board__rank-num { font-size: 15px; padding-bottom: 6px; }
+.board__me .board__name { font-size: 17px; }
+.board__me .board__score { font-size: 18px; }
+.board__me .board__trophy { width: 17px; height: 17.5px; }
 
 .board__hint {
   margin: 9px 4px 6px;
@@ -293,10 +384,14 @@
 /* --- iPhone SE and below -------------------------------------------------- */
 @media (max-width: 379px) {
   .board__body { padding: 8px 9px 4px; }
-  .board__me { margin: 0 9px 10px; }
+  .board__me { margin: 2px 9px 12px; }
   .board__name { font-size: 15px; }
   .board__score { font-size: 16px; }
-  .board__rank { width: 31px; }
+  .board__rank { width: 27px; height: 31.5px; }
+  .board__rank-num { font-size: 12.5px; }
+  .board__trophy { width: 14px; height: 14.4px; }
+  /* The dial carries "termina en" by itself on a narrow plate. */
+  .board__plate-ends { display: none; }
 }
 
 /* --- landscape ------------------------------------------------------------ */

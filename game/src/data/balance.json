@@ -846,7 +846,7 @@
       "model": "bldg_shipwright",
       "footprint": 5,
       "unlockAtTownHall": 3,
-      "$decision": "the whole ladder — PLAN Fase 4 owns ship classes; these levels exist here so ron and metal have a sink and the invariant is tested against real costs",
+      "$decision": "the whole ladder — PLAN Fase 4's five classes, Skiff → Sloop → Galleon → Frigate → Marauder. Each level IS the purchase of its `ship` (sim/shipyard.ts reads ownership straight off the building's level, so there is no second ledger to drift), the costs are the long-arc gold sink RETENTION.md's days/weeks clock asks for — 20k → 90k → 220k → 450k oro, each rung at least double the last — and ron and metal ride along so both late resources keep a reason to exist. The invariant test walks these against reachable storage at the hall level that opens each rung.",
       "countByTownHall": [
         0,
         0,
@@ -864,8 +864,8 @@
         2,
         3,
         4,
-        4,
-        4
+        5,
+        5
       ],
       "levels": [
         {
@@ -901,6 +901,15 @@
           },
           "time": "2d",
           "ship": "frigate"
+        },
+        {
+          "cost": {
+            "oro": 450000,
+            "ron": 40000,
+            "metal": 2600
+          },
+          "time": "3d",
+          "ship": "marauder"
         }
       ]
     }
@@ -1463,6 +1472,22 @@
         "second — so breaking off, running for quieter water and coming back out is a real",
         "play, and drowning means the player chose to stay."
       ],
+      "$ladder": [
+        "PLAN.md Fase 4's five classes, priced by the Astillero's own level rows (the",
+        "purchase is the upgrade; sim/shipyard.ts reads ownership off the building). The",
+        "shape of the ladder is one trade repeated: every rung buys HULL, GUNS and HOLD",
+        "and pays for them in HANDLING — turn, accel and turnDrag all get worse, so a",
+        "marauder is a fortress that answers the helm like a loaded barge. Top speed",
+        "creeps up (nothing in the sea makes more than 14, so escape stays a straight",
+        "line for every hull), but the dodge — the squid's strike window, a reef seen",
+        "late — keeps getting harder to make. The suite asserts the monotonics.",
+        "",
+        "The balance fleets (tools/voyages.mjs) sail the SKIFF, so the asserted survival",
+        "table is the day-one experience and does not move with this ladder; the deeper",
+        "hulls are measured by tools/tests/shipyard.test.ts against the mob table: a",
+        "frigate two-shots the hammerdead a skiff needs four broadsides for, and it is",
+        "the first hull whose guns pay the squid's 340 in under ten volleys."
+      ],
       "calm": 6,
       "skiff": {
         "hull": 150,
@@ -1477,6 +1502,62 @@
         "radius": 2.4,
         "hold": 900,
         "repair": 2.2
+      },
+      "sloop": {
+        "hull": 210,
+        "speed": 18,
+        "turn": 1.45,
+        "accel": 8.2,
+        "turnDrag": 0.33,
+        "damage": 22,
+        "reload": 1.65,
+        "arc": 0.72,
+        "range": 57,
+        "radius": 2.8,
+        "hold": 1400,
+        "repair": 2.7
+      },
+      "galleon": {
+        "hull": 300,
+        "speed": 19,
+        "turn": 1.3,
+        "accel": 7.4,
+        "turnDrag": 0.37,
+        "damage": 30,
+        "reload": 1.6,
+        "arc": 0.74,
+        "range": 61,
+        "radius": 3.4,
+        "hold": 2200,
+        "repair": 3.3
+      },
+      "frigate": {
+        "hull": 420,
+        "speed": 20,
+        "turn": 1.18,
+        "accel": 6.6,
+        "turnDrag": 0.41,
+        "damage": 40,
+        "reload": 1.55,
+        "arc": 0.76,
+        "range": 65,
+        "radius": 4,
+        "hold": 3400,
+        "repair": 4
+      },
+      "marauder": {
+        "hull": 560,
+        "speed": 21,
+        "turn": 1.08,
+        "accel": 6,
+        "turnDrag": 0.45,
+        "damage": 52,
+        "reload": 1.5,
+        "arc": 0.78,
+        "range": 70,
+        "radius": 4.6,
+        "hold": 5200,
+        "repair": 4.8
       }
     },
     "grounding": {
@@ -1530,9 +1611,56 @@
         "hp": 66, "speed": 12.5, "turn": 2.8, "damage": 13, "cadence": 1.6, "reach": 8, "sight": 50, "radius": 3
       },
       "squid": {
-        "$doc": "The first boss. Guards a lair and does not leave it.",
+        "$doc": "The first boss. Guards a lair and does not leave it. Its bite row feeds the generic mob machinery nothing any more — the whole fight runs on `sea.boss` below — but speed/turn/sight/radius/hp are still read from here like any creature's.",
         "hp": 340, "speed": 7, "turn": 1.2, "damage": 18, "cadence": 2.6, "reach": 12, "sight": 60, "radius": 7
       }
+    },
+    "boss": {
+      "$doc": [
+        "The Giant Squid's fight — ROADMAP round 10's 'no phases, no tell, no reward",
+        "moment', answered with numbers a test can hold. The design is a rhythm with",
+        "three beats, each of them dodgeable ON THE STICK:",
+        "",
+        "TELL. The squid never bites on contact. It casts: tentacles rise over a circle",
+        "of water (`strikeRadius`) marked `tell` seconds before they fall, and only a",
+        "ship still inside the circle when they land takes `strikeDamage`. The window is",
+        "sized against the hulls: a skiff under way crosses 19 units in 1.15s and walks",
+        "out of a 6.5 circle easily; a ship DEAD IN THE WATER accelerates through about",
+        "6 — just short. Sitting still is what gets you hit, which is the lesson.",
+        "",
+        "PHASES. Under `frenzyAt` of its health the pattern changes: `volley` circles in",
+        "a line along your own course (`volleyLead` seconds of lead apiece), cast faster",
+        "(`tellFrenzy`) and more often (`cadenceFrenzy`). Holding your line now lands you",
+        "in the second or third circle — phase two is dodged by TURNING, which the big",
+        "hulls do worst, so the fight scales with the ladder instead of dying under it.",
+        "",
+        "DIVE. A boss with a 30-unit strike against 54-unit guns is shelled from a deck",
+        "chair, so standing off is answered: beyond `strikeRange` it submerges — shots",
+        "pass over it — and closes at `diveSpeed` times its swim, surfacing `surfacePause`",
+        "before it can cast. Running leaves it behind (every hull outruns 14.7); parking",
+        "at gun range does not.",
+        "",
+        "REWARD. The first squid killed on a voyage that is still owed one yields the",
+        "Cofre de las Profundidades, guaranteed, through the same stow() every site and",
+        "bounty pays, scaled by the lair's ring at `deepChestPerRing`. Once per season:",
+        "the claim is remembered outside the sim and handed back in as a flag on",
+        "startVoyage, because the sim keeps no calendar."
+      ],
+      "tell": 1.15,
+      "tellFrenzy": 0.85,
+      "strikeRadius": 6.5,
+      "strikeRange": 30,
+      "strikeDamage": 26,
+      "frenzyDamage": 20,
+      "frenzyAt": 0.5,
+      "volley": 3,
+      "volleyLead": 0.55,
+      "cadence": 3.2,
+      "cadenceFrenzy": 2.2,
+      "diveSpeed": 2.1,
+      "surfacePause": 0.55,
+      "deepChest": { "oro": 650, "metal": 320, "ron": 260 },
+      "deepChestPerRing": 0.5
     },
     "patrols": {
       "$doc": [
@@ -1599,6 +1727,27 @@
       "kelpling": { "oro": 30 },
       "hammerdead": { "oro": 55 },
       "squid": { "oro": 500, "metal": 250 }
+    },
+    "boarding": {
+      "$doc": [
+        "ROADMAP round 10: 'a site is taken by sailing over it, which is the placeholder,",
+        "not the design.' Wrecks are now a BEAT: come inside loot reach and a boarding",
+        "party rows over — `seconds` of it — and the cargo comes back as a burst only if",
+        "the ship is still on station when they return. Drift more than `slack` units",
+        "past the loot reach and the party rows back empty; returning starts the clock",
+        "from zero, so boarding is a commitment rather than a drive-by.",
+        "",
+        "The tension knob is what the sim already does: mobs keep closing the whole",
+        "time, the guns keep firing on their own, and nothing stops the hull taking",
+        "bites — so boarding under fire is a choice with a price on it. Wrecks only:",
+        "an islet or a grove is picked clean from the deck, but a wreck has an inside.",
+        "",
+        "4.5 seconds is ~2.6 bites from a kelpling standing on the site, against wreck",
+        "loot that is the gold-richest in the sea — checked by the fleet table, which",
+        "held its survival curve with this on."
+      ],
+      "seconds": 4.5,
+      "slack": 8
     },
     "loot": {
       "$doc": [

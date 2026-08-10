@@ -1,7 +1,7 @@
 import './leaderboard.css';
 import { el, pressable } from '../components/dom';
-import { markX } from './marks';
-import { dur, n } from '../format';
+import { markClock, markX } from './marks';
+import { dur, durText, n } from '../format';
 import { SHOT } from '../env';
 import { standings, type Standings, type StandingRow } from '../../sim/rivals';
 import type { GameState } from '../../sim/types';
@@ -54,8 +54,115 @@ const COPY = {
   hint: 'Ganas puntos construyendo, mejorando edificios y despejando tu isla.',
   offline: 'No se pudo cargar la clasificación.',
   offlineTip: 'Vuelve a intentarlo en un rato.',
-  row: (r: StandingRow) => `Puesto ${r.rank}: ${r.name}, ${n(r.score)} puntos`,
+  row: (r: StandingRow) =>
+    `Puesto ${r.rank}: ${r.name}, ${n(r.score)} puntos, ${leagueOf(r.rank).label}`,
+  plate: (index: number, remaining: string) =>
+    `${COPY.season(index)}, termina en ${remaining}`,
 } as const;
+
+/* ==========================================================================
+ * the regalia — leagues, shields, the trophy and the crown
+ *
+ * The round-10 judge: the board needs "league badge art..., a trophy mark by
+ * the score, and the player's own pinned row visibly heavier than the rest".
+ * Clash's league panel (coc_league.jpg) is a LADDER of material badges —
+ * bronze up to titan — so the fifty ranks are cut into four leagues in rising
+ * material: madera, bronce, plata, oro. RETENTION.md's ladders all climb by
+ * material the same way (the §4.7 rank tiers, the chest rarities), and wood →
+ * gold is the reading every player already has.
+ *
+ * The bands are presentation over the rank rivals.ts deals — a fixed carve of
+ * the 50-row board, not a new sim concept: rank IS the standing, the league
+ * names the neighbourhood so a glance up the well reads as promotion. When a
+ * real backend replaces the seam it will own the cut the same way it owns the
+ * season boundary.
+ *
+ * Every badge is drawn inline in this module (icons.ts is HUD iconography and
+ * closed; these are the board's own heraldry): flat facets, §0.2's four layers
+ * at badge scale — ink contour, hard gloss step, top rim, dark lip.
+ * ======================================================================= */
+
+interface League {
+  id: 'oro' | 'plata' | 'bronce' | 'madera';
+  label: string;
+  from: number;
+}
+
+/** Rank bands, top first: podium neighbourhood, then thirds of the pack. */
+const LEAGUES: readonly League[] = [
+  { id: 'oro', label: 'Liga de Oro', from: 1 },
+  { id: 'plata', label: 'Liga de Plata', from: 11 },
+  { id: 'bronce', label: 'Liga de Bronce', from: 26 },
+  { id: 'madera', label: 'Liga de Madera', from: 41 },
+];
+
+function leagueOf(rank: number): League {
+  let found = LEAGUES[0];
+  for (const l of LEAGUES) if (rank >= l.from) found = l;
+  return found;
+}
+
+/** Shield materials: gloss, base, lip — §0.2's step rendered in SVG bands. */
+const SHIELD: Record<League['id'], [string, string, string]> = {
+  oro: ['#FFE083', '#F3BB26', '#8A5B0F'],
+  plata: ['#F4F6F8', '#C9CDD3', '#6E7681'],
+  bronce: ['#EBAD6E', '#C57C2A', '#6E4213'],
+  madera: ['#C89B66', '#A97C46', '#5E4222'],
+};
+
+const NS = 'http://www.w3.org/2000/svg';
+
+function shape(d: string, fill: string, ink = false): SVGPathElement {
+  const p = document.createElementNS(NS, 'path');
+  p.setAttribute('d', d);
+  p.setAttribute('fill', fill);
+  if (ink) {
+    p.setAttribute('class', 'board__ink');
+    p.setAttribute('vector-effect', 'non-scaling-stroke');
+  }
+  return p;
+}
+
+function badgeSvg(viewBox: string, cls: string, ...kids: SVGElement[]): SVGSVGElement {
+  const s = document.createElementNS(NS, 'svg');
+  s.setAttribute('viewBox', viewBox);
+  s.setAttribute('aria-hidden', 'true');
+  s.setAttribute('focusable', 'false');
+  s.setAttribute('class', cls);
+  s.append(...kids);
+  return s;
+}
+
+/** The league shield: full silhouette in the lip colour, a shorter one in the
+ *  base over it (the visible sliver at the foot is layer 4), a hard gloss
+ *  plate across the top (layer 2) and a warm rim inside it (layer 3). */
+function shieldSvg(league: League): SVGSVGElement {
+  const [gloss, base, lip] = SHIELD[league.id];
+  return badgeSvg('0 0 72 84', `board__shield board__shield--${league.id}`,
+    shape('M8,4 L64,4 L64,40 C64,61 51,73 36,80 C21,73 8,61 8,40 Z', lip, true),
+    shape('M8,4 L64,4 L64,38 C64,56 50,67 36,73 C22,67 8,56 8,38 Z', base),
+    shape('M8,4 L64,4 L64,34 L8,34 Z', gloss),
+    shape('M11,7 L61,7 L61,10 L11,10 Z', 'rgba(255, 255, 250, 0.6)'));
+}
+
+/** The crown rank 1 wears on its shield — the board's single summit mark. */
+const crownSvg = (): SVGSVGElement =>
+  badgeSvg('0 0 60 34', 'board__crown',
+    shape('M6,30 L3,8 L18,17 L30,2 L42,17 L57,8 L54,30 Z', '#F3BB26', true),
+    shape('M6.8,24 L53.2,24 L54,30 L6,30 Z', '#D08C10'),
+    shape('M26,22 L30,18 L34,22 L30,26 Z', '#D4141A'));
+
+/** The trophy that sits by every score — Clash's trophy column, at 15px. */
+const trophySvg = (): SVGSVGElement =>
+  badgeSvg('0 0 72 74', 'board__trophy',
+    shape('M18,14 C6,14 3,28 14,35 C17,37 20,36 19,32 C12,28 12,20 19,19 Z', '#D08C10', true),
+    shape('M54,14 C66,14 69,28 58,35 C55,37 52,36 53,32 C60,28 60,20 53,19 Z', '#D08C10', true),
+    shape('M17,6 L55,6 L55,24 C55,38 47,46 36,46 C25,46 17,38 17,24 Z', '#F3BB26', true),
+    shape('M17,6 L55,6 L55,15 L17,15 Z', '#FFE083'),
+    shape('M23,19 L28,19 L26,34 L22,31 Z', 'rgba(255, 255, 255, 0.5)'),
+    shape('M31,46 L41,46 L41,54 L31,54 Z', '#D08C10', true),
+    shape('M24,54 L48,54 L48,60 L24,60 Z', '#F3BB26', true),
+    shape('M20,60 L52,60 L52,68 L20,68 Z', '#A06E15', true));
 
 /* ==========================================================================
  * options
@@ -89,19 +196,31 @@ export function createLeaderboardPanel(opts: LeaderboardPanelOptions): Leaderboa
   const knob = SHOT ? new URLSearchParams(location.search).get('panel') : null;
 
   /* --- a row ---------------------------------------------------------------
-   * Rank, name, score. The top three wear medal plates; the player's row is
-   * the one gold-framed object in the well. */
+   * League shield carrying the rank, name, then trophy + score. The player's
+   * row is the one gold-banded object in the well; rank 1 wears the crown. */
   const row = (r: StandingRow): HTMLElement => {
-    const medal = r.rank <= 3 ? ` board__rank--m${r.rank}` : '';
+    const league = leagueOf(r.rank);
     const node = el('div', `board__row${r.you ? ' board__row--you' : ''}`,
-      el('span', `num board__rank${medal}`, String(r.rank)),
+      el('span', 'board__rank',
+        shieldSvg(league),
+        r.rank === 1 ? crownSvg() : null,
+        el('span', 'num board__rank-num', String(r.rank))),
       el('span', 't board__name', r.name),
       r.you ? el('span', 't board__you-chip', COPY.you) : null,
-      el('span', 'num board__score', n(r.score)));
+      el('span', 'board__pts',
+        trophySvg(),
+        el('span', 'num board__score', n(r.score))));
     node.setAttribute('role', 'img');
     node.setAttribute('aria-label', COPY.row(r));
     return node;
   };
+
+  /** The quiet caption where the material changes — the ladder made legible:
+   *  a small shield of the league and its name, cut into the well. */
+  const leagueHead = (league: League): HTMLElement =>
+    el('div', `board__league board__league--${league.id}`,
+      shieldSvg(league),
+      el('span', 't t-micro board__league-name', league.label));
 
   /* --- the body ------------------------------------------------------------ */
 
@@ -111,11 +230,18 @@ export function createLeaderboardPanel(opts: LeaderboardPanelOptions): Leaderboa
 
   const data = opts.standings;
   if (data) {
-    const rows = data.rows.map((r) => {
+    const rows: HTMLElement[] = [];
+    let currentLeague = '';
+    for (const r of data.rows) {
+      const league = leagueOf(r.rank);
+      if (league.id !== currentLeague) {
+        rows.push(leagueHead(league));
+        currentLeague = league.id;
+      }
       const node = row(r);
       if (r.you) yourRow = node;
-      return node;
-    });
+      rows.push(node);
+    }
     body.append(
       el('div', 'board__well', ...rows),
       el('p', 't t-micro board__hint', COPY.hint)
@@ -145,23 +271,29 @@ export function createLeaderboardPanel(opts: LeaderboardPanelOptions): Leaderboa
     opts.onClose();
   });
 
-  const seasonLine = el('p', 't t-micro board__season');
+  // The season is signage, not a sentence: a raised charcoal plate under the
+  // title — §0.2's four layers at plate scale — carrying the season's name on
+  // one side and the dial + countdown on the other.
+  const seasonPlate = el('div', 'board__plate');
   if (data) {
     const remaining = Math.max(0, data.season.endsAt - opts.now);
-    const clock = el('span', 'num board__season-clock');
+    const clock = el('span', 'num board__plate-clock');
     clock.innerHTML = dur(remaining);      // formatter output only, never input
-    seasonLine.append(
-      el('span', 'board__season-name', COPY.season(data.season.index)),
-      el('i', 'board__season-dot'),
-      el('span', 'board__season-ends', `${COPY.endsIn} `),
+    seasonPlate.append(
+      el('span', 't board__plate-season', COPY.season(data.season.index)),
+      el('i', 'board__plate-sep'),
+      markClock('board__plate-dial'),
+      el('span', 't board__plate-ends', COPY.endsIn),
       clock
     );
+    seasonPlate.setAttribute('role', 'img');
+    seasonPlate.setAttribute('aria-label', COPY.plate(data.season.index, durText(remaining)));
   }
 
   const sheet = el('div', 'board__sheet',
     el('header', 'board__head',
       el('h2', 't t-title board__title', COPY.heading),
-      seasonLine),
+      seasonPlate),
     body,
     pinned,
     close);

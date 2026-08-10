@@ -7,10 +7,14 @@
  * chrome budget. Every raised object below carries §0.2's four layers: ink
  * contour, HARD gloss step, warm top rim, dark lip + zero-x extrusion.
  *
+ * The goods are the reference's real trick: each tier is its own rendered
+ * PROP over a radial burst (store.ts draws them), so the escalation puñado →
+ * bolsa → cofre → arcón is read from the art before any number.
+ *
  * Deliberately absent, because their absence is a design requirement (no dark
- * patterns): no ribbon, no badge, no timer, no tier drawn louder than its
- * neighbours. Four identical objects that differ only in what they honestly
- * contain.
+ * patterns): no ribbon, no countdown, no fake discount, no tier drawn louder
+ * than its neighbours. Four equal cards whose CONTENTS escalate; the one chip
+ * ("Popular", on the bolsa) states a fact quietly and is the ceiling.
  * ========================================================================== */
 
 .store {
@@ -200,25 +204,84 @@
    photographed. Counts never wrap. */
 .store__card-num { font-size: 21px; white-space: nowrap; }
 
-/* The goods: the same baked voxel gem, piled 2–5 stones so the four tiers are
-   legible before a single number is read — Clash's own trick. */
-.store__card-pile {
+/* The goods: this tier's own prop (store.ts draws it) standing on a common
+   ground line, a radial burst glowing behind it — the reference's card center,
+   where ours used to be a gradient void. */
+.store__card-art {
+  position: relative;
   flex: 1 0 auto;
+  align-self: stretch;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
-  padding: 2px 0 4px;
+  min-height: 86px;
+  padding: 4px 0 7px;
 }
-.store__card-stone {
-  width: 30px;
-  height: 30px;
-  filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.3));
+
+/* The burst: soft radial core + faint spokes, masked so it dies before the
+   card edge. Light, not chrome — it has no contour and casts nothing. */
+.store__card-burst {
+  position: absolute;
+  left: 50%;
+  top: var(--burst-y, 52%);
+  width: var(--burst, 96px);
+  height: var(--burst, 96px);
+  translate: -50% -50%;
+  background:
+    repeating-conic-gradient(from 8deg,
+      rgba(255, 255, 255, 0.27) 0deg 10deg,
+      rgba(255, 255, 255, 0) 10deg 26deg),
+    radial-gradient(closest-side,
+      rgba(255, 255, 255, 0.62) 0%,
+      rgba(255, 255, 255, 0.22) 52%,
+      rgba(255, 255, 255, 0) 74%);
+  -webkit-mask-image: radial-gradient(closest-side, #000 32%, rgba(0, 0, 0, 0.42) 62%, transparent 80%);
+  mask-image: radial-gradient(closest-side, #000 32%, rgba(0, 0, 0, 0.42) 62%, transparent 80%);
+  pointer-events: none;
 }
-.store__card-stone + .store__card-stone { margin-left: -11px; }
-.store__card-stone:nth-child(odd)  { transform: rotate(-10deg) translateY(2px); }
-.store__card-stone:nth-child(even) { transform: rotate(12deg) translateY(-2px); }
-.store__card-pile--cofre .store__card-stone,
-.store__card-pile--arcon .store__card-stone { width: 27px; height: 27px; }
+/* The burst grows with the treasure — tier 4 announces itself from across
+   the room, which is escalation by light rather than by shouting chrome —
+   and each burst is centred on ITS prop's mass, not on the block. */
+.store__card-art--punado { --burst: 92px;  --burst-y: 62%; }
+.store__card-art--bolsa  { --burst: 116px; --burst-y: 57%; }
+.store__card-art--cofre  { --burst: 130px; --burst-y: 54%; }
+.store__card-art--arcon  { --burst: 146px; --burst-y: 52%; }
+
+.store__prop { position: relative; display: block; height: auto; }
+.store__prop--punado { width: 62px; }
+.store__prop--bolsa  { width: 70px; }
+.store__prop--cofre  { width: 86px; }
+.store__prop--arcon  { width: 100px; }
+
+/* §0.2 layer 1 for the drawn props: constant-weight ink on every silhouette
+   (vector-effect holds it at 3px whatever size the prop renders at). */
+.store__ink {
+  stroke: var(--ui-ink);
+  stroke-width: 3px;
+  paint-order: stroke;
+  stroke-linejoin: round;
+}
+
+/* The one merchandising chip the shelf allows: a small gold statement of
+   fact on the bolsa's art corner. No pulse, no rotation, no arrow. */
+.store__card-pop {
+  position: absolute;
+  top: 0;
+  right: 2px;
+  padding: 2px 9px 3px;
+  font-size: 11px;
+  color: #5A3A06;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  border-radius: 999px;
+  background: linear-gradient(180deg,
+    #FFE083 0%, var(--ui-gold-a) 55%,
+    var(--ui-gold-b) 55.01%, var(--ui-gold-b) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 250, 0.6),
+    0 2px 0 rgba(0, 0, 0, 0.25);
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(255, 255, 250, 0.5);
+}
 
 /* The price band: a dark slab across the card's foot, lit by its own top
    line — the same treatment as the reference's, and the one place on the
@@ -272,6 +335,31 @@
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 .store__confirm-title--paid { color: #2E7A0C; }
+
+/* The product on the decision card: same prop, one size, and the burst warmed
+   to parchment — white light on cream reads as a smudge, gold reads as glow. */
+.store__confirm-art {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-height: 62px;
+  padding: 2px 0 1px;
+}
+.store__confirm-art .store__prop { width: 62px; }
+.store__confirm-art .store__prop--punado { width: 54px; }
+.store__confirm-burst {
+  --burst: 96px;
+  top: 55%;
+  background:
+    repeating-conic-gradient(from 8deg,
+      rgba(233, 178, 58, 0.20) 0deg 10deg,
+      rgba(233, 178, 58, 0) 10deg 26deg),
+    radial-gradient(closest-side,
+      rgba(255, 219, 122, 0.55) 0%,
+      rgba(255, 219, 122, 0.18) 52%,
+      rgba(255, 219, 122, 0) 72%);
+}
 
 /* Both sides of the trade, side by side, in one recessed strip. */
 .store__confirm-trade {
@@ -389,7 +477,15 @@
   .store__grid { gap: 9px; }
   .store__card { min-height: 146px; }
   .store__card-num { font-size: 19px; }
-  .store__card-stone { width: 26px; height: 26px; }
+  .store__card-art { min-height: 72px; }
+  .store__prop--punado { width: 50px; }
+  .store__prop--bolsa  { width: 57px; }
+  .store__prop--cofre  { width: 71px; }
+  .store__prop--arcon  { width: 85px; }
+  .store__card-art--punado { --burst: 72px; }
+  .store__card-art--bolsa  { --burst: 86px; }
+  .store__card-art--cofre  { --burst: 100px; }
+  .store__card-art--arcon  { --burst: 114px; }
 }
 
 /* --- landscape ------------------------------------------------------------ */
@@ -397,4 +493,14 @@
   .store { padding-top: calc(var(--ui-safe-t) + 26px); }
   .store__head { padding: 8px 58px 6px; }
   .store__grid { grid-template-columns: repeat(4, 1fr); }
+  /* Four-up: a quarter-width card holds a smaller prop, same escalation. */
+  .store__card-art { min-height: 64px; }
+  .store__prop--punado { width: 42px; }
+  .store__prop--bolsa  { width: 48px; }
+  .store__prop--cofre  { width: 58px; }
+  .store__prop--arcon  { width: 68px; }
+  .store__card-art--punado { --burst: 62px; }
+  .store__card-art--bolsa  { --burst: 72px; }
+  .store__card-art--cofre  { --burst: 82px; }
+  .store__card-art--arcon  { --burst: 92px; }
 }

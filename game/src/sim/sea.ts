@@ -310,6 +310,17 @@ export interface Mob {
   tether: number;
   /** The cell that produced it, so it is spawned exactly once per visit. */
   cell: string;
+
+  // --- the boss's own machinery, absent on everything that is not one -------
+  /** A strike being telegraphed: where the tentacles will fall, and when.
+   *  Replaced whole on every change, never mutated — stepVoyage's mob copies
+   *  are shallow. */
+  cast?: { left: number; span: number; targets: Vec2[]; frenzy: boolean } | null;
+  /** 1 while submerged. A dived squid cannot be shot and cannot cast; it is
+   *  closing, and every hull in the game can outrun it. */
+  dive?: number;
+  /** Latched at half health, so the phase turn announces itself exactly once. */
+  frenzied?: boolean;
 }
 
 /** What patrols a cell, deterministically. */
@@ -424,7 +435,20 @@ export interface ShipSpec {
   repair: number;
 }
 
-export const SHIPS: Record<string, ShipSpec> = { skiff: SEA.ships.skiff };
+/**
+ * PLAN.md Fase 4's ladder, in sailing order. Ownership is the Astillero's level
+ * (src/sim/shipyard.ts); this table is what each hull IS once it is owned.
+ */
+export const SHIP_TYPES = ['skiff', 'sloop', 'galleon', 'frigate', 'marauder'] as const;
+export type ShipType = (typeof SHIP_TYPES)[number];
+
+export const SHIPS: Record<string, ShipSpec> = {
+  skiff: SEA.ships.skiff,
+  sloop: SEA.ships.sloop,
+  galleon: SEA.ships.galleon,
+  frigate: SEA.ships.frigate,
+  marauder: SEA.ships.marauder,
+};
 
 /** Seconds of not being touched before the crew can start patching. */
 const CALM: number = SEA.ships.calm;
@@ -512,6 +536,23 @@ export interface Voyage {
   departed: boolean;
   /** Set when the player has made it back to home water with the hold. */
   home: boolean;
+  /**
+   * Whether this voyage is still owed the Cofre de las Profundidades.
+   *
+   * True at the start of a voyage whose caller says the season's chest is
+   * unclaimed (the sim keeps no calendar, so once-per-season is the caller's
+   * fact, handed in through startVoyage); cleared the moment a squid kill pays
+   * it, so a second boss on the same voyage pays only its bounty.
+   */
+  deepChest: boolean;
+  /**
+   * A boarding party away at a wreck — see balance.json `sea.boarding`.
+   *
+   * Wrecks are not taken by touch: the party rows over for `span` seconds and
+   * the loot only lands if the ship is still on station when they return.
+   * Null whenever nobody is over the side.
+   */
+  boarding: { siteId: string; left: number; span: number } | null;
 }
 
 export type SeaEvent =
@@ -524,9 +565,30 @@ export type SeaEvent =
   | { kind: 'looted'; site: SiteKind; loot: Partial<Record<ResourceId, number>>; x: number; y: number }
   | { kind: 'hold-full' }
   | { kind: 'sunk'; lost: Partial<Record<ResourceId, number>> }
-  | { kind: 'home' };
+  | { kind: 'home' }
+  // --- the boss's beats. Every one is a picture the scene owes the player. --
+  /** Tentacles rise: the strike circles are on the water, and there are
+   *  `seconds` left to not be inside one. */
+  | { kind: 'squid-tell'; x: number; y: number; targets: Vec2[]; seconds: number; frenzy: boolean }
+  /** They fall. `hit` says whether the ship was still standing in one — the
+   *  damage itself also arrives as a normal 'hit' event, so every existing
+   *  consumer (veil, shake, balance harness) keeps working unchanged. */
+  | { kind: 'squid-strike'; targets: Vec2[]; hit: boolean; damage: number }
+  | { kind: 'squid-dive'; x: number; y: number }
+  | { kind: 'squid-surface'; x: number; y: number }
+  /** Half health: the pattern is about to change, once per squid. */
+  | { kind: 'squid-phase'; x: number; y: number }
+  /** The guaranteed reward, through the same stow() everything else pays. */
+  | { kind: 'deep-chest'; x: number; y: number; loot: Partial<Record<ResourceId, number>> }
+  // --- boarding a wreck. The loot itself still arrives as 'looted'. ---------
+  | { kind: 'boarding-started'; siteId: string; x: number; y: number; seconds: number }
+  /** The ship left the wreck with the party still aboard it: nothing pays,
+   *  and coming back starts the clock from zero. */
+  | { kind: 'boarding-broken'; siteId: string };
 
-export function startVoyage(seed: string, shipType = 'skiff'): Voyage {
+export function startVoyage(
+  seed: string, shipType = 'skiff', opts: { deepChest?: boolean } = {}
+): Voyage {
   const spec = SHIPS[shipType];
   return {
     seed, step: 0, shipType,
@@ -536,6 +598,8 @@ export function startVoyage(seed: string, shipType = 'skiff'): Voyage {
     cargo: {}, mobs: [], shots: [], taken: [], seen: [], nextId: 1,
     sinceHit: CALM, aground: 0,
     sunk: false, departed: false, home: false,
+    deepChest: opts.deepChest ?? true,
+    boarding: null,
   };
 }
 
@@ -579,6 +643,173 @@ function angleDelta(a: number, b: number): number {
   if (d > Math.PI) d -= TAU;
   if (d < -Math.PI) d += TAU;
   return d;
+}
+
+/** The boss's numbers — balance.json `sea.boss`, where the design is argued. */
+const BOSS = SEA.boss;
+
+/** The strike circle's radius, exported so the renderer draws the tell the
+ *  exact size the resolution will use. One number, one owner. */
+export const SQUID_STRIKE_RADIUS: number = BOSS.strikeRadius;
+
+/**
+ * One step of the Giant Squid — ROADMAP round 10's missing fight.
+ *
+ * The design in one paragraph: the squid never bites on contact. It CASTS —
+ * tentacles rise over marked circles of water, a beat of warning passes, and
+ * only a ship still inside a circle when they fall is hit. So every point of
+ * damage the boss ever deals was dodgeable on the stick, which is the one
+ * property a telegraphed fight has to have. At half health the circles start
+ * leading the ship's own course and come faster, so phase one is dodged by
+ * moving and phase two by TURNING. And because its arms are shorter than any
+ * ship's guns, standing off and shelling it is answered rather than allowed:
+ * out of reach it submerges — unshootable — and closes, so the fight has to be
+ * fought inside the pocket where the circles can find you.
+ *
+ * Everything here mutates `mob` (already this step's copy) and reads the ship
+ * from `v`; the caller's generic machinery is skipped entirely for the boss,
+ * so nothing below fights the station-keeping rules written for a kelpling.
+ */
+function stepSquid(
+  v: Voyage, mob: Mob, distance: number, tethered: boolean, dt: number, events: SeaEvent[]
+): void {
+  const ms = MOBS.squid;
+
+  // Half health turns the phase, exactly once, wherever the fight stands. The
+  // clock is pulled in so the new pattern is SEEN within a breath of the
+  // announcement instead of deduced three casts later.
+  if (!mob.frenzied && mob.hp <= ms.hp * BOSS.frenzyAt) {
+    mob.frenzied = true;
+    mob.cooldown = Math.min(mob.cooldown, 0.8);
+    events.push({ kind: 'squid-phase', x: mob.x, y: mob.y });
+  }
+  const frenzy = mob.frenzied === true;
+
+  // Same aggro rules as the rest of the sea; 'attack' means "in the pocket".
+  if (distance < ms.sight && !tethered) {
+    mob.state = distance <= BOSS.strikeRange ? 'attack' : 'chase';
+  } else if (mob.state !== 'patrol' && (distance > ms.sight * 1.5 || tethered)) {
+    mob.state = 'patrol';
+  }
+
+  // --- tentacles in the air ------------------------------------------------
+  // A casting squid is planted. The circles were fixed the moment the tell
+  // went up — dodging is the SHIP's job, and moving the goal after the warning
+  // would make the warning a lie.
+  if (mob.cast) {
+    const left = mob.cast.left - dt;
+    if (left > 0) {
+      // Replaced, never mutated: the step's mob copies are shallow.
+      mob.cast = { ...mob.cast, left };
+    } else {
+      const spec = SHIPS[v.shipType];
+      const damage = mob.cast.frenzy ? BOSS.frenzyDamage : BOSS.strikeDamage;
+      // One bite per volley however many circles catch the hull: the volley is
+      // one attack drawn in three places, not three attacks stacked.
+      const hit = mob.cast.targets.some(
+        (t) => Math.hypot(v.x - t.x, v.y - t.y) <= BOSS.strikeRadius + spec.radius * 0.45
+      );
+      if (hit) {
+        v.hull -= damage;
+        v.sinceHit = 0;
+        // A normal 'hit' as well, so the veil, the shake and the balance
+        // harness all keep reading the fight without learning a new word.
+        events.push({ kind: 'hit', x: v.x, y: v.y, damage, target: 'ship', by: 'mob' });
+      }
+      events.push({ kind: 'squid-strike', targets: mob.cast.targets, hit, damage });
+      mob.cast = null;
+      mob.cooldown = frenzy ? BOSS.cadenceFrenzy : BOSS.cadence;
+    }
+    return;
+  }
+
+  // --- underwater ----------------------------------------------------------
+  // Fast, unshootable, and closing — or going home, once the chase is off.
+  // Every hull in the game outruns diveSpeed, so running always works; what a
+  // dive refuses to allow is parking at gun range and shelling a boss whose
+  // arms are shorter than your cannons.
+  if (mob.dive) {
+    const hunting = mob.state !== 'patrol';
+    const tx = hunting ? v.x : mob.homeX;
+    const ty = hunting ? v.y : mob.homeY;
+    const want = Math.atan2(ty - mob.y, tx - mob.x);
+    const swing = ms.turn * 1.6 * dt;
+    mob.heading += Math.max(-swing, Math.min(swing, angleDelta(mob.heading, want)));
+    mob.x += Math.cos(mob.heading) * ms.speed * BOSS.diveSpeed * dt;
+    mob.y += Math.sin(mob.heading) * ms.speed * BOSS.diveSpeed * dt;
+
+    const shipGap = Math.hypot(v.x - mob.x, v.y - mob.y);
+    const homeGap = Math.hypot(mob.x - mob.homeX, mob.y - mob.homeY);
+    if (hunting ? shipGap <= BOSS.strikeRange * 0.7 : homeGap < 6) {
+      mob.dive = 0;
+      // The pause is the player's window: a surfacing squid can be shot for
+      // `surfacePause` before its first cast can begin.
+      mob.cooldown = Math.max(mob.cooldown, BOSS.surfacePause);
+      events.push({ kind: 'squid-surface', x: mob.x, y: mob.y });
+    }
+    return;
+  }
+
+  // --- surfaced, nobody worth fighting -------------------------------------
+  if (mob.state === 'patrol') {
+    const offPost = Math.hypot(mob.x - mob.homeX, mob.y - mob.homeY);
+    if (offPost > 10) {
+      mob.dive = 1;
+      events.push({ kind: 'squid-dive', x: mob.x, y: mob.y });
+      return;
+    }
+    // The same slow circle every guard walks — the shape that reads as
+    // "it has not noticed you yet".
+    const want = Math.atan2(
+      mob.homeY + Math.sin(mob.id * 1.7 + v.step * dt * 0.35) * 16 - mob.y,
+      mob.homeX + Math.cos(mob.id * 1.7 + v.step * dt * 0.35) * 16 - mob.x
+    );
+    const swing = ms.turn * dt;
+    mob.heading += Math.max(-swing, Math.min(swing, angleDelta(mob.heading, want)));
+    mob.x += Math.cos(mob.heading) * ms.speed * 0.45 * dt;
+    mob.y += Math.sin(mob.heading) * ms.speed * 0.45 * dt;
+    return;
+  }
+
+  // --- hunting on the surface ----------------------------------------------
+  // Out of the pocket is out of the fight, and it does not stay that way.
+  if (distance > BOSS.strikeRange * 1.15) {
+    mob.dive = 1;
+    events.push({ kind: 'squid-dive', x: mob.x, y: mob.y });
+    return;
+  }
+
+  // In the pocket: face the ship, hold a station its circles can reach from,
+  // and cast on its own clock.
+  const want = Math.atan2(v.y - mob.y, v.x - mob.x);
+  const swing = ms.turn * dt;
+  mob.heading += Math.max(-swing, Math.min(swing, angleDelta(mob.heading, want)));
+  const keep = BOSS.strikeRange * 0.7;
+  const closing = distance < keep * 0.8 ? -0.5 : distance > keep * 1.15 ? 0.6 : 0.12;
+  mob.x += Math.cos(mob.heading) * ms.speed * closing * dt;
+  mob.y += Math.sin(mob.heading) * ms.speed * closing * dt;
+
+  if (mob.cooldown <= 0 && distance <= BOSS.strikeRange) {
+    // Phase one: one circle, dropped ON the ship — any way at all walks out of
+    // it. Phase two: a line of them laid along the ship's own course, so the
+    // straight line that dodged phase one now runs INTO the second and third
+    // circle, and the dodge becomes a turn.
+    const targets: Vec2[] = [{ x: v.x, y: v.y }];
+    let span = BOSS.tell;
+    if (frenzy) {
+      span = BOSS.tellFrenzy;
+      const vx = Math.cos(v.heading) * v.speed;
+      const vy = Math.sin(v.heading) * v.speed;
+      for (let i = 1; i < BOSS.volley; i++) {
+        targets.push({
+          x: v.x + vx * BOSS.volleyLead * i,
+          y: v.y + vy * BOSS.volleyLead * i,
+        });
+      }
+    }
+    mob.cast = { left: span, span, targets, frenzy };
+    events.push({ kind: 'squid-tell', x: mob.x, y: mob.y, targets, seconds: span, frenzy });
+  }
 }
 
 /**
@@ -639,6 +870,14 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
     v.x -= nx * gap;
     v.y -= ny * gap;
 
+    // A ship boarding THIS site is moored to it, not ramming it. Without the
+    // exemption the boarding beat punished exactly the thing it asks for —
+    // holding station against the wreck for the length of the wait cost a
+    // scrape every grace period, and the fleet table read reef damage TRIPLED
+    // at every ring. The hull still cannot clip through (the push-out above
+    // has already run); it just stops being charged for staying.
+    const moored = v.boarding !== null && v.boarding.siteId === site.id;
+
     // How much of the ship's way was aimed AT the rock: 1 is head-on, 0 is a
     // touch along its face, below 0 is already leaving.
     const hx = Math.cos(v.heading);
@@ -648,7 +887,7 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
 
     const free = spec.speed * ground.safeSpeed;
     const impact = into * v.speed;
-    if (v.aground <= 0 && impact > free) {
+    if (!moored && v.aground <= 0 && impact > free) {
       const damage = Math.max(1, Math.round((impact - free) * ground.damagePerUnit));
       v.hull -= damage;
       v.sinceHit = 0;
@@ -669,18 +908,71 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
   // --- looting -------------------------------------------------------------
   // Sailing over a site takes it. There is no interact button: on a phone,
   // steering onto the thing you want IS the interaction.
-  for (const site of sitesNear(v.seed, v.x, v.y, 60)) {
-    if (site.kind === 'reef' || v.taken.includes(site.id)) continue;
-    if (Math.hypot(v.x - site.x, v.y - site.y) > site.radius + spec.radius + SEA.loot.reach) continue;
-    // A lair does not give up its cargo while its guardian is alive.
-    if (site.kind === 'lair' && v.mobs.some((m) => m.cell === site.id && m.kind === 'squid')) continue;
-
-    if (spec.hold - holdUsed(v) <= 0) { events.push({ kind: 'hold-full' }); continue; }
+  //
+  // Except a wreck, which since ROADMAP round 10 is a BEAT rather than a
+  // touch: the boarding party rows over for `sea.boarding.seconds`, and the
+  // haul comes back as a burst only if the ship is still on station when they
+  // do. Nothing about the rest of the step pauses for it — mobs keep closing,
+  // the guns keep firing, the hull keeps taking bites — so boarding under
+  // fire is a choice with a price, which is the whole point of the wait.
+  const grabRange = (site: Site) => site.radius + spec.radius + SEA.loot.reach;
+  const payOut = (site: Site): void => {
     const taken = stow(v, spec, site.loot);
     const used = Object.values(taken).reduce((a, b) => a + b, 0);
     v.taken.push(site.id);
     events.push({ kind: 'looted', site: site.kind, loot: taken, x: site.x, y: site.y });
     if (used < Object.values(site.loot).reduce((a, b) => a + b, 0)) events.push({ kind: 'hold-full' });
+  };
+
+  // The party that is already over the side. Drift out past the slack and
+  // they row back empty — coming round again starts the clock from zero, so
+  // a wreck is a commitment rather than a drive-by.
+  if (v.boarding) {
+    const [bcx, bcy] = v.boarding.siteId.split(':').map(Number);
+    const site = siteAt(v.seed, bcx, bcy);
+    if (!site || v.taken.includes(site.id)) {
+      v.boarding = null;
+    } else if (Math.hypot(v.x - site.x, v.y - site.y) > grabRange(site) + SEA.boarding.slack) {
+      events.push({ kind: 'boarding-broken', siteId: site.id });
+      v.boarding = null;
+    } else {
+      const left = v.boarding.left - dt;
+      if (left > 0) {
+        v.boarding = { ...v.boarding, left };
+      } else if (spec.hold - holdUsed(v) <= 0) {
+        // The party is back and the hold is full: the wreck is NOT consumed
+        // for nothing — same refusal the instant path gives, said every step
+        // the ship stays parked on an unclaimable prize.
+        v.boarding = { ...v.boarding, left: 0 };
+        events.push({ kind: 'hold-full' });
+      } else {
+        payOut(site);
+        v.boarding = null;
+      }
+    }
+  }
+
+  for (const site of sitesNear(v.seed, v.x, v.y, 60)) {
+    if (site.kind === 'reef' || v.taken.includes(site.id)) continue;
+    if (Math.hypot(v.x - site.x, v.y - site.y) > grabRange(site)) continue;
+    // A lair does not give up its cargo while its guardian is alive.
+    if (site.kind === 'lair' && v.mobs.some((m) => m.cell === site.id && m.kind === 'squid')) continue;
+
+    if (spec.hold - holdUsed(v) <= 0) { events.push({ kind: 'hold-full' }); continue; }
+
+    // A wreck has an inside: the party rows over instead of the ship grabbing.
+    if (site.kind === 'wreck') {
+      if (!v.boarding) {
+        v.boarding = { siteId: site.id, left: SEA.boarding.seconds, span: SEA.boarding.seconds };
+        events.push({
+          kind: 'boarding-started', siteId: site.id, x: site.x, y: site.y,
+          seconds: SEA.boarding.seconds,
+        });
+      }
+      continue;
+    }
+
+    payOut(site);
   }
 
   // --- spawning ------------------------------------------------------------
@@ -711,6 +1003,12 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
     const toShipY = v.y - mob.y;
     const distance = Math.hypot(toShipX, toShipY);
     const tethered = mob.tether > 0 && Math.hypot(v.x - mob.homeX, v.y - mob.homeY) > mob.tether;
+
+    // The boss plays its own game — see `stepSquid`, which is the whole fight.
+    if (mob.kind === 'squid') {
+      stepSquid(v, mob, distance, tethered, dt, events);
+      continue;
+    }
 
     if (distance < ms.sight && !tethered) {
       mob.state = distance <= ms.reach ? 'attack' : 'chase';
@@ -772,6 +1070,9 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
     let best: Mob | null = null;
     let bestDistance = Infinity;
     for (const mob of v.mobs) {
+      // A dived squid is not a target: a broadside spent on a shadow under the
+      // water would teach the player their guns are broken.
+      if (mob.dive) continue;
       const distance = Math.hypot(mob.x - v.x, mob.y - v.y);
       if (distance > spec.range || distance >= bestDistance) continue;
       const bearing = Math.atan2(mob.y - v.y, mob.x - v.x);
@@ -814,7 +1115,8 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
     let struck = false;
     if (shot.from === 'ship') {
       for (const mob of v.mobs) {
-        if (mob.hp <= 0) continue;
+        // A ball cannot strike what is under the water; it passes over.
+        if (mob.hp <= 0 || mob.dive) continue;
         if (Math.hypot(mob.x - shot.x, mob.y - shot.y) > MOBS[mob.kind].radius + 1.2) continue;
         mob.hp -= shot.damage;
         events.push({ kind: 'hit', x: shot.x, y: shot.y, damage: shot.damage, target: 'mob', by: 'cannon' });
@@ -841,6 +1143,21 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
         kind: 'mob-killed', mob: mob.kind, x: mob.x, y: mob.y, ring: ringOf(cx, cy),
         loot: stow(v, spec, BOUNTY[mob.kind]),
       });
+      // The reward moment the boss owed. GUARANTEED — no roll — because a
+      // player who beat a telegraphed two-phase fight has already paid in
+      // full; scaled by the lair's ring like every other payout; through the
+      // same stow() as every site and bounty, so the hold's arithmetic cannot
+      // disagree with itself. Once per voyage at most, and only on a voyage
+      // still owed the season's chest.
+      if (mob.kind === 'squid' && v.deepChest) {
+        v.deepChest = false;
+        const scale = 1 + ringOf(cx, cy) * BOSS.deepChestPerRing;
+        const chest: Partial<Record<ResourceId, number>> = {};
+        for (const [res, base] of Object.entries(BOSS.deepChest) as [ResourceId, number][]) {
+          chest[res] = Math.round(base * scale);
+        }
+        events.push({ kind: 'deep-chest', x: mob.x, y: mob.y, loot: stow(v, spec, chest) });
+      }
       continue;
     }
     // Far-away mobs are dropped, not simulated. Their cell stays in `seen`, so

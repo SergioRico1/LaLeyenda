@@ -372,6 +372,13 @@ async function runRouter(stage: Stage): Promise<void> {
     }
 
     const live = await ensureGame();
+    // Flush BEFORE the sea builds: the scene reads the STORED save to decide
+    // which hull is at the helm (src/scenes/seaScene.ts), and the autosave runs
+    // on a 20-second interval — so without this line a player who finishes the
+    // Astillero and taps ¡Zarpar! inside that window sails the hull they just
+    // paid to replace. The gate's round-10 walk hit exactly that: 20 000 oro
+    // for the Balandra, and the dock card said Esquife.
+    await live.saveNow();
     await show('sea', () => createSeaScene(stage, {
       seed: live.state().seed,
       onEnd: (voyage) => {

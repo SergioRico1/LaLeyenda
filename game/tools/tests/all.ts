@@ -11,6 +11,7 @@ import './save.test';
 import './tokens.test';
 import './decor.test';
 import './sea.test';
+import './shipyard.test';
 import './store.test';
 import './rivals.test';
 import { runCases } from './harness';

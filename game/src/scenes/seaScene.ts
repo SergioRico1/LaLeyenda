@@ -3,13 +3,17 @@ import { Stage } from '../render/stage';
 import { Water } from '../render/water';
 import { instantiate, preload, type ModelInstance } from '../render/assets';
 import { Rng } from '../core/rng';
+import { peekSavedGame } from '../core/save';
 import { createStick, type Stick } from '../ui/stick';
 import { createSeaHud, type SeaHud } from '../ui/seaHud';
 import { sfx } from '../ui/sfx';
 import {
-  HARBOUR, MOBS, SEA_CELL, SEA_RANGE, SEA_STEP, SHIPS, sitesNear, startVoyage, steer, stepVoyage,
+  HARBOUR, MOBS, SEA_CELL, SEA_RANGE, SEA_STEP, SHIPS, SQUID_STRIKE_RADIUS, sitesNear,
+  startVoyage, steer, stepVoyage,
   type Mob, type MobKind, type SeaEvent, type Site, type Voyage,
 } from '../sim/sea';
+import { shipForVoyage } from '../sim/shipyard';
+import { season } from '../sim/rivals';
 
 declare global {
   interface Window {
@@ -58,12 +62,36 @@ declare global {
  *   does not swim under the swell.
  */
 
-/** Every model a voyage can need. */
+/** Every model a voyage can need — the hull itself is added per ship type. */
 export const SEA_MODELS = [
-  'ship_skiff', 'mob_blowfish', 'mob_kelpling', 'mob_shark', 'mob_squid',
+  'mob_blowfish', 'mob_kelpling', 'mob_shark', 'mob_squid',
   'harv_oak', 'harv_pine', 'harv_ironore', 'harv_copperore',
   'chest_bandit', 'deco_rock_lg', 'deco_rock_sm', 'tree_palm',
 ];
+
+/**
+ * How each hull is DRAWN — the shipyard's product made visible.
+ *
+ * `hull` is the length of the hull on the water, the number every piece of
+ * scene geometry (wake, shadow, arcs, camera pull-back) is scaled from; `fit`
+ * is what instantiate() needs to produce it, and the two differ because fit
+ * normalises the model's LARGEST axis. The skiff is near-cubic so its fit is
+ * its hull; the real ships are all mast — the sloop is 97 model-units tall on
+ * an 82-unit hull and the frigate 143 on 84 — so their fits are the hull
+ * target times (height / length), read off public/assets/models/manifest.json.
+ *
+ * The marauder sails the frigate's silhouette a size up: PLAN.md names five
+ * classes and the asset drop shipped four hulls (PRODUCTION.md §5 counts them
+ * too — the fifth was never fetched). The day a marauder .glb lands in
+ * public/assets/models this row changes and nothing else does.
+ */
+const SHIP_MODEL: Record<string, { model: string; fit: number; hull: number }> = {
+  skiff: { model: 'ship_skiff', fit: 8, hull: 8 },
+  sloop: { model: 'ship_sloop', fit: 11.3, hull: 9.6 },
+  galleon: { model: 'ship_galleon', fit: 14.2, hull: 11.2 },
+  frigate: { model: 'ship_frigate', fit: 21.5, hull: 12.6 },
+  marauder: { model: 'ship_frigate', fit: 24.2, hull: 14.2 },
+};
 
 const MOB_MODEL: Record<MobKind, string> = {
   blowfish: 'mob_blowfish',
@@ -118,11 +146,55 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
   const shot = params.get('shot') === '1';
   const seed = opts.seed ?? params.get('seed') ?? 'la-leyenda';
 
+  // --- which hull sails ----------------------------------------------------
+  // The shipyard's one promise to the sea: the next voyage sails the owned
+  // hull. The scene cannot reach the live Game (the router owns it and hands
+  // this scene only a seed), so the owned hull is read off the STORED save —
+  // the same bytes the next boot would sail — through sim/shipyard's pure
+  // rule. `?ship=` overrides for captures and for looking at a hull the save
+  // has not earned; a capture without it stays the deterministic skiff.
+  //
+  // The honest gap: the autosave runs on a 20-second interval, so an Astillero
+  // finished in the last few seconds can sail one voyage on the previous hull.
+  // Closing it needs the router to pass its live state, which is main.ts's
+  // line to write, not this file's.
+  const shipParam = params.get('ship');
+  let shipType = shipParam && SHIPS[shipParam] ? shipParam : 'skiff';
+  if (!shipParam && !shot) {
+    try {
+      const saved = await peekSavedGame();
+      if (saved) shipType = shipForVoyage(saved);
+    } catch {
+      /* No save, or storage said no — the skiff is always seaworthy. */
+    }
+  }
+  const shipDraw = SHIP_MODEL[shipType] ?? SHIP_MODEL.skiff;
+  /** Everything sized off the skiff scales by this. */
+  const hullScale = shipDraw.hull / SHIP_MODEL.skiff.hull;
+
+  // --- the season's chest --------------------------------------------------
+  // Once per season, and the sim keeps no calendar — so the claim lives beside
+  // the helm-taught flag in localStorage, keyed by the same season index the
+  // leaderboard runs on, and is handed into startVoyage as a plain fact. On a
+  // wiped browser or a new device the worst case is generosity: the chest is
+  // claimable again, never lost. Captures always sail owed, so a boss shot
+  // can photograph the reward.
+  const DEEP_CHEST_KEY = 'la-leyenda:deep-chest';
+  const seasonKey = `s${season(Date.now()).index}`;
+  let deepChestOwed = true;
+  if (!shot) {
+    try {
+      deepChestOwed = localStorage.getItem(DEEP_CHEST_KEY) !== seasonKey;
+    } catch {
+      /* Private mode: owed every voyage, which errs in the player's favour. */
+    }
+  }
+
   // What the stage already had is what the stage keeps: the lights belong to
   // it and outlive every scene that borrows the stage.
   const preexisting = new Set(stage.scene.children);
 
-  await preload(SEA_MODELS);
+  await preload([...SEA_MODELS, shipDraw.model]);
 
   // --- the sea -------------------------------------------------------------
   // No shore SDF: out here there is no island to break against, so the shader's
@@ -178,21 +250,23 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
   stage.scene.fog = new THREE.Fog(0x6fbcd6, 150, 340);
 
   // --- the ship ------------------------------------------------------------
-  // The hero object, so it is drawn a size larger than its collision radius
-  // would suggest. fit normalises the LARGEST axis and the skiff is near
-  // cubic once the mast is counted, so this is about the size of its hull.
-  const skiff = await instantiate('ship_skiff', { fit: 8, clip: 'Idle' });
+  // The hero object: whichever hull the shipyard says is at the helm, drawn a
+  // size larger than its collision radius would suggest. `fit` is per hull —
+  // see SHIP_MODEL for why it is not the hull length itself.
+  const hull = await instantiate(shipDraw.model, { fit: shipDraw.fit, clip: 'Idle' });
   const ship = new THREE.Group();
-  ship.add(skiff.object);
+  ship.add(hull.object);
   stage.scene.add(ship);
   const mixers: THREE.AnimationMixer[] = [];
-  if (skiff.mixer) mixers.push(skiff.mixer);
+  if (hull.mixer) mixers.push(hull.mixer);
 
   // A wake, so the ship is visibly making way rather than sliding. Two long
-  // quads either side of the stern, faded out at the far end.
-  const wake = buildWake();
+  // quads either side of the stern, faded out at the far end. Both it and the
+  // shadow are sized to the hull that is actually sailing — a frigate leaving
+  // a skiff's wake would read as a toy on the wrong sea.
+  const wake = buildWake(hullScale);
   ship.add(wake);
-  const hullShadow = blobShadow(5.2);
+  const hullShadow = blobShadow(5.2 * hullScale);
   ship.add(hullShadow);
   /** Everything flat that has to lie ON the swell rather than on a plane through
    *  the ship. See followSea. */
@@ -251,7 +325,18 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
   // units a second is on screen for well over a second before it can reach the
   // hull, the near half of a broadside's reach is visible, and the skiff still
   // draws a quarter of the width — a hero, not a speck.
-  const CAM_OFFSET = new THREE.Vector3(26, 34, 32).multiplyScalar(1.62);
+  //
+  // The bigger hulls pull the camera back — by the square root, so the ship
+  // still GROWS on the glass (linear would keep every hull the same size,
+  // which is the one thing an upgrade must never do) — and the pull-back is
+  // computed from the mean of hull and MAST. The first cut used the hull
+  // alone, and the frigate's photograph said why that is wrong: her hull is
+  // 1.6 skiffs but her mainmast is 21 units on the skiff's 8, and the frame
+  // read a sail plan pushed through the top HUD. Still a UNIFORM scale of the
+  // same vector, so seaHud's compass — which projects onto this offset's
+  // DIRECTION — stays exact for every hull.
+  const CAM_OFFSET = new THREE.Vector3(26, 34, 32)
+    .multiplyScalar(1.62 * Math.sqrt((shipDraw.hull + shipDraw.fit) / 16));
   const follow = new THREE.Vector3(0, SEA_Y, 0);
   stage.camera.position.copy(CAM_OFFSET);
   stage.camera.lookAt(follow);
@@ -278,7 +363,7 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
     void hud?.finish(voyage, reason).then(() => opts.onEnd?.(voyage, reason));
   }
 
-  let voyage = startVoyage(seed);
+  let voyage = startVoyage(seed, shipType, { deepChest: deepChestOwed });
   // `?at=x,y` drops the ship somewhere specific. A capture of the open sea is
   // otherwise a capture of home water, which is empty by design — there is
   // nothing out there to photograph until you have sailed for a minute.
@@ -325,20 +410,24 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
     return disc;
   }
 
-  function buildWake(): THREE.Object3D {
+  function buildWake(scale: number): THREE.Object3D {
     const group = new THREE.Group();
     for (const side of [-1, 1]) {
       // Its own geometry per quad, and segmented along its length: followSea
       // rewrites these vertices every frame, so they cannot be shared, and a
       // sixteen-unit strip needs joints to bend over a twenty-unit swell.
-      const geometry = new THREE.PlaneGeometry(1.5, 13, 1, 10);
+      //
+      // Scaled in the GEOMETRY, never on the object: followSea maps each
+      // vertex through matrixWorld and writes the answer back as a local Y, so
+      // an object-level scale would multiply the heights it just computed.
+      const geometry = new THREE.PlaneGeometry(1.5 * scale, 13 * scale, 1, 10);
       geometry.rotateX(-Math.PI / 2);
-      geometry.translate(0, 0, -7.6);
+      geometry.translate(0, 0, -7.6 * scale);
       const material = new THREE.MeshBasicMaterial({
         color: 0xdff2ef, transparent: true, opacity: 0.26, depthWrite: false,
       });
       const quad = new THREE.Mesh(geometry, material);
-      quad.position.set(side * 1.5, 0.06, 0);
+      quad.position.set(side * 1.5 * scale, 0.06, 0);
       quad.renderOrder = 1;
       group.add(quad);
     }
@@ -554,6 +643,36 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
       } else if (entry.node.scale.x !== 1) {
         entry.node.scale.setScalar(1);
       }
+
+      // The boss's two postures, read straight off the sim's own fields, and
+      // AFTER the lunge block so nothing above resets them.
+      //
+      // DIVED: the body goes under the opaque sea — only the tip of the mantle
+      // and a swollen ripple ring (drawRings) say where the something is. It
+      // still exists, it is still coming; it is just not shootable, and the
+      // picture has to say all three.
+      //
+      // CASTING: it rears out of the water through the tell, so the thing
+      // about to strike is also the biggest thing on the screen while the
+      // circles are down. The model's attack clip runs once per cast — see
+      // the `casting` set below.
+      if (mob.kind === 'squid') {
+        if (mob.dive) {
+          entry.node.position.y -= 7.2;
+        } else if (mob.cast) {
+          const rise = 1 - mob.cast.left / mob.cast.span;
+          entry.node.position.y += rise * 2.1;
+          entry.node.scale.setScalar(1 + rise * 0.13);
+        }
+        const isCasting = !!mob.cast;
+        if (isCasting && !casting.has(mob.id)) {
+          casting.add(mob.id);
+          entry.instance.play('attack', { loop: false });
+        } else if (!isCasting && casting.has(mob.id)) {
+          casting.delete(mob.id);
+          for (const name of CLIP.squid) if (entry.instance.play(name, { loop: true })) break;
+        }
+      }
     }
   }
 
@@ -736,8 +855,9 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
     colour.needsUpdate = true;
   }
 
-  /** Where the wedge starts — clear of the hull, which draws eight units long. */
-  const FAN_NEAR = 11;
+  /** Where the wedge starts — clear of the hull, whatever length of hull the
+   *  shipyard put under it. 11 units on the eight-unit skiff, held as a ratio. */
+  const FAN_NEAR = 11 * hullScale;
   /**
    * And where it is drawn to, which is NOT how far the guns reach.
    *
@@ -752,7 +872,7 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
    * nothing happens there. What is being drawn is where the guns BEAR. How far
    * they carry is said by the shots.
    */
-  const FAN_FAR = 21;
+  const FAN_FAR = 21 * hullScale;
   /**
    * How wide the boundary is drawn ON THE WATER, in world units.
    *
@@ -771,9 +891,9 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
   const EDGE_WIDTH = 1.15;
   /** The gauge is a band along the rail, where the guns are, and it is DELIBERATELY
    *  small: at 5.4 to 8.6 it drew a white collar the size of the ship and read
-   *  as foam rather than as an instrument. */
-  const GAUGE_NEAR = 5.7;
-  const GAUGE_FAR = 7.1;
+   *  as foam rather than as an instrument. On the rail means scaled with it. */
+  const GAUGE_NEAR = 5.7 * hullScale;
+  const GAUGE_FAR = 7.1 * hullScale;
   /**
    * And how far round the hull a full charge reaches.
    *
@@ -902,6 +1022,8 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
     let best: Mob | null = null;
     let bestDistance = Infinity;
     for (const mob of voyage.mobs) {
+      // The sim's own rule, copied: a dived squid is not a target.
+      if (mob.dive) continue;
       const distance = Math.hypot(mob.x - voyage.x, mob.y - voyage.y);
       if (distance > spec.range || distance >= bestDistance) continue;
       const bearingTo = Math.atan2(mob.y - voyage.y, mob.x - voyage.x);
@@ -1230,6 +1352,8 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
   const flashes = new Map<number, number>();
   /** Seconds of LUNGE left on each creature that just bit — see syncMobs. */
   const lunges = new Map<number, number>();
+  /** Squids whose attack clip is running — one play per cast, not per frame. */
+  const casting = new Set<number>();
   let hurt = 0;   // seconds of hull vignette left
 
   /**
@@ -1316,6 +1440,86 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
         kick(0.9);
         smoke(voyage.x, voyage.y, fxRng.range(0, Math.PI * 2), 1.6);
         break;
+
+      // --- the boss ---------------------------------------------------------
+      case 'boarding-started':
+        // The party goes over the side: a thud of oars and a ring on the
+        // water. The countdown itself is drawn every frame from the sim's own
+        // clock — see drawRings.
+        sfx('land', -3);
+        shockAt(event.x, event.y, 2, 8, 0.4, 1, 0.78, 0.3);
+        break;
+      case 'boarding-broken':
+        // Rowed back empty. The two-note "no", quiet — the player did this on
+        // purpose more often than not, and a loud refusal for a chosen retreat
+        // reads as the game arguing.
+        sfx('refuse', -5);
+        break;
+      case 'squid-tell':
+        // A dry rattle, pitched down: the warning has a sound as well as a
+        // circle, because the circle can be behind the thumb.
+        sfx('chestShake', -7);
+        break;
+      case 'squid-strike':
+        // Tentacles fall on every circle, hit or miss — a miss that made no
+        // splash would read as a bug, not a dodge. The hull damage itself
+        // arrives as a separate 'hit' and gets the veil and the shake there.
+        for (const target of event.targets) {
+          sparks(target.x, target.y, 8, 12, 0.72, 0.9, 0.98);
+          shockAt(target.x, target.y, 1.2, SQUID_STRIKE_RADIUS * 1.15, 0.34, 0.5, 0.8, 0.95);
+        }
+        sfx(event.hit ? 'hitHull' : 'pop', event.hit ? 0 : -5);
+        if (event.hit) kick(0.2);
+        break;
+      case 'squid-dive':
+        sparks(event.x, event.y, 10, 9, 0.66, 0.88, 0.96);
+        shockAt(event.x, event.y, 2, 9.5, 0.4, 0.55, 0.85, 0.95);
+        sfx('pop', -9);
+        break;
+      case 'squid-surface':
+        sparks(event.x, event.y, 14, 13, 0.72, 0.92, 1);
+        shockAt(event.x, event.y, 2.4, 12, 0.5, 0.62, 0.9, 1);
+        sfx('hitMob', -8);
+        kick(0.18);
+        break;
+      case 'squid-phase':
+        // The turn is a moment: a double red ring off the boss, a low groan,
+        // and the HUD names it, because a pattern change nobody announces is
+        // indistinguishable from the game glitching.
+        shockAt(event.x, event.y, 3, 16, 0.55, 1, 0.16, 0.08);
+        shockAt(event.x, event.y, 1.5, 11, 0.4, 1, 0.3, 0.1);
+        sfx('mobDown', -9);
+        kick(0.3);
+        hud?.banner('frenzy');
+        break;
+      case 'deep-chest': {
+        // The reward moment. Chest sounds, a gold sky, and the HUD says the
+        // name — this is the once-a-season beat the whole trip was for.
+        sfx('chestBurst');
+        sfx('reward', 2);
+        shockAt(event.x, event.y, 3, 20, 0.7, 1, 0.8, 0.25);
+        for (let i = 0; i < 16; i++) {
+          const angle = fxRng.range(0, Math.PI * 2);
+          const out = fxRng.range(2, 11);
+          emit({
+            x: event.x + Math.cos(angle) * out, y: SEA_Y + 1, z: event.y + Math.sin(angle) * out,
+            vy: fxRng.range(6, 13), life: fxRng.range(0.6, 1.1), span: 1.1,
+            size: 1.1, grow: 0.8, drag: 1.3, r: 1, g: 0.84, b: 0.3,
+          });
+        }
+        hud?.banner('deep-chest');
+        // The season's claim, remembered where the sim cannot: beside the
+        // helm-taught flag. Written at the kill rather than the landing — the
+        // cargo is in the hold now, and half of it survives even a sinking.
+        if (!shot) {
+          try {
+            localStorage.setItem(DEEP_CHEST_KEY, seasonKey);
+          } catch {
+            /* Private mode: the chest may pay again next voyage. Generous. */
+          }
+        }
+        break;
+      }
       default:
         break;
     }
@@ -1480,13 +1684,53 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
       place(markMesh, marks++, mob.x, mob.y, MOBS[mob.kind].radius * 1.6 * beat, 1, 0.74, 0.2);
     }
 
+    // The boarding party's clock, on the wreck it is aboard: a gold ring at
+    // the site's edge and a second one closing onto it as the wait runs out.
+    // Gold, not red — this is the player's own action ripening, the same hue
+    // as the loot it ends in — and painted, because gold added to this water
+    // goes white.
+    if (voyage.boarding && marks < RING_CAP - 1) {
+      const [bcx, bcy] = voyage.boarding.siteId.split(':').map(Number);
+      const site = sitesNear(seed, bcx * SEA_CELL, bcy * SEA_CELL, SEA_CELL)
+        .find((s) => s.id === voyage.boarding?.siteId);
+      if (site) {
+        const progress = 1 - voyage.boarding.left / voyage.boarding.span;
+        place(markMesh, marks++, site.x, site.y, site.radius + 2.2, 1, 0.78, 0.24);
+        place(markMesh, marks++, site.x, site.y,
+          (site.radius + 2.2) * (2 - progress), 1, 0.62, 0.12);
+      }
+    }
+
     // What is about to bite. Drawn second so a creature that is both locked and
     // lunging shows the red over the gold — the guns can wait, the teeth cannot.
     for (const mob of voyage.mobs) {
+      if (mob.kind === 'squid') continue; // the boss telegraphs with circles, below
       const menace = menaceOf(mob);
       if (menace <= 0.02 || marks >= RING_CAP) continue;
       const radius = MOBS[mob.kind].radius * (1.75 - 0.6 * menace);
       place(markMesh, marks++, mob.x, mob.y, radius, 1, 0.04 + 0.1 * menace, 0.03);
+    }
+
+    // THE BOSS'S TELL, which is the whole fight. Each strike circle is painted
+    // at exactly the radius the sim will resolve — a warning drawn smaller than
+    // the danger is a lie with a red border — and a second ring closes onto it
+    // as the timer runs, so the beat is readable without a number. Dived, the
+    // squid keeps one pale breathing ring over it: not shootable, still there,
+    // still coming.
+    for (const mob of voyage.mobs) {
+      if (mob.kind !== 'squid') continue;
+      if (mob.cast) {
+        const progress = 1 - mob.cast.left / mob.cast.span;
+        for (const target of mob.cast.targets) {
+          if (marks >= RING_CAP - 1) break;
+          place(markMesh, marks++, target.x, target.y, SQUID_STRIKE_RADIUS, 1, 0.06, 0.03);
+          place(markMesh, marks++, target.x, target.y,
+            SQUID_STRIKE_RADIUS * (1.9 - 0.9 * progress), 1, 0.3, 0.08);
+        }
+      } else if (mob.dive && marks < RING_CAP) {
+        const breath = 1 + 0.16 * Math.sin(elapsed * 9);
+        place(markMesh, marks++, mob.x, mob.y, MOBS.squid.radius * 0.9 * breath, 0.5, 0.84, 0.94);
+      }
     }
 
     for (let i = shocks.length - 1; i >= 0; i--) {
@@ -1552,18 +1796,25 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
       const ms = MOBS[mob.kind];
       const fraction = Math.max(0, Math.min(1, mob.hp / ms.hp));
       if (fraction >= 0.999 || n >= BAR_CAP) continue;
+      // No bar over a dived boss: a health bar floating on empty water marks
+      // the exact spot of a thing whose whole state is "you cannot touch it".
+      if (mob.dive) continue;
+      // The boss wears a boss's bar. A 5-unit strip over a 14-unit creature
+      // read as a stray tooltip, and the one fight with phases is the one
+      // whose health the player is actually watching.
+      const width = mob.kind === 'squid' ? BAR_WIDTH * 1.7 : BAR_WIDTH;
       const height = SEA_Y + water.surfaceAt(mob.x, mob.y, elapsed).height + ms.radius * 1.7 + 1.1;
 
       pose.position.set(mob.x, height, mob.y);
       pose.quaternion.copy(stage.camera.quaternion);
-      pose.scale.set(BAR_WIDTH + 0.34, BAR_HEIGHT + 0.34, 1);
+      pose.scale.set(width + 0.34, BAR_HEIGHT + 0.34, 1);
       pose.updateMatrix();
       barBack.setMatrixAt(n, pose.matrix);
 
       // The fill hangs off the bar's left edge, in the camera's own frame, so
       // it empties the way a bar is read whatever the ship is doing.
-      pose.translateX(-BAR_WIDTH / 2);
-      pose.scale.set(BAR_WIDTH * fraction, BAR_HEIGHT, 1);
+      pose.translateX(-width / 2);
+      pose.scale.set(width * fraction, BAR_HEIGHT, 1);
       pose.updateMatrix();
       barFill.setMatrixAt(n, pose.matrix);
       barFill.setColorAt(n, fraction > 0.45
@@ -1765,7 +2016,7 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
       // a broadside shoves the ship away from the side that fired, and rolling
       // the model inside the group is the only place that stays true whatever
       // heading she is on. Small on purpose — it is a shove, not a capsize.
-      skiff.object.rotation.z =
+      hull.object.rotation.z =
         (broadsides.port.flash - broadsides.starboard.flash) * 0.55;
       const way = voyage.speed / SHIPS[voyage.shipType].speed;
       for (const quad of wake.children) {
