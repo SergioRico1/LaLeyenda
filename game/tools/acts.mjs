@@ -11,6 +11,26 @@
  *
  * Every act ends by calling `window.__step()`, which advances the frozen scene
  * by one frame so whatever the tap changed is actually drawn.
+ *
+ * WHICH ISLAND AN ACT NEEDS, because half of them need one that is not the
+ * default and nothing said so. OPENING.md's day-one island is the Ayuntamiento
+ * and nothing else — no second building, no timer running, no chest in the
+ * tray — so an act that photographs a timer, a reward grid or a finished job
+ * has to be pointed at the mid-game fixture. Round 9's gate ran all nineteen
+ * and these are the invocations that reach the feature:
+ *
+ *   island (default)  picker · pickerOpen · place · placed · blocked · refused
+ *                     · upgrade · pan · pinch
+ *   island --save demo            working · chest · finished · inaugurate
+ *   island --tutorial 1           teach
+ *   island --t 35 --motion 1      guide   (§3.4's tooltip is suppressed under a
+ *                                          deterministic capture on purpose —
+ *                                          see CAPTURE in src/ui/env.ts — and it
+ *                                          is a THIRTY-SECOND idle timer, so a
+ *                                          two-second capture can never see it)
+ *   title                         create · settings
+ *   captain                       surprise
+ *   sea                           fight
  */
 
 const step = (page, frames = 2) => page.evaluate((n) => window.__step?.(n), frames);
@@ -34,17 +54,29 @@ async function openPicker(page) {
 }
 
 /**
- * Finishes the Ayuntamiento with gems, so the picker has something to offer.
+ * Finishes a running Ayuntamiento upgrade with gems, IF one is running.
  *
- * §4.10's island sits at Ayuntamiento 1 already owning one of every building
- * the hall allows, so nothing is placeable until it reaches Nv2 — which is the
- * design, and which makes this the only honest way to reach build mode from a
- * cold boot without waiting eight minutes. It is also the beat sheet paying
- * for itself: the five starting gems are exactly the price of the 8m 12s left
- * on the hall, and every step below is a real tap.
+ * It used to insist on one, and the insistence is what broke twelve of these
+ * acts. The premise was §4.10's old opening: an island that booted at
+ * Ayuntamiento 1 already owning one of every building the hall allows, with
+ * 8m 12s left on a hall upgrade the five starting gems exactly paid for — so
+ * nothing was placeable until the hall reached Nv2, and finishing it was the
+ * only way to reach build mode from a cold boot.
+ *
+ * OPENING.md replaced that island. A player now starts with the Ayuntamiento
+ * and NOTHING else, no timer running anywhere, and hall Nv1 already unlocks
+ * five buildings — so there is nothing to raise and nothing to wait for. On
+ * that island this is correctly a no-op, and the acts that follow it go
+ * straight to the picker. Left as a hard requirement it failed on a selector
+ * (`.world-item .timerbar`) that describes a world that no longer exists, and
+ * took `pickerOpen`, `place`, `placed`, `blocked`, `refused` and the rest with
+ * it — every one of them reporting a missing timer bar rather than the missing
+ * feature they were written to photograph.
  */
 async function raiseTownHall(page) {
-  await (await need(page, '.world-item .timerbar', 'a running timer bar')).click();
+  const bar = page.locator('.world-item .timerbar');
+  if (!(await bar.count())) return;
+  await bar.first().click();
   const cta = await need(page, '.sheet.is-open .sheet__cta', 'the finish-now CTA');
   await cta.click();
   await page.waitForTimeout(900);   // the Nv2 model loads and swaps in
@@ -152,7 +184,11 @@ export const ACTS = {
   /** Ajustes, opened from the title the way a player opens it. */
   async settings(page) {
     await (await need(page, 'button[aria-label="Ajustes"]', 'the Ajustes button')).click();
-    await need(page, '.settings__panel', 'the Ajustes panel');
+    // `.settings__sheet` is the panel. It was written as `.settings__panel`,
+    // which has never existed in src/ui/panels/settings.ts — so this act failed
+    // on every run since it was added, and failed by NOT writing its shot, which
+    // is a way of failing that a green-looking log can hide.
+    await need(page, '.settings__sheet', 'the Ajustes panel');
     await step(page, 2);
   },
 
@@ -360,7 +396,12 @@ export const ACTS = {
     await enterPlacement(page, 'Mercado');
     // Straight onto the Aserradero, whose silhouette the Mercado shares nothing
     // with, so the red ghost is unmistakably the ghost.
-    const box = await page.locator('.world-item .timerbar').first().boundingBox();
+    // A day-one island has no timer bar to aim beside (OPENING.md), so the
+    // locator is COUNTED before it is measured — `boundingBox()` on a locator
+    // that matches nothing waits thirty seconds and then throws, which reported
+    // this act as broken when all that was missing was the aiming aid.
+    const bars = page.locator('.world-item .timerbar');
+    const box = (await bars.count()) ? await bars.first().boundingBox() : null;
     const canvas = await page.locator('#scene').boundingBox();
     const x = box ? box.x + box.width / 2 : canvas.x + canvas.width / 2;
     const y = box ? box.y + box.height + 80 : canvas.y + canvas.height / 2;
@@ -396,9 +437,15 @@ export const ACTS = {
     const cx = canvas.x + canvas.width / 2;
     const cy = canvas.y + canvas.height / 2;
 
-    for (let i = 0; i < 40; i++) {
-      const dx = ((i % 8) - 3.5) * (canvas.width / 9);
-      const dy = (Math.floor(i / 8) - 1.5) * (canvas.height / 9);
+    // A FINER SWEEP THAN IT USED TO BE, because the island it sweeps changed.
+    // At 8 by 5 the steps were 47 by 103 screen pixels on a phone, which was
+    // ample when §4.10 put six buildings on the island and hopeless once
+    // OPENING.md left one: the Ayuntamiento is about 60 pixels across at this
+    // framing, so a 103-pixel row spacing could step straight over the only
+    // building there is. 14 by 10 puts the step inside the target.
+    for (let i = 0; i < 140; i++) {
+      const dx = ((i % 14) - 6.5) * (canvas.width / 17);
+      const dy = (Math.floor(i / 14) - 4.5) * (canvas.height / 22);
       await page.mouse.click(cx + dx, cy + dy);
       await page.waitForTimeout(90);
       if (await page.locator('.sheet.is-open .sheet__stats').count()) {

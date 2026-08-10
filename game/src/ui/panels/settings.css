@@ -1,9 +1,22 @@
 /* ============================================================================
- * settings.css — the Ajustes overlay.
+ * settings.css — Ajustes, a full-height sheet over a dimmed backdrop.
  *
- * §3.16's floating panel, scrimmed: unlike the build sheet there is nothing
- * behind this the player is deciding ABOUT, so dimming the world is correct
- * here and wrong there.
+ * The floating 360px card this replaces held four buttons and could hold no
+ * more. A settings screen in a shipped mobile builder (reference/kingshot) is a
+ * TALL, DENSE, GROUPED list: a titled header, sections labelled on the panel
+ * body, and each section's rows inside one dark inset well with hairlines
+ * between them — §1.2's "cream frames, charcoal holds", which is also exactly
+ * how reference/ui_trade.png builds its panel.
+ *
+ * Two rules govern everything below.
+ *
+ *  1. §0.2's four layers on every raised object: ink contour, HARD gloss step,
+ *     warm top rim, dark lip plus a ZERO-x-offset extrusion. That includes the
+ *     switches, which are two such objects stacked, and the confirmation cards.
+ *  2. Destructive is a HIERARCHY, not a tint. Safe actions are quiet grey
+ *     buttons on the right of their row. The one destructive row sits in its
+ *     own well, in its own section, under hazard striping, and what it raises
+ *     is a full-width card that lists what is lost.
  * ========================================================================== */
 
 .settings {
@@ -12,78 +25,205 @@
      still running, and a coach mark drawn over a modal is a trapped player.
      Below --z-toast (950), so a refusal is still readable. */
   --settings-z: 940;
+  /* A full-height sheet leaves only a thin margin of world visible, so the dim
+     behind it is deeper than --ui-scrim's celebration dim: at .48 those few
+     strips of bright sea read as light leaking around a door. Not deeper than
+     this, though — past about .6 the margin goes black and the sheet stops
+     reading as an overlay with a world behind it. */
+  --settings-dim: rgba(5, 8, 12, 0.58);
+  --settings-danger: #D4141A;
+  --settings-danger-ink: #7C0A0C;
 
   position: absolute;
   inset: 0;
   z-index: var(--settings-z);
-  display: grid;
-  place-items: center;
-  padding: calc(var(--ui-safe-t) + 16px) 16px calc(var(--ui-safe-b) + 16px);
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  /* The top pad clears the X, which straddles the sheet's top edge. The rest
+     leaves a real band of dimmed world on every side: a sheet flush to the
+     viewport is a screen, and this is an overlay the world is still behind. */
+  padding: calc(var(--ui-safe-t) + 34px) 14px calc(var(--ui-safe-b) + 22px);
 }
 
+/* Absolutely positioned against .settings' PADDING box, so the dim covers the
+   margin the sheet leaves rather than stopping at the content edge. */
 .settings__scrim {
   position: absolute;
   inset: 0;
-  background: var(--ui-scrim);
+  background: var(--settings-dim);
 }
 
-.settings__panel {
+/* --- the sheet ------------------------------------------------------------
+ * §3.16's three-layer edge — near-black outside, taupe band, light rim inside,
+ * then cream — on all four corners, because unlike the build sheet this one is
+ * not hinged on an edge of the screen. It is never clipped: the X breaks the
+ * top-right corner and has to be allowed out. */
+.settings__sheet {
   position: relative;
-  width: min(360px, 100%);
+  z-index: 1;
+  width: min(420px, 100%);
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px 16px 14px;
+  min-height: 0;
 
-  background: var(--ui-panel);
+  /* Cream, lit from directly overhead like everything else in the game. A
+     420 × 860 field of one flat colour is the largest surface the UI ever
+     draws, and flat is the one thing §0.2 forbids. */
+  background: linear-gradient(180deg, #F3F2EB 0%, var(--ui-panel) 24%, #DFDED4 100%);
   border: var(--ui-frame-w) solid var(--ui-frame);
   border-radius: var(--ui-r-panel);
   box-shadow:
     0 0 0 3px var(--ui-frame-dark),
     inset 0 0 0 1px rgba(255, 255, 255, 0.55),
-    0 8px 0 rgba(0, 0, 0, 0.3),
+    0 8px 0 rgba(0, 0, 0, 0.32),
     var(--ui-cast-lg);
+
+  /* §5 law 1: a tier-2 surface arrives by scaling with an overshoot, never by
+     fading up in place. `scale` rather than `transform` so nothing here has to
+     know what else the element might be translated by. */
+  animation: ui-pop-s 0.2s cubic-bezier(0.2, 1.35, 0.4, 1);
+  transform-origin: 50% 42%;
 }
 
-.settings__head { text-align: center; }
+/* --- the header ----------------------------------------------------------- */
 
+.settings__head {
+  position: relative;
+  flex: 0 0 auto;
+  padding: 12px 58px 10px;
+  text-align: center;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.14);
+}
+
+/* On cream, so the outline comes off and a light letterpress goes on: white
+   outlined display type on a cream panel reads as a sticker (§6). */
 .settings__title {
   margin: 0;
   color: var(--ui-ink);
   -webkit-text-stroke-width: 0;
-  text-shadow: 0 2px 0 rgba(255, 255, 255, 0.55);
+  text-shadow: 0 2px 0 rgba(255, 255, 255, 0.6);
 }
 
-/* --- the rows ------------------------------------------------------------ */
+.settings__who {
+  margin: 3px 0 0;
+  color: #6E645C;
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+}
 
-.settings__rows {
+/* --- the scrolling body --------------------------------------------------- */
+
+.settings__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 12px 12px 20px;
+  /* The sheet's own corner radius, minus the frame, so a group scrolled to the
+     bottom does not square off the rounded corner it sits in. */
+  border-radius: 0 0 15px 15px;
+}
+
+/* The scroll cue. Fades to the panel's own bottom colour, so a well running
+   past the fold dissolves into the sheet instead of being guillotined by it.
+   Only drawn when there is something below — settings.ts measures. */
+.settings__fade {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 34px;
+  border-radius: 0 0 15px 15px;
+  background: linear-gradient(180deg, rgba(223, 222, 212, 0) 0%, #DFDED4 86%);
+  opacity: 0;
+  transition: opacity 0.16s ease-out;
+  pointer-events: none;
+}
+.settings__sheet.can-scroll .settings__fade { opacity: 1; }
+
+.settings__group + .settings__group { margin-top: 14px; }
+
+/* A section label on the cream, above its well. Uppercase and tracked out:
+   this is signage, not a heading anybody reads twice. */
+.settings__label {
+  margin: 0 0 6px 4px;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #5A5148;
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+/* §3.17 — list content goes in a --ui-well inset panel. A well is a RECESS, so
+   its top shadow is the exact inverse of an extrusion: hard, zero blur, no
+   x-offset, and a bright line UNDER it where the cream catches the light. */
+.settings__well {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  padding: 0 11px;
+  border-radius: 12px;
+  background: var(--ui-well);
+  box-shadow:
+    inset 0 3px 0 rgba(0, 0, 0, 0.42),
+    inset 0 -2px 0 rgba(255, 255, 255, 0.07),
+    0 1px 0 rgba(255, 255, 255, 0.35);
 }
+
+/* --- a row ---------------------------------------------------------------- */
 
 .settings__row {
   display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 0;
+}
+/* The hairline is the divider AND the gap — one object with compartments,
+   rather than a stack of floating boxes (the same treatment as the 2×2 stat
+   grid in the upgrade sheet). */
+.settings__row + .settings__row,
+.settings__credit + .settings__credit {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.settings__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
-.settings__go {
-  width: 100%;
-  min-height: 56px;
-}
+.settings__name { font-size: 18px; }
 
+/* The hint doubles as the row's status line, so a row never grows and shoves
+   the rest of the sheet down when an action reports back. */
 .settings__hint {
   margin: 0;
-  text-align: center;
-  color: var(--ui-ink);
-  -webkit-text-stroke-width: 0;
-  text-shadow: none;
-  opacity: 0.66;
+  line-height: 1.34;
+  opacity: 0.6;
 }
+.settings__hint.is-ok  { color: #C6F06A; opacity: 1; }
+.settings__hint.is-bad { color: #FF9C8E; opacity: 1; }
+
+/* The right-hand control of an action row. Deliberately small: the row's job
+   is done by its name and its hint, and a full-width button per row would make
+   four equally loud objects out of one safe list and one destructive one. */
+.settings__go {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 8px 16px;
+  /* tokens.css's table: the break is a function of height, and under 52px it
+     is 60%. These are 44px controls, not 56px buttons. */
+  --brk: 60%;
+}
+.settings__go .t-btn { font-size: 17px; }
 
 /* The real file input, kept out of the layout but not out of the DOM: the
-   button above it is what the player presses, and a browser will only open a
+   button in the row is what the player presses, and a browser will only open a
    picker from a click on the input itself. */
 .settings__file {
   position: absolute;
@@ -93,12 +233,296 @@
   pointer-events: none;
 }
 
-.settings__who {
+/* --- the switch -----------------------------------------------------------
+ * Two §0.2 objects stacked: a track with an ink contour, a hard gloss step, a
+ * top rim and a lip, and a knob riding on it with all four of its own. That
+ * doubling is what makes it read as a physical latch instead of as the web
+ * toggle every settings screen ships. */
+.settings .swt {
+  --brk: 60%;                     /* 36px tall — tokens.css's under-52px step */
+  position: relative;
+  flex: 0 0 auto;
+  width: 66px;
+  height: 36px;
+  padding: 0;
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  border-radius: 999px;
+  background: linear-gradient(180deg,
+    var(--ui-grey2-gloss-a) 0%,   var(--ui-grey2-gloss-b) var(--brk),
+    var(--ui-grey2-a) calc(var(--brk) + 0.01%), var(--ui-grey2-b) 88%,
+    var(--ui-grey-lip-2) 88.01%,  var(--ui-grey-lip-2) 100%);
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim),
+    inset 0 -2px 0 var(--ui-rim-low),
+    var(--ui-drop-sm), var(--ui-cast);
+  transition: background 0.12s ease-out, box-shadow 0.06s ease-out,
+              transform 0.06s ease-out, filter 0.06s ease-out;
+}
+/* ON is the green family — the same hue "go" carries everywhere else in the
+   game, so the state is legible without reading the label. */
+.settings .swt.is-on {
+  background: linear-gradient(180deg,
+    var(--ui-green-gloss-a) 0%,   var(--ui-green-gloss-b) var(--brk),
+    var(--ui-green-a) calc(var(--brk) + 0.01%), var(--ui-green-b) 88%,
+    var(--ui-green-lip) 88.01%,   var(--ui-green-lip) 100%);
+}
+/* Pressed = travels DOWN into its own extrusion, exactly like .btn. */
+.settings .swt:active,
+.settings .swt.is-pressed {
+  transform: translateY(3px);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.35),
+    0 1px 0 rgba(0, 0, 0, 0.3);
+  filter: brightness(0.94);
+}
+
+.settings .swt__knob {
+  position: absolute;
+  left: 3px;
+  top: 50%;
+  /* The independent `translate`, not `transform`: .swt.is-pressed writes a
+     transform for the press travel, and a transform declared here would be
+     replaced by it the instant a finger lands. */
+  translate: 0 -50%;
+  width: 26px;
+  height: 26px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  border-radius: 999px;
+  background: linear-gradient(180deg,
+    #FFFEF0 0%,               #F3F1DF 54%,
+    #CBC8AE 54.01%,           #B4B199 90%,
+    #87856F 90.01%,           #87856F 100%);
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.92),
+    0 2px 0 rgba(0, 0, 0, 0.34);
+  transition: left 0.14s cubic-bezier(0.2, 1.3, 0.4, 1);
+  pointer-events: none;
+}
+/* 100% of the padding box (60px) less the knob (26) less the 3px gutter. */
+.settings .swt.is-on .swt__knob { left: calc(100% - 29px); }
+
+/* --- zona de peligro ------------------------------------------------------
+ * The destructive section is a DIFFERENT OBJECT, not the same one in red: a
+ * warmer, darker well, a red inner stroke, and hazard striping across its top
+ * edge. A player who scrolls past this without reading a word still knows the
+ * rest of the sheet ended. */
+.settings__group--danger .settings__label { color: #8E1A17; }
+
+.settings__group--danger .settings__well {
+  padding-top: 8px;
+  background: #38271F;
+  overflow: hidden;
+  box-shadow:
+    inset 0 3px 0 rgba(0, 0, 0, 0.45),
+    inset 0 0 0 2px rgba(212, 20, 26, 0.45),
+    inset 0 -2px 0 rgba(255, 255, 255, 0.07),
+    0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.settings__group--danger .settings__well::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 7px;
+  background: repeating-linear-gradient(45deg,
+    var(--settings-danger) 0 7px, var(--ui-ink) 7px 14px);
+  pointer-events: none;
+}
+
+/* --- the confirmation card ------------------------------------------------
+ * A raised parchment card on the dark well, with its own four layers, so the
+ * confirmation is visibly a NEW OBJECT that arrived rather than a row that
+ * changed its label. The stub spent its confirmation on the button's own text
+ * ("¿Seguro? Toca otra vez"), which is one bounced finger away from a deleted
+ * island. */
+.settings__confirm {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0 0 11px;
+  padding: 12px 13px 13px;
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  border-radius: 12px;
+  overflow: hidden;               /* the head band's corners follow the card */
+  background: linear-gradient(180deg,
+    #E9D8BA 0%,      #DCC8A2 93%,
+    #A98F68 93.01%,  #A98F68 100%);
+  box-shadow:
+    inset 0 -2px 0 rgba(255, 255, 255, 0.3),
+    var(--ui-drop-sm), var(--ui-cast);
+}
+.settings__confirm[hidden] { display: none !important; }
+
+/* §0.2 layer 2 as a STRUCTURE rather than a percentage.
+ *
+ * `--brk` at 52% is right for a button; on a 290px card it lands between the
+ * second and third things the player is about to lose, and photographs as a
+ * seam through a sentence rather than as light. tokens.css already says the
+ * break is a function of HEIGHT and falls as an object grows — extrapolated far
+ * enough, the lit plane stops being a fraction and becomes the head band, with
+ * the hard step at its foot. Which is also how reference/ui_trade.png builds a
+ * panel: a lit header over a darker body, one hard line between them. */
+.settings__confirm .confirm__title {
+  margin: -12px -13px 3px;
+  padding: 12px 13px 10px;
+  background: linear-gradient(180deg, #FFF9EE 0%, #F4E6CE 100%);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.9),   /* layer 3: the warm top rim */
+    0 1px 0 rgba(23, 19, 14, 0.22);           /* layer 2: the hard step */
+}
+
+/* The reset card wears the same hazard tape as the well it sits in — drawn
+   over the head band, which is why it is positioned and the band is not. */
+.settings__confirm--danger .confirm__title {
+  padding-top: 17px;
+}
+.settings__confirm--danger::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 7px;
+  background: repeating-linear-gradient(45deg,
+    var(--settings-danger) 0 7px, var(--ui-ink) 7px 14px);
+  pointer-events: none;
+}
+
+/* Ink on parchment: outlined white text belongs on the world and on the dark
+   wells, never on a light card. */
+.settings__confirm .confirm__title,
+.settings__confirm .confirm__body,
+.settings__confirm .confirm__item,
+.settings__confirm .confirm__tip,
+.settings__confirm .confirm__final {
   margin: 0;
-  text-align: center;
-  color: var(--ui-ink);
   -webkit-text-stroke-width: 0;
   text-shadow: none;
+  line-height: 1.32;
+}
+.settings__confirm .confirm__title {
+  color: var(--settings-danger-ink);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+.settings__confirm--warn .confirm__title { color: #8A4A0C; }
+/* The list of what is lost was the one line in the card with no colour of its
+   own, so it inherited .t's white and sat on parchment at almost no contrast —
+   the most important sentence in the panel, and the hardest to read. */
+.settings__confirm .confirm__body,
+.settings__confirm .confirm__item { color: #3B2C1E; }
+.settings__confirm .confirm__tip   { color: #6B5335; }
+.settings__confirm .confirm__final { color: var(--settings-danger-ink); }
+
+.settings .confirm__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.settings .confirm__item {
+  position: relative;
+  padding-left: 15px;
+}
+/* A square bullet, because a round one at this size reads as a rendering
+   artefact next to type this heavy. */
+.settings .confirm__item::before {
+  content: '';
+  position: absolute;
+  left: 1px;
+  top: 0.42em;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: #B60D10;
+}
+
+.settings .confirm__acts {
+  display: flex;
+  gap: 9px;
+  margin-top: 3px;
+}
+/* Cancelar first, under the thumb that just pressed the row's button; the
+   destructive verb is the one the hand has to travel to. */
+.settings .confirm__acts .settings__go {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-inline: 8px;
+}
+.settings .confirm__acts .settings__go .t-btn { font-size: 16px; }
+
+/* --- créditos ------------------------------------------------------------- */
+
+.settings__stamp {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 0 4px;
+}
+.settings__stamp-name {
+  margin: 0;
+  font-size: 23px;
+  color: var(--ui-gold-text);
+}
+.settings__stamp-version {
+  margin: 0;
+  font-size: 15px;
+  opacity: 0.66;
+}
+.settings__stamp-line {
+  margin: 0;
+  padding-bottom: 10px;
+  text-align: center;
+  line-height: 1.34;
+  opacity: 0.55;
+}
+
+.settings__credit { padding: 9px 0; }
+.settings__credit-title {
+  margin: 0;
+  font-size: 15px;
+  color: #A6F02B;
+  -webkit-text-stroke-color: #20430C;
+}
+.settings__credit-body {
+  margin: 4px 0 0;
+  line-height: 1.36;
+  opacity: 0.72;
+}
+
+.settings__licence-btn {
+  width: 100%;
+  min-height: 44px;
+  margin: 10px 0 2px;
+  --brk: 60%;
+}
+.settings__licence-btn .t-btn { font-size: 16px; }
+
+/* Legal small print, and the one text in the game with no outline on it: an
+   MIT notice set in heavy contoured display type would be unreadable and would
+   also be shouting. It is reproduced verbatim in English on purpose — see the
+   note on MIT_NOTICE in settings.ts. */
+.settings__licence {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 9px 2px 4px;
+}
+.settings__licence[hidden] { display: none !important; }
+.settings__licence-p {
+  margin: 0;
+  font-family: var(--ui-font-display);
+  font-size: 11px;
+  line-height: 1.42;
+  letter-spacing: 0.01em;
+  color: rgba(255, 255, 255, 0.6);
+}
+.settings__licence-note {
+  margin: 0;
   opacity: 0.5;
 }
 
@@ -119,6 +543,13 @@
   border-radius: 11px;
   overflow: visible;
   z-index: 2;
+  /* §3.14 — the gloss is visibly an INSET plate that stops short of the left
+     and right contour, so a sliver of deep base red frames it. That only works
+     if the face UNDER the plate is the body red rather than the gloss ramp, so
+     this button paints its own two-stop body and puts the plate on ::before. */
+  background: linear-gradient(180deg,
+    var(--ui-red-a) 0%, var(--ui-red-b) 92%,
+    var(--ui-red-lip) 92.01%, var(--ui-red-lip) 100%);
 }
 
 .settings__x .mark--x { width: 46%; }
@@ -134,3 +565,28 @@
 }
 
 .settings__x .mark { position: relative; z-index: 1; }
+
+/* --- iPhone SE and below --------------------------------------------------
+ * At 320pt the row's name, its hint and a button do not all fit on one line
+ * without the hint wrapping to four lines. The control gives the width back. */
+@media (max-width: 379px) {
+  .settings__body { padding: 10px 9px 14px; }
+  .settings__well { padding: 0 9px; }
+  .settings__row { gap: 9px; }
+  .settings__name { font-size: 17px; }
+  .settings__go { padding: 8px 12px; }
+  .settings__go .t-btn { font-size: 16px; }
+  .settings .swt { width: 58px; height: 34px; }
+  .settings .swt__knob { width: 24px; height: 24px; }
+  .settings .swt.is-on .swt__knob { left: calc(100% - 27px); }
+}
+
+/* --- landscape ------------------------------------------------------------
+ * The sheet is portrait-first like everything else, but a phone held sideways
+ * has 400px of height and a 900px-wide sheet would be absurd. Same width, and
+ * the scroll body does the work. */
+@media (orientation: landscape) {
+  .settings { padding-top: calc(var(--ui-safe-t) + 26px); }
+  .settings__head { padding: 8px 58px 7px; }
+  .settings__body { padding: 10px 12px 14px; }
+}

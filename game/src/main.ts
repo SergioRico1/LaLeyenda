@@ -1,13 +1,16 @@
 import { Stage } from './render/stage';
 import { measureRendered } from './render/assets';
-import { createIslandScene } from './scenes/islandScene';
+import { createIslandScene, type IslandScene } from './scenes/islandScene';
 import { createTitleScene } from './scenes/titleScene';
 import { createCaptainScene } from './scenes/captainScene';
 import { createGame, type Game } from './core/game';
 import { adoptSave, importSaveFile, peekSavedGame } from './core/save';
 import { createSettingsPanel, type SettingsPanel } from './ui/panels/settings';
 import { createTutorial, type Tutorial } from './ui/tutorial';
-import { createCaptain, landCargoInPlace, setCaptain, setFlag, type Captain } from './sim';
+import {
+  createCaptain, landCargoInPlace, setCaptain, setFlag, townHallLevel,
+  type Captain, type GameState,
+} from './sim';
 
 /**
  * main.ts — the screen router.
@@ -366,6 +369,36 @@ async function runRouter(stage: Stage): Promise<void> {
   /* --- the tutorial ------------------------------------------------------ */
 
   /**
+   * AN ISLAND THAT IS PAST ITS OPENING IS NOT TAUGHT.
+   *
+   * `flags.tutorialDone` answers this for anyone who has met the tutorial. It
+   * cannot answer it for a save written BEFORE the tutorial existed, and those
+   * are real: `src/core/save.ts`'s 1 → 2 migration turns down the wilderness for
+   * exactly this reason — *"to hand them a tutorial they are five hours past"* —
+   * and then the tutorial was handed to them anyway, because nothing set the
+   * flag. A player with a built-out island being walked through "despeja esa
+   * palmera" is the most obvious possible sign of a game that does not know who
+   * is playing it.
+   *
+   * The test is what the tutorial TEACHES, not how much of it has been done: a
+   * second building, a hall above Nv1, or a single recorded collect or clear all
+   * mean the lesson has already been had.
+   *
+   * ...unless the player is IN the walk. Any `tut.` flag means they have met the
+   * contramaestre and quit partway, and the whole point of a resolver rather than
+   * a cursor is that they come back to the beat the island still needs — which
+   * is usually one they have just done the work for. So a walk in progress
+   * always outranks this.
+   */
+  function alreadyPlayed(state: GameState): boolean {
+    if (Object.keys(state.flags).some((flag) => flag.startsWith('tut.'))) return false;
+    return state.buildings.length > 1
+      || townHallLevel(state) > 1
+      || state.stats.collects > 0
+      || state.stats.obstacles > 0;
+  }
+
+  /**
    * Mounted over the island, once, for a player who has not been through it.
    *
    * It is the router's rather than the island's because it survives the island
@@ -378,8 +411,28 @@ async function runRouter(stage: Stage): Promise<void> {
     // taken from a cold boot, which is every island shot there is.
     if (shotMode && params.get('tutorial') !== '1') return;
     if (live && live.state().flags.tutorialDone) return;
+    if (live && alreadyPlayed(live.state())) {
+      // Marked rather than merely skipped, so the question is asked once and
+      // the answer travels with the save.
+      live.dispatch((state) => setFlag(state, 'tutorialDone'));
+      void live.saveNow();
+      return;
+    }
+    // The island on the stage right now, for the two seams src/ui/tutorial.ts
+    // names. It is read at call time rather than captured, because a voyage in
+    // the middle of the opening replaces the scene under a tutorial that
+    // deliberately outlives it.
+    const island = (): IslandScene | null =>
+      currentName === 'island' ? (current as IslandScene) : null;
     tutorial = createTutorial({
       root: overlayRoot,
+      // SEAM 1: with the live game the three acknowledgement beats write their
+      // flags into the SAVE through the sim, which is what makes the walk
+      // resumable across a quit rather than only across a scene change.
+      game: live ?? undefined,
+      // SEAM 2: a cell becomes a point on screen, so "despeja esa palmera" gets
+      // a ring round the actual palm instead of a dim over the whole island.
+      project: (x, z) => island()?.project(x, z) ?? null,
       onDone: () => {
         tutorial = null;
         // No game under a capture — the island made its own — so the flag has

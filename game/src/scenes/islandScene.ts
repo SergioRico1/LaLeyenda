@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Stage } from '../render/stage';
 import { Water } from '../render/water';
 import {
-  generateIsland, buildIslandMesh, buildShoreSDF, cellToWorld, worldToCell, STEP, CELL,
+  generateIsland, buildIslandMesh, buildShoreSDF, cellToWorld, levelPlots, worldToCell, STEP, CELL,
   type IslandShape,
 } from '../render/island';
 import { createGhost, type Ghost } from '../render/ghost';
@@ -15,10 +15,12 @@ import { instantiate, preload } from '../render/assets';
 import { Rng } from '../core/rng';
 import { createGame, type Game } from '../core/game';
 import {
-  BALANCE, buildingSpec, claimDaily, claimFreeChest, claimQuest, collect, collectAll, finishNow,
-  levelSpec, openChest, place, placeRefusal, questComplete, spotRefusal, startChest, startUpgrade,
-  townHallLevel, type GameState, type Refusal,
+  BALANCE, buildingSpec, claimDaily, claimFreeChest, claimQuest, clearObstacle, collect, collectAll,
+  finishNow, levelSpec, obstacleAt, obstacleTier, openChest, place, placeRefusal, plotHalf,
+  questComplete, spotRefusal, startChest, startUpgrade, townHallLevel,
+  type GameState, type Refusal,
 } from '../sim';
+import { dur } from '../ui/format';
 import { createHud, type Hud, type ResourceId } from '../ui/hud';
 import { bakeIcons, bakeModelIcons, type IconSet } from '../ui/icons';
 import {
@@ -48,6 +50,17 @@ export const ISLAND_MODELS = [
 
 export interface IslandScene {
   update(dt: number, elapsed: number): void;
+  /**
+   * Where a grid cell is on screen, in CSS pixels, or null when it is behind
+   * the camera.
+   *
+   * The tutorial's SEAM 2 (src/ui/tutorial.ts): the director points at a palm by
+   * cell, because an obstacle is a cell and the sim owns no pixels. Nothing in
+   * the DOM stands over the wilderness — it is instanced geometry — so without
+   * this the first and most physical instruction in the game, *clear that tree*,
+   * had to fall back to dimming the whole island and pointing at nothing.
+   */
+  project(x: number, z: number): { x: number; y: number } | null;
   /** Tears the scene down so another one can have the stage. Everything this
    *  added to the scene graph, the DOM and the canvas goes with it — the game
    *  itself does NOT, because it outlives any one view of it. */
@@ -92,9 +105,6 @@ export async function createIslandScene(
   // one, Clash-style, never growing under a player's feet.
   const shape = generateIsland(seed, BALANCE.island.grid);
   const mixers: THREE.AnimationMixer[] = [];
-
-  const terrain = buildIslandMesh(shape, `${seed}:grain`);
-  stage.scene.add(terrain);
 
   const islandWorldSize = shape.size * CELL;
   /**
@@ -296,6 +306,81 @@ export async function createIslandScene(
     clock: shot ? () => SHOT_EPOCH + sceneElapsed * 1000 : undefined,
   });
 
+  /* --- the ground under the buildings -------------------------------------
+   *
+   * THE TERRAIN MESH CANNOT BE BUILT UNTIL THE SAVE HAS BEEN READ, which is why
+   * it is down here rather than beside `generateIsland`.
+   *
+   * `render/island.ts` generates a landform — plateau, terraces, beach — and it
+   * knows about exactly one building, the Ayuntamiento, because the sim states
+   * that the hall stands on the grid's centre for the life of every save. Every
+   * other building is a fact only the SAVE holds, and a building is drawn at one
+   * height: its centre cell's. So a terrace step crossing a footprint leaves a
+   * corner of that building hanging in the air.
+   *
+   * Measured on the shipped seed: 7 of the demo island's 11 buildings straddled
+   * a step of a full 0.84 units — thirteen screen pixels at 1280. `levelPlot`
+   * flattens each footprint to its own centre before the mesh is generated, and
+   * the layout stays DATA: the scene reads cells out of the save and asks the
+   * renderer to level them, it does not invent a building anywhere.
+   */
+  /*
+   * THE PLOT ROUNDED OUT, and the rounding is the whole of why it is not the
+   * model's own width.
+   *
+   * The obvious radius is the one the MODEL covers — a 5-cell building stands on
+   * five cells — and it is wrong, because two level squares that OVERLAP fight:
+   * the second one re-raises ground the first flattened, and where the two
+   * centres are a tier apart the boundary between them comes out a wall two
+   * tiers tall. Measured with the model's radius on the demo island: 21 walls of
+   * 1.68 units, which is the twenty-pixel cliff round four rejected as a quarry,
+   * and four buildings still straddling because their neighbour had undone them.
+   *
+   * `placement.clearance` is what stops that, and it is stated in PLOTS. Two
+   * plots are always at least `plotHalf(a) + plotHalf(b) + clearance` apart, so
+   * squares of `ceil(plotHalf)` can never meet: the widest pair in the catalogue
+   * is two Muelles at 3 + 3 = 6 with a minimum separation of 7. The eaves that
+   * overhang the plot are left over ground that is a tier lower, which is a roof
+   * over the edge of a terrace and reads as one.
+   */
+  const plotLevelHalf = (type: string): number => Math.ceil(plotHalf(type));
+
+  /** Levels the ground under every building in the save. True if any moved. */
+  function levelBuildingPlots(): boolean {
+    return levelPlots(shape, game.state().buildings.map((b) => {
+      const spec = buildingSpec(b.type);
+      const cell = spec.waterfront ? { x: b.x, z: b.z } : snapToBuildable(shape, b.x, b.z, b.type);
+      return { x: cell.x, z: cell.z, half: plotLevelHalf(b.type) };
+    }));
+  }
+
+  levelBuildingPlots();
+  let terrain = buildIslandMesh(shape, `${seed}:grain`);
+  stage.scene.add(terrain);
+
+  /**
+   * ...and again after the player places one, because the ground under a new
+   * building is only flat once somebody flattens it.
+   *
+   * A rebuild rather than a patch: the mesh is one merged geometry per material
+   * and a cell's walls belong to its neighbours as much as to itself, so there
+   * is no such thing as re-emitting one cell. It costs a walk of 44x44 cells and
+   * happens once per placement, which is a few times a session.
+   */
+  function relevelGround(): void {
+    if (!levelBuildingPlots()) return;
+    stage.scene.remove(terrain);
+    terrain.traverse((node) => {
+      const mesh = node as Partial<THREE.Mesh>;
+      mesh.geometry?.dispose();
+      const material = mesh.material;
+      if (Array.isArray(material)) for (const m of material) m.dispose();
+      else material?.dispose();
+    });
+    terrain = buildIslandMesh(shape, `${seed}:grain`);
+    stage.scene.add(terrain);
+  }
+
   // ?parts=terrain,buildings,decor,ship narrows what gets built, so a problem
   // can be isolated to one category without editing code.
   const partsParam = params.get('parts');
@@ -351,6 +436,10 @@ export async function createIslandScene(
   const placed = new Set<number>();
   async function syncBuildings(): Promise<void> {
     if (!parts.has('buildings')) return;
+    // The ground first: a building placed during play stands on terrain that was
+    // meshed before its cell was chosen. At boot this is a no-op — the plots
+    // were levelled before the mesh — so it costs nothing on the common path.
+    relevelGround();
     for (const b of game.state().buildings) {
       if (placed.has(b.id)) continue;
       placed.add(b.id);
@@ -367,7 +456,25 @@ export async function createIslandScene(
    * dressing is drawn as one InstancedMesh per distinct model rather than one
    * scene node per prop — see render/scatter.ts for why that distinction is the
    * difference between a packed island and a draw-call budget. */
-  if (parts.has('decor')) {
+  /**
+   * The props, rebuildable — because the wilderness SHRINKS.
+   *
+   * Everything on this island used to be scattered once at boot and left, which
+   * was true of decoration and false of obstacles: a cleared palm went out of
+   * the save and stayed on the screen, so the player paid a builder and half an
+   * hour for a tree that never fell. Rebuilt whenever the obstacle set changes,
+   * which is a few times a session.
+   *
+   * The geometry is not thrown away with it. `render/scatter.ts` bakes one
+   * geometry per model into a module-level cache, so a rebuild allocates a
+   * material and an instance buffer and nothing else — disposing the geometries
+   * here would empty that cache for every later rebuild.
+   */
+  let scatter: THREE.Group | null = null;
+  let wilderness = '';
+  const wildernessKey = (): string => game.state().obstacles.map((o) => o.id).join(',');
+
+  async function buildProps(): Promise<void> {
     const props = [
       ...planDecor(shape, game.state(), seed),
       // The wilderness. OPENING.md part 3: without it a day-one island is a vast
@@ -380,19 +487,41 @@ export async function createIslandScene(
       ...planObstacles(shape, game.state(), seed),
       ...planIslets(shape, seed),
     ];
-    const scatter = await buildScatter(props);
+    wilderness = wildernessKey();
+    const next = await buildScatter(props);
+    if (scatter) {
+      stage.scene.remove(scatter);
+      scatter.traverse((node) => {
+        const material = (node as Partial<THREE.Mesh>).material;
+        if (Array.isArray(material)) for (const m of material) m.dispose();
+        else material?.dispose();
+      });
+    }
+    scatter = next;
     stage.scene.add(scatter);
+    console.log(`[decor] ${props.length} props in ${scatter.children.length} draw calls`);
+  }
+
+  /** Rebuilds the props if — and only if — the wilderness has changed. */
+  let rebuilding = false;
+  function refreshWilderness(): void {
+    if (!parts.has('decor') || rebuilding || wilderness === wildernessKey()) return;
+    rebuilding = true;
+    void buildProps().finally(() => { rebuilding = false; });
+  }
+
+  if (parts.has('decor')) {
+    await buildProps();
     // Ground cover is flat and belongs to the terrain rather than the prop list
     // — it is what lets an EMPTY buildable plot read as prepared ground without
-    // putting an object on ground a building could claim. See decor.ts.
-    const cover = buildGroundCover(shape, seed);
-    stage.scene.add(cover);
+    // putting an object on ground a building could claim. See decor.ts. Built
+    // once: it follows the terrain, and the terrain's own shape does not change.
+    stage.scene.add(buildGroundCover(shape, seed));
     // The outlying islets' sand. Geometry rather than a prop because the model
     // that used to serve carried three detached slabs a `ScatterItem` has no way
     // to leave behind — see decor.ts. Same voxel lattice and same palette as the
     // terrain, so they read as the same beach.
     stage.scene.add(buildIslets(shape, seed));
-    console.log(`[decor] ${props.length} props in ${scatter.children.length} draw calls, +1 ground cover`);
   }
 
   // The player's ship, moored off the dock.
@@ -1279,6 +1408,68 @@ export async function createIslandScene(
     return null;
   }
 
+  /**
+   * A TAP ON THE WILDERNESS SENDS A CARPENTER TO CLEAR IT — and until this
+   * existed there was no way to clear an obstacle at all.
+   *
+   * `sim/obstacles.ts` has had `clearObstacle` since round eight, with its own
+   * refusals, its own timer, its own payout and 24 test cases over it, and the
+   * ONLY callers in the whole tree were those tests. OPENING.md builds the first
+   * five minutes on this action — *clear that tree, then place your first
+   * Aserradero on the ground it freed* — and round nine's tutorial says it out
+   * loud in the second card a new player ever sees. An instruction the game has
+   * no control for is the one failure the director is written to make
+   * impossible, so it is wired here rather than left for a later round.
+   *
+   * The tap is the same one that opens a building: a real tap, not a drag, that
+   * hit no model. `cellUnder` raycasts the GROUND, and the nearest obstacle
+   * within `TAP_REACH` of the cell it lands on is the one that gets the
+   * carpenter — the slack is not generosity, it is the geometry:
+   *
+   *   · a palm is drawn up to 0.46 of a cell off its own centre, and a finger
+   *     goes for the trunk it can see rather than for the soil under it;
+   *   · the trunk stands about a unit tall on a camera pitched 33.5 degrees, so
+   *     a ray through the visible tree meets the ground the better part of a
+   *     cell BEYOND the cell the tree is standing on.
+   *
+   * 1.2 cells is about 25 screen pixels at this framing — a fingertip, and the
+   * number is a compromise measured in both directions. Wider and a tap on open
+   * ground three cells from anything starts a job: a clear costs no resources
+   * but it does commit a carpenter, for thirty seconds on a palm and FIFTEEN
+   * MINUTES on a wreck, and a mis-tap that locks a builder for a quarter of an
+   * hour is the kind of thing a player never forgives. Narrower and the aim
+   * error above is not covered. It stays a one-tap commit rather than Clash's
+   * two-step confirm bubble, which is a real difference and is why the toast
+   * below exists: whatever a tap started, it says so.
+   */
+  const TAP_REACH = 1.2;
+
+  /** What the toast calls each kind — es-ES, this screen's own copy. */
+  const WILD_LABEL: Record<string, string> = {
+    palmera: 'la palmera', roca: 'la roca', pecio: 'el pecio', penasco: 'el peñasco',
+  };
+  function tapWilderness(event: PointerEvent): void {
+    const cell = cellUnder(event);
+    if (!cell) return;
+    const state = game.state();
+    let target = obstacleAt(state, cell.x, cell.z);
+    if (!target) {
+      let nearest = TAP_REACH;
+      for (const o of state.obstacles) {
+        const d = Math.hypot(o.x - cell.x, o.z - cell.z);
+        if (d <= nearest) { nearest = d; target = o; }
+      }
+    }
+    if (!target) return;
+    const result = game.dispatch((state, now) => clearObstacle(state, target.id, now));
+    if (!result.ok) { refused(result.refusal); return; }
+    // The same sound a started upgrade makes, because it is the same event: a
+    // carpenter has gone out and a timer is running.
+    sfx('build');
+    hud?.say(`Un carpintero despeja ${WILD_LABEL[target.kind] ?? 'la maleza'} · ${dur(obstacleTier(target).timeMs)}`);
+    syncHud();
+  }
+
   const canvas = stage.renderer.domElement;
   canvas.addEventListener('pointerdown', (event) => {
     down = { x: event.clientX, y: event.clientY };
@@ -1307,7 +1498,8 @@ export async function createIslandScene(
     if (rig.panning) return;
     if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10) return;
     const id = buildingUnder(event);
-    if (id !== null) openSheetFor(id);
+    if (id !== null) { openSheetFor(id); return; }
+    tapWilderness(event);
   };
   canvas.addEventListener('pointerup', release, { signal: listeners.signal });
   canvas.addEventListener('pointercancel', () => { down = null; }, { signal: listeners.signal });
@@ -1437,7 +1629,30 @@ export async function createIslandScene(
   const SIM_STEP = 0.25;
   let nextSimAt = 0;
 
+  /**
+   * A grid cell, projected. The HUD's own world-anchored items use the identical
+   * arithmetic (`hud.place` a few hundred lines up), so a tutorial ring and a
+   * collect bubble over the same ground land in the same place.
+   *
+   * Lifted half a cell off the ground on purpose: what the player is being asked
+   * to tap is a palm or a rock STANDING on the cell, not the soil under it, and
+   * a ring centred on the soil sits under the thing it is meant to circle.
+   */
+  const cellPoint = new THREE.Vector3();
+  function projectCell(x: number, z: number): { x: number; y: number } | null {
+    if (x < 0 || z < 0 || x >= shape.size || z >= shape.size) return null;
+    const at = cellToWorld(shape, x, z);
+    cellPoint.set(at.x, at.y + STEP * 0.9, at.z).project(stage.camera);
+    if (cellPoint.z >= 1) return null;
+    const rect = stage.renderer.domElement.getBoundingClientRect();
+    return {
+      x: rect.left + (cellPoint.x * 0.5 + 0.5) * rect.width,
+      y: rect.top + (-cellPoint.y * 0.5 + 0.5) * rect.height,
+    };
+  }
+
   return {
+    project: projectCell,
     update(dt, elapsed) {
       sceneElapsed = elapsed;
       water.update(elapsed, stage.camera);
@@ -1462,6 +1677,10 @@ export async function createIslandScene(
         // channel: work-finished, chest-ready, level-up, builder-expired.
         const stepped = game.tick();
         if (stepped) { void syncBuildings(); celebrateEvents(stepped.events); }
+        // A clear that FINISHED takes its palm off the island. Checked every
+        // tick rather than off the event, because a clear can also complete
+        // while the app was shut and arrive through the offline catch-up.
+        refreshWilderness();
         syncHud();
         // A sheet left open while a timer finishes must not keep offering an
         // upgrade that already started, or a gem price that has moved.
