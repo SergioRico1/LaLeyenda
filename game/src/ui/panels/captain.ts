@@ -123,7 +123,7 @@ export interface CaptainPanel {
 export function createCaptainPanel(opts: CaptainPanelOptions): CaptainPanel {
   let look: CaptainLook = opts.captain.look;
   let name = opts.captain.name;
-  let open: AvatarSlot = 'hat';
+  let open: AvatarSlot = opts.openSlot ?? 'hat';
   let swatchArt: SwatchLookup = () => undefined;
 
   const draft = (): Captain => ({ name: sanitizeName(name), seed: opts.captain.seed, look });

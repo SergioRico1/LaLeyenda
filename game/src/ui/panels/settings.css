@@ -52,7 +52,17 @@
   position: absolute;
   inset: 0;
   background: var(--settings-dim);
+  /* Every overlay's backdrop arrives the SAME way: the sheet pops (ui-pop-s,
+     §5 law 1) and the dim behind it FADES over the same beat — celebrate.css's
+     ui-scrim-in, the one fade the motion rules permit, because a scrim is
+     light, not an object. It used to appear in one frame while the sheet
+     travelled, which read as two unrelated events. */
+  opacity: 0;
+  animation: ui-scrim-in 0.2s ease-out forwards;
 }
+/* Shot mode kills animations; the scrim's resting state is opaque, and a
+   frozen start state would un-dim every deterministic panel capture. */
+html.shot:not(.motion) .settings__scrim { opacity: 1; }
 
 /* --- the sheet ------------------------------------------------------------
  * §3.16's three-layer edge — near-black outside, taupe band, light rim inside,

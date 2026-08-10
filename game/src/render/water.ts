@@ -187,6 +187,33 @@ import * as THREE from 'three';
  *   read as a reef at the top of the frame and at the bottom, instead of being
  *   flattened into the sweep like everything else out there.
  *
+ * THE LEDGE, AND THE CALM PAST IT
+ *
+ * Two verdicts sat unanswered for ten rounds, and they are one mechanism seen
+ * from its two sides. "The island sits ON its water": in the reference the
+ * shelf is a submerged TERRACE — walk a scanline off their dock and L runs
+ * 220 on the shelf, 128 in one block of saturated teal, 80 in the navy. An
+ * exponential ramp cannot draw that; it walks the same fall over ten units.
+ * So the island's water now has a drop line — base reach ~4.7 units, bent by
+ * slow noise so bays keep more shelf than headlands, notched per 1.6-unit
+ * chunk so the edge is a voxel coast — and past it the ramp position JUMPS to
+ * 0.86 (a max, so true deep keeps its own answer). On the drop hangs a wall:
+ * columns a cell wide and six long, three hard shades of the ramp's own teal,
+ * feet jittered so some columns drip past a unit, over a dithered three-step
+ * shadow that dies two units out. The sparkle reads the same jumped depth, so
+ * the chips fall off the cliff with the colour and the surf lace is clipped at
+ * the drop — which is exactly where the reference stops carrying both.
+ *
+ * "Diamond tile grain in the deep field" is the far side of the same drop.
+ * Past their ledge the reference's water is mostly FLAT — long runs of one
+ * navy with sparse larger, lighter chunks — while ours ran the shelf's full
+ * block-and-fleck grain to the frame edge, and a block three pixels wide at
+ * full contrast is a woven lattice, not water. So past the drop the tone
+ * field is pulled toward its own middle BEFORE the five-level quantise (the
+ * bins merge and the chunks grow), and the fleck keeps a quarter of itself.
+ * Both are gated on uHasShore times depth, so the open sea and the title
+ * screen keep the exact material every one of their tunings was made against.
+ *
  * THE DETAIL FADE, AND WHY IT CANNOT USE fwidth
  *
  * A procedural texture has no mips, so this shader fades its own grain out as a
@@ -782,6 +809,36 @@ ${SWELL_GLSL}
     // island: 1 on a shoal, 0 in the deep.
     float shoalField = uReef * offshore * smoothstep(0.62, 0.20, bed);
 
+    // THE LEDGE — see the note at the top of the file.
+    //
+    // The reference's island does not fade into its sea, it STANDS in it: the
+    // pale shelf is a submerged terrace with an edge, and at that edge the
+    // water drops to navy in under a block — sampled across their dockside
+    // drop, L runs 220, 128, 80 in three rows of pixels. Our exponential ramp
+    // walked the same fall over ten world units, which is why theirs reads as
+    // an island IN water and ours read as an island ON a gradient.
+    //
+    // Where the drop line sits is bathymetry, not swash, so it is measured off
+    // d rather than dSurf and does not breathe with the swell. Three scales
+    // shape it: a base reach, a slow noise so one stretch of coast keeps more
+    // shelf than another, and a hard per-chunk notch so the line is a voxel
+    // coast rather than an offset ring traced round the island. Everything
+    // below is zero in a scene with no shore, and the sea never reaches it.
+    float ledgeEdge = 0.0;   // world units past the drop line, signed
+    float pastLedge = 0.0;   // 0 on the shelf, 1 beyond the drop
+    if (uHasShore > 0.5) {
+      vec2 lchunk = floor(vWorld.xz / (uCell * 8.0));
+      float ledgeAt = 5.6
+                    + (valueNoise(vWorld.xz * 0.030 + 61.0) - 0.5) * 2.6
+                    + (hash21(lchunk + 9.7) - 0.5) * 1.4;
+      // The floor keeps a unit of drawn shelf between the apron's heavy lace
+      // (2.4 on the island) and the drop, however low the noise swings — the
+      // north coast is foreshortened and a drop nearer than this reads as the
+      // lace falling straight off the sand.
+      ledgeEdge = d - max(ledgeAt, 3.4);
+      pastLedge = smoothstep(0.0, 0.55, ledgeEdge);
+    }
+
     // Depth ramp.
     //
     // Fitted to a reference scanline running out from the beach: mint through
@@ -801,6 +858,19 @@ ${SWELL_GLSL}
     // 5.2 puts the whole of it inside three units, which is a halo rather than a
     // lagoon and is most of why our island reads as sitting ON the water.
     float t = 1.0 - exp(-d * depthScale / uRampDist);
+    // The drop itself: past the ledge the ramp JUMPS to its navy rather than
+    // walking there. A max rather than a mix, so water that is already deeper
+    // than the ledge floor keeps its own answer — the ledge can only deepen a
+    // shelf, never lift the open dark. Taken before depth01 so the sparkle
+    // falls off the same cliff the colour does: chips die past the drop for
+    // free, exactly where the reference stops carrying them. pastLedge is
+    // exactly 0.0 in a shoreless scene, and max(t, 0.0) is t.
+    //
+    // 0.83 is not a taste: the ramp reads (18,94,133), L=81 there, and the
+    // navy the reference holds against its own wall measures L=75-80. At 0.86
+    // the whole mid-field between the drop and true deep sat on the ramp's
+    // last stop and the frame lost ten points of mean for nothing.
+    t = max(t, pastLedge * 0.83);
     // How deep this water is, before the ramp quantises it: 0 at the waterline,
     // 1 out in the dark. THE ONE RULER THE SPARKLE READS — see THE SPARKLE IS A
     // FUNCTION OF DEPTH at the top of the file. It is taken here rather than
@@ -812,6 +882,23 @@ ${SWELL_GLSL}
     vec2 tile = floor(vWorld.xz / (uCell * 2.0));
     t = clamp(floor(t * 11.0 + hash21(tile) * 0.85) / 11.0, 0.0, 1.0);
     vec3 col = rampColour(t);
+
+    // THE DEEP FIELD IS CALM — see the note at the top of the file.
+    //
+    // Crop the reference's water past its ledge and most of it is FLAT: long
+    // runs of one navy with a sparse scatter of larger, lighter chunks lying
+    // in it. Ours ran the shelf's full block-and-fleck grain out to the frame
+    // edge, and at a block three pixels wide that is not texture, it is a
+    // diamond weave laid over the whole deep — the exact "tiling noise" read
+    // the lattice note above spent a round killing at the shelf. So the deep
+    // pulls the tone field toward its own middle BEFORE the five-level
+    // quantise: neighbouring blocks land in the same bin and merge into the
+    // reference's big flat chunks, the extremes survive only where the noise
+    // insists, and the marks that remain are the sparse lighter slabs their
+    // deep actually carries. Gated on the shore, so the ocean and the title
+    // screen keep the exact field every one of their tunings was made
+    // against: uHasShore is 0.0 there and the pull multiplies by it.
+    float calm = uHasShore * smoothstep(0.58, 0.86, depth01);
 
     // The material grain: BLOCKS, low contrast.
     //
@@ -857,6 +944,9 @@ ${SWELL_GLSL}
     // five quantised levels stay populated. Contrast lost to averaging is the
     // usual way a grain like this quietly turns into a flat wash.
     tone = clamp((tone - 0.5) * 1.62 + 0.5, 0.0, 1.0);
+    // The deep's pull to the middle, before the bins are cut — merging is the
+    // point, so it cannot come after. mix(tone, 0.5, 0.0) is tone, exactly.
+    tone = mix(tone, 0.5, calm * 0.55);
     tone = clamp(floor(tone * 5.0) / 4.0, 0.0, 1.0);
     // The dark half of the spread opens up with distance from land, so the navy
     // gets its darkest tones and the turquoise shelf is left alone. On the shelf
@@ -897,6 +987,35 @@ ${SWELL_GLSL}
     // slightly onto the leading face. This is the line that makes the swell
     // read as moving water rather than as mottling that happens to drift.
     col = mix(col, uCrest, smoothstep(0.40, 0.92, wave) * (0.11 + 0.15 * max(face, 0.0)) * shoal);
+
+    // THE LEDGE'S FACE. The jump in the ramp above puts the navy in the right
+    // place; this is what makes the drop read as a WALL rather than as a
+    // boundary between two paints. In the reference the strip below the shelf
+    // edge is a saturated mid-teal broken into thin vertical columns — the
+    // submerged cliff face seen through the water — with pale columns hanging
+    // into the navy like drips, and the navy under them sits a step darker
+    // than the open deep: the terrace's own shadow. So: columns one cell wide
+    // and six long, each with a hard shade off its own hash and a ragged foot,
+    // painted over a dithered three-step darkening that dies out two units
+    // past the drop. All of it lives behind the shore test — the ocean and
+    // the title screen never evaluate a line of it.
+    if (uHasShore > 0.5 && ledgeEdge > 0.0 && ledgeEdge < 2.4) {
+      float shdw = 1.0 - smoothstep(0.10, 1.9, ledgeEdge);
+      shdw = min(floor(shdw * 3.0 + hash21(tile + 2.7) * 0.8) / 3.0, 1.0);
+      col *= 1.0 - 0.14 * shdw;
+      vec2 wallCell = floor(vWorld.xz / (uCell * vec2(1.0, 6.0)));
+      float colHash = hash21(wallCell + 3.3);
+      // Every column gets a third of a unit of face — the wall itself is
+      // continuous in the reference — but the long drips come in CLUSTERS
+      // with stretches of clean edge between them, not as an even fringe:
+      // an even fringe is the same salt-on-a-table failure the glare had.
+      float cluster = smoothstep(0.30, 0.72, valueNoise(vWorld.xz * 0.11 + 5.7));
+      float hang = 0.30 + colHash * colHash * 0.9 * cluster;
+      float inWall = step(ledgeEdge, hang);
+      float shade = floor(hash21(wallCell + 27.9) * 3.0) / 2.0;
+      vec3 wallCol = mix(uRamp[3] * 0.72, mix(uRamp[2], uRamp[1], 0.35), shade);
+      col = mix(col, wallCol, inWall * 0.85 * mix(0.4, 1.0, detail));
+    }
 
     // Surf running up the sand and draining back. Everything below measures the
     // shoreline from here rather than from d, so the waterline breathes.
@@ -961,7 +1080,7 @@ ${FOAM_SIZES.map(
         f.rise[1] > 0
           ? ` * smoothstep(apronFlat * ${g(f.rise[0])}, apronFlat * ${g(f.rise[1])}, fp${i})`
           : ''
-      } * (1.0 - smoothstep(apronFlat * ${g(f.hold)}, min(apronFlat * ${g(f.gone)}, 1.0), fp${i})) * mix(${g(f.calm)}, 1.0, fingers), ${g(f.cap)});
+      } * (1.0 - smoothstep(apronFlat * ${g(f.hold)}, min(apronFlat * ${g(f.gone)}, 1.0), fp${i})) * mix(${g(f.calm)}, 1.0, fingers) * (1.0 - pastLedge), ${g(f.cap)});
       dimHit = max(dimHit, step(1.0 - fc${i}, fh${i}));
       // The white rides the same hash at a tighter cut, so every bright block
       // sits inside a dim one — the sea-glass brackets the white for free —
@@ -1400,7 +1519,10 @@ ${GLARE_SIZES.map(
     // proportionally larger one their own values show in the reference.
     // Faded out with the LOD, because a cell smaller than a pixel is shimmer.
     float fleck = floor(hash21(cell + 71.0) * 3.0) / 2.0;
-    col *= mix(1.0, mix(0.91, 1.09, fleck), detail);
+    // The deep keeps a quarter of its fleck rather than none: the reference's
+    // dark chunks still step cell to cell, they just step within a few RGB.
+    // detail * (1.0 - 0.0) is detail, so the sea's fleck is untouched.
+    col *= mix(1.0, mix(0.91, 1.09, fleck), detail * (1.0 - calm * 0.72));
 
     // Chips are hazed by distance, not by the full view ramp: the reference's
     // far reefs still show their white, they just show less of it.

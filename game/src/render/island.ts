@@ -140,6 +140,20 @@ const GRASS_TONES: readonly number[] = [
 ];
 
 /**
+ * The olive field's tint, exported so the ground cover can find it.
+ *
+ * The list above says it in passing — *"the olive one the crop rows go on"* —
+ * and until round eleven nothing enforced it: `decor.ts` keyed its furrows off
+ * a per-2x2-block hash instead, which laid crop rows over 4/9 of EVERY field on
+ * the island. A rank of cells runs along a grid axis, a grid axis projects to a
+ * screen diagonal, so that hash was the *"diagonal hatch streaks ... reads as
+ * static"* verdict, verbatim. island_hero.png has exactly ONE worked field.
+ * Matching the tint is what gives us one too (TONE_ORDER deals the olive to the
+ * island's second-largest field and roughly every sixth after it).
+ */
+export const CROP_FIELD_TINT = GRASS_TONES[5];
+
+/**
  * The order the fields take those greens in, and it is a fixed permutation
  * rather than a stride for a reason worth stating.
  *

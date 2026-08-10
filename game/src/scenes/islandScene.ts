@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { Stage } from '../render/stage';
 import { Water } from '../render/water';
 import {
-  generateIsland, buildIslandMesh, buildShoreSDF, cellToWorld, levelPlots, worldToCell, STEP, CELL,
-  type IslandShape,
+  generateIsland, buildIslandMesh, buildShoreSDF, cellToWorld, isBuildable, levelPlots, worldToCell,
+  STEP, CELL, type IslandShape,
 } from '../render/island';
 import { createGhost, type Ghost } from '../render/ghost';
 import { createCameraRig, type CameraRig } from '../render/cameraRig';
@@ -97,6 +97,45 @@ export async function createIslandScene(
   const listeners = new AbortController();
   const params = new URLSearchParams(location.search);
   const shot = params.get('shot') === '1';
+
+  /*
+   * THE ASSEMBLY VEIL — the answer to the walked audit's single worst frame.
+   *
+   * This function is async and the stage renders while it awaits: preload,
+   * building placement and the prop bake take real time on a phone, and every
+   * frame of it used to reach the screen — *"after ¡A navegar! the player
+   * stares at raw, HUD-less, ground-level terrain for 2+ frames while the
+   * island assembles"*, at the most important seam of the first run. A router
+   * wipe (main.ts's seam) is 250ms of cover with no idea how long assembly
+   * takes; this veil is the scene owning its own readiness: opaque ink from
+   * the first line of construction, shed with a 260ms fade only when the
+   * scene returns — camera solved, HUD mounted, props placed.
+   *
+   * Skipped under ?shot=1: the harness waits for readiness anyway, and a
+   * fading div would race the capture for byte-identity.
+   *
+   * Parented under #ui when it exists so `dispose`'s replaceChildren sweeps
+   * it; the timeout is the belt for the body-parented fallback.
+   */
+  let veil: HTMLDivElement | null = null;
+  if (!shot) {
+    veil = document.createElement('div');
+    veil.style.cssText =
+      'position:fixed;inset:0;background:#08131d;z-index:2147483000;' +
+      'opacity:1;transition:opacity 260ms ease-out;pointer-events:none;';
+    (document.getElementById('ui') ?? document.body).append(veil);
+  }
+  function shedVeil(): void {
+    const shed = veil;
+    if (!shed) return;
+    veil = null;
+    // Two frames behind the fade, so the first thing visible through it is a
+    // fully composed, fully framed island — never a half-assembled one.
+    requestAnimationFrame(() => requestAnimationFrame(() => { shed.style.opacity = '0'; }));
+    const drop = () => shed.remove();
+    shed.addEventListener('transitionend', drop, { once: true });
+    setTimeout(drop, 900);
+  }
 
   // The grid comes from balance.json, not from a number typed here: the sim
   // seeds its obstacle field against `island.grid` and the renderer generates
@@ -569,8 +608,24 @@ export async function createIslandScene(
   const shipY = STEP * 0.85;
   if (parts.has('ship')) {
     const skiff = await instantiate('ship_skiff', { fit: 5, clip: 'Idle' });
-    skiff.object.position.set(-17, shipY, 9);
-    skiff.object.rotation.y = -0.5;
+    /*
+     * ON THE NEAR SHORE, IN THE BOOT FRAME. It was moored at (-17, 9) — off
+     * the west coast, which the town-zoom boot crops at the frame's left edge
+     * — and round eleven's audit read the result exactly: *"the wrecked ship
+     * sits half-cropped at the frame edge — move it in and light it."* The one
+     * scarlet sail in the world (the scattered wrecks are TINTed to maroon;
+     * this hull keeps its paint on purpose, see decor.ts) was spending itself
+     * on a sliver.
+     *
+     * South-east instead: the camera side, three units off the coast, riding
+     * the swell on the bright turquoise shelf where the water's own sun lane
+     * runs — which is the "light it": the shelf is the brightest ground the
+     * frame has, and a red sail on mint water is the reference's own harbour
+     * chord. Inside `islandReach`, so the camera solve holds it in frame at
+     * the survey too instead of classing it foreground and letting it crop.
+     */
+    skiff.object.position.set(13.5, shipY, 23.5);
+    skiff.object.rotation.y = -1.1;
     stage.scene.add(skiff.object);
     if (skiff.mixer) mixers.push(skiff.mixer);
     ship = skiff.object;
@@ -600,6 +655,7 @@ export async function createIslandScene(
    * island every framing shot uses.
    */
   let ember: THREE.PointLight | null = null;
+  let emberGlow: THREE.Sprite | null = null;
   if (parts.has('decor')) {
     const mid = Math.round((shape.size - 1) / 2);
     const hall = game.state().buildings.find((b) => buildingSpec(b.type).kind === 'townhall');
@@ -631,6 +687,51 @@ export async function createIslandScene(
     flame.position.set(at.x, at.y + 2.1, at.z);
     stage.scene.add(flame);
 
+    /*
+     * THE GLOW — what turns the accent from a prop into an EMITTER, which is
+     * round eleven's exact words: *"molten glowing interior that reads at full
+     * zoom-out, Clash-forge style."* The half-unit flame box above is correct
+     * up close and is TWO PIXELS at the survey distance; Clash's forge is not
+     * a bright texel, it is light BLEEDING past its own housing. There is no
+     * bloom pass in this renderer (and a mobile budget says there will not
+     * be), so the bleed is drawn: one additive radial sprite around the flame,
+     * hot core to nothing over a couple of world units, tone-mapping skipped
+     * like the flame's so the sun cannot flatten it. At the survey it is a
+     * ~20px halo — the one warm ember on the island, readable from any zoom;
+     * up close it is the air around the cage glowing. It breathes with the
+     * point light in `update`, so the flame, its pool and its halo are one
+     * fire and not three effects.
+     */
+    const glowCanvas = document.createElement('canvas');
+    glowCanvas.width = 128;
+    glowCanvas.height = 128;
+    const glowCtx = glowCanvas.getContext('2d');
+    if (glowCtx) {
+      const g = glowCtx.createRadialGradient(64, 64, 0, 64, 64, 64);
+      g.addColorStop(0, 'rgba(255, 216, 150, 0.95)');
+      g.addColorStop(0.22, 'rgba(255, 172, 82, 0.5)');
+      g.addColorStop(0.55, 'rgba(255, 124, 44, 0.16)');
+      g.addColorStop(1, 'rgba(255, 96, 32, 0)');
+      glowCtx.fillStyle = g;
+      glowCtx.fillRect(0, 0, 128, 128);
+      const glowMap = new THREE.CanvasTexture(glowCanvas);
+      glowMap.colorSpace = THREE.SRGBColorSpace;
+      const glowMaterial = new THREE.SpriteMaterial({
+        map: glowMap,
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        depthWrite: false,
+      });
+      glowMaterial.toneMapped = false;
+      emberGlow = new THREE.Sprite(glowMaterial);
+      emberGlow.scale.setScalar(2.7);
+      emberGlow.position.set(at.x, at.y + 2.1, at.z);
+      // After the water and the terrain, before the HUD: a halo that lost the
+      // depth sort to the sea plane would clip to a half-disc at the horizon.
+      emberGlow.renderOrder = 12;
+      stage.scene.add(emberGlow);
+    }
+
     // Physical units (r155+ lighting): candela, so the pool under the lamp
     // lands around x1.3 of the ambient at the sand and twice that on the
     // hall's near wall. Short reach — an accent, not a second sun.
@@ -638,6 +739,76 @@ export async function createIslandScene(
     ember.position.set(at.x, at.y + 2.1, at.z);
     stage.scene.add(ember);
   }
+
+  /* --- SOMETHING ALIVE: gulls over the town --------------------------------
+   *
+   * Round eleven's day-one verdict: the island is composed and then it just
+   * SITS there — *"put something alive in the plaza"*. The reference frame has
+   * its forge smoke and its harbour birds; ours had one animation (the moored
+   * hull on the swell) at the frame's edge. Gulls are the cheapest life there
+   * is: no sim state, no save, no AI — a seeded circle each, a flap, and the
+   * long shadows the island already casts everything else with.
+   *
+   * ONE InstancedMesh, four birds, so the whole flock is one draw call plus
+   * one in the shadow pass. Each gull is a shallow V of two triangles —
+   * wingspan a unit — that flaps by scaling its own Y, banks into its turn,
+   * and rides a slow bob. Driven off the SCENE clock like the ember, so a
+   * `?shot=1` capture at a fixed t stays byte-identical.
+   *
+   * Two circuits: one over the plaza (the "alive in the plaza", literally),
+   * one out over the near water by the moored skiff, so the two things that
+   * move share the half of the frame a phone actually shows at boot.
+   */
+  let gulls: THREE.InstancedMesh | null = null;
+  const gullPaths: Array<{
+    cx: number; cz: number; r: number; h: number; speed: number; phase: number; flap: number; bob: number;
+  }> = [];
+  if (parts.has('decor')) {
+    const gullRng = new Rng(`${seed}:gulls`);
+    const wing = new Float32Array([
+      // Flight is +x. Two triangles sharing the body edge; tips swept back
+      // and lifted, so the flap (scale.y) folds them through level.
+      0.22, 0, 0, -0.16, 0, 0, -0.06, 0.2, -0.55,
+      0.22, 0, 0, -0.06, 0.2, 0.55, -0.16, 0, 0,
+    ]);
+    const gullGeometry = new THREE.BufferGeometry();
+    gullGeometry.setAttribute('position', new THREE.BufferAttribute(wing, 3));
+    gullGeometry.computeVertexNormals();
+    const gullMaterial = new THREE.MeshLambertMaterial({ color: 0xf6f3ea, side: THREE.DoubleSide });
+    gulls = new THREE.InstancedMesh(gullGeometry, gullMaterial, 4);
+    gulls.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    // The birds cast — a small shape sliding over the plaza is half of what
+    // says "alive" at this camera — and receive nothing: a gull is above
+    // every caster it could receive from.
+    gulls.castShadow = true;
+    const mid = Math.round((shape.size - 1) / 2);
+    const hall = game.state().buildings.find((b) => buildingSpec(b.type).kind === 'townhall');
+    const hallAt = cellToWorld(shape, hall?.x ?? mid, hall?.z ?? mid);
+    const circuits = [
+      { cx: hallAt.x + 3.5, cz: hallAt.z + 2.5, r: () => gullRng.range(5.5, 8.5), h: () => gullRng.range(8.5, 10.5) },
+      { cx: 8.5, cz: 16.5, r: () => gullRng.range(6.5, 9.5), h: () => gullRng.range(7.5, 9.0) },
+    ];
+    for (let i = 0; i < 4; i++) {
+      const c = circuits[i & 1];
+      gullPaths.push({
+        cx: c.cx + gullRng.range(-1.5, 1.5),
+        cz: c.cz + gullRng.range(-1.5, 1.5),
+        r: c.r(),
+        h: c.h(),
+        speed: gullRng.range(0.22, 0.34) * (gullRng.chance(0.5) ? 1 : -1),
+        phase: gullRng.range(0, Math.PI * 2),
+        flap: gullRng.range(7.5, 10.5),
+        bob: gullRng.range(0.5, 0.9),
+      });
+    }
+    stage.scene.add(gulls);
+  }
+  // Hoisted scratch for the per-frame gull transform — no allocation in update.
+  const gullMatrix = new THREE.Matrix4();
+  const gullQuat = new THREE.Quaternion();
+  const gullEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+  const gullPos = new THREE.Vector3();
+  const gullScale = new THREE.Vector3();
 
 
   /* --- the camera ---------------------------------------------------------
@@ -1458,14 +1629,66 @@ export async function createIslandScene(
     if (bar) uiRoot.append(bar.el);
   }
 
+  /**
+   * Where a fresh ghost first lands: the nearest cell to the middle of the
+   * player's VIEW where this building could legally stand RIGHT NOW.
+   *
+   * It used to spawn on the island's centre cell — which is the Ayuntamiento's
+   * own plot, so the first frame of every placement was a red footprint saying
+   * "Aquí no cabe", on ground the player was not even looking at. The walked
+   * audit hit it on the tutorial's first build: the promised freed hueco had no
+   * ghost on it, and finding a legal cell took five drags. A ghost's first
+   * frame is the game demonstrating the gesture; it must demonstrate a LEGAL
+   * one.
+   *
+   * The search asks the same two questions the confirm will: every plot cell
+   * buildable (the ghost's half of validity) and `spotRefusalNow` silent (the
+   * sim's — occupied plots, uncleared obstacles). Centred on the camera's
+   * target because that is where the player is looking — on the tutorial's
+   * first build the view is parked by the hall, so the nearest legal cell IS
+   * the hueco the cleared palm just freed, and the ghost spawns green on it.
+   */
+  function spawnCell(type: string): { x: number; z: number } {
+    const half = plotHalf(type);
+    const lo = -Math.floor(half - 0.001);
+    const hi = Math.floor(half - 0.001);
+    const fits = (x: number, z: number): boolean => {
+      for (let dz = lo; dz <= hi; dz++) {
+        for (let dx = lo; dx <= hi; dx++) {
+          if (!isBuildable(shape, x + dx, z + dz)) return false;
+        }
+      }
+      return spotRefusalNow(game.state(), type, x, z) === null;
+    };
+    const centre = worldToCell(shape, target.x, target.z);
+    const cx = Math.max(0, Math.min(shape.size - 1, centre.x));
+    const cz = Math.max(0, Math.min(shape.size - 1, centre.z));
+    if (fits(cx, cz)) return { x: cx, z: cz };
+    for (let r = 1; r < shape.size; r++) {
+      for (let dz = -r; dz <= r; dz++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+          const x = cx + dx;
+          const z = cz + dz;
+          if (x < 0 || z < 0 || x >= shape.size || z >= shape.size) continue;
+          if (fits(x, z)) return { x, z };
+        }
+      }
+    }
+    // Nothing legal anywhere (island full): fall back to the view centre and
+    // let the bar say why, which it already does.
+    return { x: cx, z: cz };
+  }
+
   async function beginPlacement(type: string): Promise<void> {
     const spec = buildingSpec(type);
     placing = { type, footprint: spec.footprint };
     // While a ghost is on the grid the finger belongs to it, not to the camera.
     rig.setEnabled(false);
-    // Start under the middle of the island rather than at 0,0, so the first
-    // frame of the ghost is somewhere plausible even before a finger moves.
-    moveGhost(Math.floor(shape.size / 2), Math.floor(shape.size / 2));
+    // The first frame of the ghost is a LEGAL cell near where the player is
+    // looking — see spawnCell.
+    const at = spawnCell(type);
+    moveGhost(at.x, at.z);
     ghost.show(true);
     uiRoot?.classList.add('is-placing');
     bar?.show({ label: spec.label, cost: levelSpec(type, 1).cost, timeMs: levelSpec(type, 1).timeMs });
@@ -1971,6 +2194,8 @@ export async function createIslandScene(
     };
   }
 
+  shedVeil();
+
   return {
     project: projectCell,
     update(dt, elapsed) {
@@ -1991,7 +2216,35 @@ export async function createIslandScene(
       if (ember) {
         // Fire breathes. Two incommensurate sines off the SCENE clock, never
         // the wall clock, so a capture at a fixed t stays byte-identical.
-        ember.intensity = 10 * (1 + 0.09 * Math.sin(elapsed * 9.7) + 0.05 * Math.sin(elapsed * 15.3));
+        const breathe = 1 + 0.09 * Math.sin(elapsed * 9.7) + 0.05 * Math.sin(elapsed * 15.3);
+        ember.intensity = 10 * breathe;
+        // The halo breathes WITH the light — one fire, not two effects. The
+        // swing is deliberately larger than the light's: a halo is all the
+        // flicker a far zoom can see.
+        emberGlow?.scale.setScalar(2.7 * (0.82 + 0.18 * breathe));
+      }
+
+      if (gulls) {
+        for (let i = 0; i < gullPaths.length; i++) {
+          const p = gullPaths[i];
+          const a = p.phase + elapsed * p.speed;
+          gullPos.set(
+            p.cx + Math.cos(a) * p.r,
+            p.h + Math.sin(elapsed * p.bob + p.phase * 3) * 0.5,
+            p.cz + Math.sin(a) * p.r
+          );
+          // Nose along the tangent of the circle, banked into the turn.
+          const vx = -Math.sin(a) * Math.sign(p.speed);
+          const vz = Math.cos(a) * Math.sign(p.speed);
+          gullEuler.set(0.24 * Math.sign(p.speed), Math.atan2(-vz, vx), 0);
+          gullQuat.setFromEuler(gullEuler);
+          // The flap: the V folds through level and back. Never to zero — a
+          // flat gull is an edge-on line and vanishes for a frame.
+          gullScale.set(1, 0.55 + 0.75 * Math.abs(Math.sin(elapsed * p.flap * 0.5 + i * 2.1)), 1);
+          gullMatrix.compose(gullPos, gullQuat, gullScale);
+          gulls.setMatrixAt(i, gullMatrix);
+        }
+        gulls.instanceMatrix.needsUpdate = true;
       }
 
 

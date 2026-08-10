@@ -279,7 +279,10 @@
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 0 2px 6px;
+  /* 10px under the caption, not 6: the selected swatch's tick overhangs 13px
+     above its tile, and when the FIRST tile of a row is the chosen one the
+     badge was sitting on the caption's descenders. */
+  padding: 0 2px 10px;
   min-height: 20px;
 }
 
@@ -308,10 +311,11 @@
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
-  /* Room for the selected swatch's lift and its tick badge, which overhangs
-     the corner and must not be clipped (§3.8). */
-  padding: 7px 2px 8px;
-  margin: -7px -2px -8px;
+  /* Room for the selected swatch's lift AND its tick badge: lift (3px) plus
+     the 30px tick's overhang (10px) is 13 — at the 7px this shipped with,
+     the badge's crown was flat-topped in every capture. */
+  padding: 14px 2px 8px;
+  margin: -14px -2px -8px;
 }
 
 .captain__row::-webkit-scrollbar { display: none; }
@@ -348,9 +352,12 @@
      this game. */
   border: var(--ui-ink-w) solid var(--ui-ink);
   border-radius: 14px;
+  /* The burst behind the prop is STRONGER than the item-tile default — the
+     Clash shelf's own move: dark goods (the chistera, the vudú) read by the
+     halo of ground they stand against, not by their own albedo. */
   background:
     radial-gradient(circle at 50% 44%,
-      rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0.16) 42%, rgba(255, 255, 255, 0) 66%),
+      rgba(255, 255, 255, 0.68) 0%, rgba(255, 255, 255, 0.26) 46%, rgba(255, 255, 255, 0) 70%),
     linear-gradient(180deg,
       #6FE0F2 0%, #6FE0F2 52%,
       var(--ui-blue-a) 52.01%, var(--ui-blue-b) 92%,
@@ -409,17 +416,20 @@
   /* 1. the face turns GOLD */
   background:
     radial-gradient(circle at 50% 42%,
-      rgba(255, 252, 232, 0.72) 0%, rgba(255, 250, 220, 0.28) 44%, rgba(255, 250, 220, 0) 68%),
+      rgba(255, 252, 232, 0.78) 0%, rgba(255, 250, 220, 0.32) 46%, rgba(255, 250, 220, 0) 70%),
     linear-gradient(180deg,
       #FFDE7A 0%, #FFDE7A 47%,
       var(--ui-gold-a) 47.01%, var(--ui-gold-b) 92%,
       var(--ui-gold-lip) 92.01%, var(--ui-gold-lip) 100%);
-  /* 2. an ivory frame inside the ink — §3.7's treatment, and there is no HUD on
-     this screen for it to compete with. 3. it stands taller: a longer
-     extrusion is how rank is carried everywhere else in this UI. */
+  /* 2. an ivory frame inside the ink AND a gold ring outside it — the second
+     ring is what survives arm's length, because when a dark hat covers most
+     of the face the gold face alone cannot carry the state (round 11's
+     audit). 3. it stands taller: a longer extrusion is how rank is carried
+     everywhere else in this UI. */
   box-shadow:
     inset 0 0 0 3px var(--ui-ivory),
     inset 0 5px 0 rgba(255, 255, 250, 0.5),
+    0 0 0 3px #FFCE4F,
     var(--ui-drop),
     var(--ui-cast-lg);
   transform: translateY(-3px);
@@ -428,20 +438,24 @@
 .captain__sw.is-on:active,
 .captain__sw.is-on.is-pressed {
   transform: translateY(0);
-  box-shadow: inset 0 0 0 3px var(--ui-ivory), 0 2px 0 rgba(0, 0, 0, 0.3);
+  box-shadow:
+    inset 0 0 0 3px var(--ui-ivory),
+    0 0 0 3px #FFCE4F,
+    0 2px 0 rgba(0, 0, 0, 0.3);
 }
 
-/* 4. and a green tick that BREAKS the silhouette (§3.8's badge geometry). */
+/* 4. and a green tick that BREAKS the silhouette (§3.8's badge geometry).
+   30px, up from 26: the one cue that has to be legible from across a room. */
 .captain__tick {
   position: absolute;
   top: 0;
   right: 0;
   transform: translate(34%, -34%);
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
   display: grid;
   place-items: center;
-  font-size: 16px;
+  font-size: 19px;
   line-height: 1;
   border-radius: var(--ui-r-badge);
   background: linear-gradient(180deg,

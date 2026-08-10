@@ -97,6 +97,18 @@
 /* A collected value landing here (§3.9). */
 .readout__cell.is-hit{ box-shadow:inset 0 0 0 999px rgba(255,255,255,.28); }
 
+/* The rango cell is the one cell with a door on it (hud.ts wires it to the
+ * Clasificación and marks it role="button"). It took the finger and showed
+ * NOTHING back — the only pressable on the HUD with no pressed state. It is a
+ * region of the capsule, not a free-standing object, so it presses the way the
+ * nav bar's slots do: the face dents and the contents travel down 2px. */
+.readout__cell[role="button"]{ transition:background .08s ease-out, box-shadow .16s ease-out; }
+.readout__cell[role="button"] > *{ transition:translate .06s ease-out; }
+.readout__cell[role="button"]:active,
+.readout__cell[role="button"].is-pressed{ background:rgba(0,0,0,.22); }
+.readout__cell[role="button"]:active > *,
+.readout__cell[role="button"].is-pressed > *{ translate:0 2px; }
+
 /* --- §3.4 a free builder must annoy --------------------------------------
  * "Available" is signalled by changing the OBJECT, never by ringing it: an
  * outline outside the contour is a browser focus ring and a fifth layer on an

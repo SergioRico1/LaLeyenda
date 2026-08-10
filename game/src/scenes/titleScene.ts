@@ -475,6 +475,223 @@ function buildBarrel(): THREE.BufferGeometry {
   ) ?? body;
 }
 
+/* --------------------------------------------------------------------------
+ * the dock — what fills the lower third
+ *
+ * Round 11's audit: "the title's lower third is empty navy with two stray
+ * planks floating in it". The fix is a FOREGROUND, not more flotsam: a
+ * weathered pier enters at the bottom-right corner and recedes toward the
+ * hero, so the player is standing somewhere — on the dock their captain
+ * sails from — instead of treading water in the open sea. It also gives the
+ * empty band its three missing planes: near timber, mid posts, far lantern.
+ *
+ * Built like the rest of the scene: tinted boxes merged into ONE mesh on the
+ * flotsam's vertex-coloured lambert, zero bytes over the wire, one draw call.
+ * Only the lantern core, its halo and the foam collars are separate, because
+ * they are unlit or they move.
+ * ----------------------------------------------------------------------- */
+
+/** Near end of the pier, in world x/z. Off the bottom-right corner: the first
+ *  bay bleeds out of frame, which is what makes it a place the camera stands
+ *  rather than an object placed in shot. */
+const PIER_START = { x: 4.4, z: CAM_Z - 12.5 };
+/** Far tip. Right of the hero's wake — the first pass ended at x 0.9 and the
+ *  lantern hung over the sloop's stern with the glow kissing the hull. */
+const PIER_END = { x: 2.0, z: CAM_Z - 30 };
+/** Deck height over the still waterline. The swell is 0.95, so the boards sit
+ *  clear of the crests but the piles visibly wade. */
+const PIER_DECK = 1.55;
+const PIER_HALF_W = 1.32;
+
+/** Timber palette. Warm, sun-bleached top, dark wet feet — the values every
+ *  harbour in the reference reads as. */
+const WOOD_DECK = 0xb9894d;
+const WOOD_BEAM = 0x8a6234;
+const WOOD_PILE = 0x74512b;
+const WOOD_WET = 0x46331d;
+const WOOD_DARK = 0x5d4023;
+const ROPE_HEMP = 0xc9a15e;
+const IRON_DARK = 0x38322c;
+
+/** Nudges a hex colour's channels by a factor — the per-plank value jitter
+ *  that keeps a merged deck from reading as one extruded slab. */
+function shade(hex: number, factor: number): number {
+  const c = new THREE.Color(hex).multiplyScalar(factor);
+  return c.getHex();
+}
+
+interface DockBuild {
+  /** All the timber, merged: goes on the shared vertex-colour lambert. */
+  geometry: THREE.BufferGeometry;
+  /** Where the lantern hangs, world space. */
+  lantern: THREE.Vector3;
+  /** Deck-top of the mooring bollard the gull perches on. */
+  perch: THREE.Vector3;
+  /** Piles standing in open water, for the foam collars. */
+  collars: { x: number; z: number }[];
+}
+
+/**
+ * The pier, plank by plank.
+ *
+ * Everything is authored in pier space — s along the deck from the near end,
+ * w across it — and rotated into place, so the whole structure can be re-aimed
+ * by moving two constants when a capture says the diagonal is wrong.
+ */
+function buildDock(): DockBuild {
+  const dir = new THREE.Vector2(PIER_END.x - PIER_START.x, PIER_END.z - PIER_START.z);
+  const length = dir.length();
+  dir.divideScalar(length);
+  const side = new THREE.Vector2(-dir.y, dir.x);
+  const yaw = Math.atan2(dir.x, dir.y);
+
+  const parts: THREE.BufferGeometry[] = [];
+  /** A box `along` long (pier s), `across` wide (pier w), centred at (s, y, w). */
+  const timber = (
+    across: number, h: number, along: number,
+    s: number, y: number, w: number, color: number,
+    pitch = 0
+  ): void => {
+    const g = new THREE.BoxGeometry(across, h, along);
+    if (pitch) g.rotateX(pitch);
+    g.rotateY(yaw);
+    g.translate(
+      PIER_START.x + dir.x * s + side.x * w,
+      y,
+      PIER_START.z + dir.y * s + side.y * w
+    );
+    parts.push(tint(g, color));
+  };
+
+  // Deck boards, laid across. The jitter is the whole trick: a half-voxel of
+  // lift and a few points of value per board is what reads as carpentry
+  // rather than as one extruded slab with stripes painted on.
+  const step = 1.06;
+  for (let i = 0, s = 0.55; s < length - 0.3; s += step, i++) {
+    const j = Math.sin(i * 12.9898) * 43758.5453;
+    const r = j - Math.floor(j);
+    timber(
+      PIER_HALF_W * 2 + 0.22 + r * 0.1, 0.16, 0.92,
+      s + (r - 0.5) * 0.06, PIER_DECK - 0.08 + (r - 0.5) * 0.045, (r - 0.5) * 0.1,
+      shade(WOOD_DECK, 0.88 + 0.24 * ((i * 5) % 7) / 7)
+    );
+  }
+
+  // Stringers the boards rest on, running the pier's length.
+  for (const w of [-0.98, 0.98]) {
+    timber(0.26, 0.3, length + 0.4, length / 2, PIER_DECK - 0.31, w, WOOD_BEAM);
+  }
+
+  // Pile pairs, every bay. Two stacked boxes each: dry above the waterline,
+  // a darker, slightly fatter wet foot below — the island's own "stands IN
+  // its water" note, applied to furniture.
+  const collars: { x: number; z: number }[] = [];
+  const pileAt = (s: number, w: number): void => {
+    timber(0.42, 1.3, 0.42, s, 0.78, w, WOOD_PILE);
+    timber(0.46, 1.7, 0.46, s, -0.72, w, WOOD_WET);
+    collars.push({
+      x: PIER_START.x + dir.x * s + side.x * w,
+      z: PIER_START.z + dir.y * s + side.y * w,
+    });
+  };
+  const bays: number[] = [];
+  for (let s = 1.1; s < length; s += 4.3) bays.push(s);
+  for (const s of bays) {
+    // At ±1.08 the heads photographed as loose cubes sitting ON the deck;
+    // at ±1.22 they stand flush with the plank ends, where pier legs live.
+    for (const w of [-1.22, 1.22]) {
+      pileAt(s, w);
+      // Pile heads standing proud of the boards: the rhythm every drawn pier
+      // has, and the only part of the legs this camera reliably sees.
+      timber(0.4, 0.34, 0.4, s, PIER_DECK + 0.12, w, WOOD_PILE);
+    }
+    // Cross beam tying the pair under the stringers.
+    timber(PIER_HALF_W * 2 + 0.5, 0.24, 0.34, s, PIER_DECK - 0.55, 0, WOOD_DARK);
+  }
+  // One diagonal brace on the camera side of the near bays: the X-ray of
+  // every pirate dock ever drawn, spent only where the frame can read it.
+  // (With this pier's heading, the face the camera sees is the w-NEGATIVE
+  // side — solved from the dot of the side vector against the camera ray.)
+  timber(0.16, 0.16, 4.1, bays[0] + 2.15, 0.62, -1.28, WOOD_DARK, 0.24);
+  timber(0.16, 0.16, 4.1, bays[1] + 2.15, 0.62, -1.28, WOOD_DARK, -0.24);
+
+  // The mooring bollard the gull owns, on the camera side of the THIRD bay —
+  // solved against the frame: the second bay's bollard stood at 97% of the
+  // width, which is a bird nobody sees. Here it rises at the CTA's right
+  // shoulder, proud of the deck, with a cap and a rope collar.
+  const PERCH_S = bays[2] ?? length / 2;
+  timber(0.36, 1.9, 0.36, PERCH_S, PIER_DECK + 0.85, -1.12, WOOD_DARK);
+  timber(0.52, 0.2, 0.52, PERCH_S, PIER_DECK + 1.86, -1.12, WOOD_PILE);
+  timber(0.44, 0.18, 0.44, PERCH_S, PIER_DECK + 1.32, -1.12, ROPE_HEMP);
+
+  // The lantern post at the tip — the warm point the whole diagonal walks to.
+  // The arm reaches ACROSS the pier to the far (w+) side: along-pier is all
+  // depth from this camera and the first arm put the lamp visually ON its own
+  // post; across-pier is nearly horizontal on screen, so the lamp hangs clear
+  // of the post and over the swell beyond the far plank ends.
+  const TIP_S = length - 0.7;
+  timber(0.3, 2.9, 0.3, TIP_S, PIER_DECK + 1.35, -0.1, WOOD_DARK);
+  timber(1.5, 0.14, 0.14, TIP_S, PIER_DECK + 2.72, 0.7, WOOD_DARK);
+  const lantern = new THREE.Vector3(
+    PIER_START.x + dir.x * TIP_S + side.x * 1.42,
+    PIER_DECK + 2.42,
+    PIER_START.z + dir.y * TIP_S + side.y * 1.42
+  );
+  // The gull stands ON the lamp arm — the third bollard was tried first and
+  // the bird photographed straight against the lantern post, seven units of
+  // pier being pure depth from this camera. On the arm it is silhouetted
+  // against open water, at the halo's edge.
+  const perch = new THREE.Vector3(
+    PIER_START.x + dir.x * TIP_S + side.x * 0.42,
+    PIER_DECK + 2.79,
+    PIER_START.z + dir.y * TIP_S + side.y * 0.42
+  );
+  // The cage: two iron plates and a little roof. The glowing core between
+  // them is a separate unlit mesh, added by the scene.
+  const cage = (across: number, h: number, along: number, y: number): void => {
+    const g = new THREE.BoxGeometry(across, h, along);
+    g.rotateY(yaw);
+    g.translate(lantern.x, y, lantern.z);
+    parts.push(tint(g, IRON_DARK));
+  };
+  cage(0.46, 0.1, 0.46, lantern.y - 0.3);
+  cage(0.5, 0.1, 0.5, lantern.y + 0.26);
+  cage(0.34, 0.12, 0.34, lantern.y + 0.37);
+
+  // Harbour clutter on the near boards: two crates and a barrel on its side,
+  // plus a coiled line. Reuses the flotsam builders, so the cargo on the dock
+  // and the cargo in the water are visibly the same goods.
+  const place = (g: THREE.BufferGeometry, s: number, w: number, y: number, turn: number, scale: number): void => {
+    g.scale(scale, scale, scale);
+    g.rotateY(turn);
+    g.translate(
+      PIER_START.x + dir.x * s + side.x * w,
+      y,
+      PIER_START.z + dir.y * s + side.y * w
+    );
+    parts.push(g);
+  };
+  place(buildCrate(), 2.1, -0.55, PIER_DECK + 0.62, 0.5, 1.05);
+  place(buildCrate(), 3.25, -0.72, PIER_DECK + 0.5, -0.25, 0.85);
+  const lying = buildBarrel();
+  lying.rotateZ(Math.PI / 2);
+  place(lying, 4.9, 0.62, PIER_DECK + 0.42, 0.35, 0.9);
+  // The coil: eight hemp segments in a ring. A torus would be the one smooth
+  // object in a cubic world. On the camera edge just short of the bollard,
+  // where the band between the two buttons can actually see it.
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const seg = new THREE.BoxGeometry(0.42, 0.14, 0.2);
+    seg.rotateY(a + Math.PI / 2);
+    seg.translate(Math.cos(a) * 0.42, 0, Math.sin(a) * 0.42);
+    place(tint(seg, shade(ROPE_HEMP, 0.9 + (i % 3) * 0.08)), 8.4, -0.52, PIER_DECK + 0.15, 0, 1);
+  }
+
+  const geometry = mergeGeometries(parts, false) ?? new THREE.BoxGeometry(1, 1, 1);
+  for (const g of parts) g.dispose();
+  return { geometry, lantern, perch, collars };
+}
+
 /** Rest angle of a gull's wing above the horizontal — the dihedral. */
 const GULL_DIHEDRAL = 0.34;
 
@@ -516,6 +733,47 @@ function buildGull(material: THREE.Material): { node: THREE.Group; wings: THREE.
     const tip = tint(box(0.46, 0.11, 0.34, side * 1.32, 0, 0.04), 0x778b95);
     const wing = new THREE.Mesh(mergeGeometries([inner, tip], false) ?? inner, material);
     wing.rotation.z = side * -GULL_DIHEDRAL;
+    wings.push(wing);
+    node.add(wing);
+  }
+  return { node, wings };
+}
+
+/**
+ * A gull STANDING, as its own rig — not the flying gull with its wings bent.
+ *
+ * The flying build's wings only pivot on z, so "folded" made a Λ under the
+ * body and the perched bird photographed first as a white tube, then as a
+ * pinwheel. A standing gull is a different silhouette: plump chest, head up
+ * on a neck, tail cocked, wings lying flat along the flanks — and an ORANGE
+ * BEAK, which at eighteen pixels is the single strongest "this is a bird"
+ * cue the frame can carry. Eight tinted boxes on the shared gull material.
+ */
+function buildPerchedGull(material: THREE.Material): { node: THREE.Group; wings: THREE.Mesh[] } {
+  const node = new THREE.Group();
+  node.scale.setScalar(0.62);
+  const body = new THREE.Mesh(
+    mergeGeometries([
+      tint(box(0.46, 0.38, 1.02, 0, 0, 0.05), 0xfbfdfa),          // body
+      tint(box(0.34, 0.30, 0.42, 0, 0.28, -0.42), 0xfbfdfa),      // head
+      tint(box(0.09, 0.09, 0.26, 0, 0.26, -0.72), 0xd98a2b),      // beak
+      tint(box(0.20, 0.10, 0.52, 0, 0.10, 0.72), 0x8fa0a8),       // tail, cocked
+      tint(box(0.06, 0.18, 0.06, 0.10, -0.27, -0.08), 0xd98a2b),  // legs
+      tint(box(0.06, 0.18, 0.06, -0.10, -0.27, -0.08), 0xd98a2b),
+    ], false) ?? new THREE.BoxGeometry(0.46, 0.38, 1.0),
+    material
+  );
+  node.add(body);
+
+  const wings: THREE.Mesh[] = [];
+  for (const side of [-1, 1]) {
+    const wing = new THREE.Mesh(
+      mergeGeometries([
+        tint(box(0.10, 0.26, 0.92, side * 0.27, 0.04, 0.14), 0xe8efef),
+        tint(box(0.10, 0.16, 0.30, side * 0.27, 0.02, 0.68), 0x778b95),  // folded tip
+      ], false) ?? new THREE.BoxGeometry(0.1, 0.26, 0.9),
+      material
+    );
     wings.push(wing);
     node.add(wing);
   }
@@ -715,9 +973,13 @@ export async function createTitleScene(stage: Stage, opts: TitleSceneOptions): P
   // Inside the frame, and that needs saying because the first placement was not:
   // half the picture at 45 units out is 7.2 units wide, and all three pieces
   // were parked at 6 to 9.
+  // Both near pieces drift on the LEFT now: the dock owns the right, and a
+  // piece of cargo peeking past the CTA's left shoulder is what keeps that
+  // corner from going back to plain navy. Crates, not barrels — a floating
+  // barrel at this camera's pitch photographs as a flat tan disc.
   const flotsam = [
     { mesh: new THREE.Mesh(buildCrate(), flotsamMaterial), x: -4.2, z: CAM_Z - 45, spin: 0.09, ph: 0.0, sink: 0.16 },
-    { mesh: new THREE.Mesh(buildBarrel(), flotsamMaterial), x: 4.4, z: CAM_Z - 40, spin: -0.07, ph: 1.9, sink: 0.30 },
+    { mesh: new THREE.Mesh(buildCrate(), flotsamMaterial), x: -5.1, z: CAM_Z - 30, spin: -0.07, ph: 1.9, sink: 0.22 },
     { mesh: new THREE.Mesh(buildCrate(), flotsamMaterial), x: 1.2, z: CAM_Z - 58, spin: 0.05, ph: 3.6, sink: 0.20 },
   ];
   for (const piece of flotsam) {
@@ -729,6 +991,73 @@ export async function createTitleScene(stage: Stage, opts: TitleSceneOptions): P
     stage.scene.add(piece.mesh);
     disposables.push({ dispose: () => piece.mesh.geometry.dispose() });
   }
+
+  /* --- the dock ----------------------------------------------------------- */
+  const dock = buildDock();
+  const dockMesh = new THREE.Mesh(dock.geometry, flotsamMaterial);
+  dockMesh.name = 'title_dock';
+  stage.scene.add(dockMesh);
+  disposables.push({ dispose: () => dock.geometry.dispose() });
+
+  // The lamp burns even in daylight — same rule as the island's brazier: the
+  // one hot accent is an EMITTER, and it is what the Jugar → lantern → sloop
+  // diagonal is walking toward. Core is unlit and untonemapped so it stays
+  // hotter than anything the sun touches.
+  const flameMaterial = new THREE.MeshBasicMaterial({ color: 0xffd27a, toneMapped: false, fog: false });
+  const flame = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.44, 0.28), flameMaterial);
+  flame.name = 'title_lantern';
+  flame.position.copy(dock.lantern);
+  stage.scene.add(flame);
+  disposables.push(flameMaterial, { dispose: () => flame.geometry.dispose() });
+
+  // ADDITIVE, and that is the fix for a real capture bug: normal blending
+  // composites mid-orange OVER a brighter sky, which darkens — the first halo
+  // photographed as a puff of brown smoke. Additive can only add light.
+  const haloMaterial = new THREE.SpriteMaterial({
+    map: smudge, color: 0xff9a3d, transparent: true, opacity: 0.5,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+  });
+  const halo = new THREE.Sprite(haloMaterial);
+  halo.position.copy(dock.lantern);
+  halo.scale.setScalar(2.7);
+  stage.scene.add(halo);
+  disposables.push(haloMaterial);
+
+  // A small warm pool on the timber and the swell below the lamp. One light,
+  // tight falloff: the sun still owns the frame, and at 13 units of reach the
+  // first pass painted the sloop's stern orange from across the water.
+  const glow = new THREE.PointLight(0xffb45e, 7, 8.5, 2);
+  glow.position.copy(dock.lantern);
+  stage.scene.add(glow);
+  disposables.push({ dispose: () => glow.dispose() });
+
+  // Foam collars where the piles wade — the "stands IN its water" note,
+  // applied to furniture. Laid on the moving swell each frame, and only for
+  // the pairs far enough out to be inside the frame at all.
+  const collarMaterial = new THREE.MeshBasicMaterial({
+    map: smudge, color: 0xeefaf6, transparent: true, opacity: 0.4, depthWrite: false, fog: false,
+  });
+  const collarGeometry = new THREE.PlaneGeometry(2.0, 2.0);
+  disposables.push(collarMaterial, { dispose: () => collarGeometry.dispose() });
+  const collars = dock.collars
+    .filter((c) => c.z < PIER_START.z - 3.5)
+    .map((c) => {
+      const mesh = new THREE.Mesh(collarGeometry, collarMaterial);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.renderOrder = 1;
+      stage.scene.add(mesh);
+      return { mesh, x: c.x, z: c.z };
+    });
+
+  // The harbourmaster: one gull STANDING on the lamp arm, with an occasional
+  // wing-shuffle and a slow scan of the horizon. The cheapest "something
+  // alive" the lower third can carry.
+  const perched = buildPerchedGull(materials.gull);
+  perched.node.position.copy(dock.perch);
+  perched.node.position.y += 0.17;
+  stage.scene.add(perched.node);
+  disposables.push({ dispose: () => { for (const w of perched.wings) w.geometry.dispose(); } });
+  disposables.push({ dispose: () => (perched.node.children[0] as THREE.Mesh).geometry.dispose() });
 
   let hero: ModelInstance | null = null;
   let mixer: THREE.AnimationMixer | null = null;
@@ -825,8 +1154,11 @@ export async function createTitleScene(stage: Stage, opts: TitleSceneOptions): P
     // crest over the buttons and leaves the left third of the middle band free,
     // landscape puts the crest left and the buttons right and leaves the CENTRE
     // free. A fixed world x gave one of the two a boat behind the wordmark.
+    // Landscape sits her a tenth LEFT of centre, not on it: the dock's lamp
+    // stands near world x 2, which in landscape projects to mid-frame, and at
+    // +0.02 the arm read as rigging bolted to her stern.
     const halfFrame = SHIP_D * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect;
-    const shipX = (camera.aspect < 1 ? -0.30 : 0.02) * halfFrame
+    const shipX = (camera.aspect < 1 ? -0.30 : -0.10) * halfFrame
       + Math.sin(elapsed * 0.052) * 2.2;
     const shipZ = CAM_Z - SHIP_D + Math.sin(elapsed * 0.037) * 4;
     const sea = water.surfaceAt(shipX, shipZ, elapsed);
@@ -858,6 +1190,33 @@ export async function createTitleScene(stage: Stage, opts: TitleSceneOptions): P
       piece.mesh.position.set(x, bob.height - piece.sink, z);
       piece.mesh.rotation.set(-bob.dz * 0.8, elapsed * piece.spin + piece.ph, bob.dx * 0.8);
     }
+
+    // The pile collars ride the swell the piles stand in; without this they
+    // hover at still-water height while a 0.95-unit sea heaves through them.
+    for (const collar of collars) {
+      const at = water.surfaceAt(collar.x, collar.z, elapsed);
+      collar.mesh.position.set(collar.x, at.height + 0.05, collar.z);
+    }
+
+    // Lantern flicker: two unrelated sines, small — a lamp, not a strobe.
+    const flick = Math.sin(elapsed * 7.3) * 0.5 + Math.sin(elapsed * 11.9 + 1.7) * 0.5;
+    haloMaterial.opacity = 0.46 + flick * 0.06;
+    glow.intensity = 7 + flick * 1.1;
+
+    // The perched gull: folded wings, a slow scan of the horizon, and every
+    // seven seconds or so a little flutter — enough life to catch the eye
+    // without competing with the three in the air.
+    const cycle = (elapsed + 2.6) % 7.3;
+    const settle = cycle < 0.8 ? Math.sin((cycle / 0.8) * Math.PI) : 0;
+    // Faced three-quarters toward the sloop, scanning a little: enough yaw
+    // that the body never lines up with the arm and vanishes into it.
+    perched.node.rotation.y = 0.85 + Math.sin(elapsed * 0.23) * 0.32;
+    perched.node.position.y = dock.perch.y + 0.17 + settle * 0.09;
+    // At rest the wings lie tucked on the flanks; the shuffle half-opens
+    // them for a beat. Positive z on the −x wing swings its tip out-down.
+    const open = settle * (0.75 + Math.sin(elapsed * 24) * 0.3);
+    perched.wings[0].rotation.z = open;
+    perched.wings[1].rotation.z = -open;
 
     // The whole bank is two merged meshes, so it drifts as one — a sine rather
     // than a wrap, because a wrap on a merged batch teleports every cloud in it

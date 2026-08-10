@@ -25,6 +25,31 @@
  * so this is deliberately NOT gated on FROZEN. It is gated on SHOT: the
  * screenshot harness runs dozens of captures in a headless browser and an
  * AudioContext there is pure noise in the logs.
+ *
+ * ─── THE MIX (round 11 — every entry levelled against every other) ─────────
+ *
+ * One ladder, both scenes, so switching island ↔ sea never jumps the volume.
+ * `gain` is the rung; a LOW voice needs a higher number than a bright one to
+ * land on the same rung (equal-loudness: the ear discounts the bottom octaves,
+ * which is why the sea bank runs numerically hotter than the island bank and
+ * sounds level with it).
+ *
+ *   .10–.13  chrome whispers   tick, sheetIn/Out, press — the beds. The tap is
+ *                              the quietest thing a finger causes on purpose.
+ *   .16–.20  connective        pop, land, refuse — statements, not rewards.
+ *   .22–.28  the loop's pay    build < coin < mobDown/loot < levelup/tell —
+ *                              COLLECT beats PLACE beats TAP, by §3.9's own
+ *                              logic: the bubble is why the player opened the
+ *                              app, the carpenter is what they spent, the tap
+ *                              is only how.
+ *   .26–.30  battle            cannon < hitHull — your own guns must never
+ *                              outrank your own hull taking a bite.
+ *   .34–.40  the two summits   chestBurst (the island's payoff), sinking (the
+ *                              sea's price). Nothing else may reach them.
+ *
+ * Nothing was retired: all 19 entries have live call sites and none reads as
+ * noise — the round's audit asked, and the honest answer is the bank was cut
+ * well and levelled unevenly, so this pass moves gains, not sounds.
  */
 
 import { SHOT } from './env';
@@ -60,16 +85,21 @@ export type SfxName =
  * whole set reading as the same square-wave beep at different pitches.
  */
 const BANK: Record<SfxName, { voices: Voice[]; gain: number; detune?: number }> = {
-  // A short woody knock. Deliberately quiet: it plays on every single tap.
-  press:  { gain: .16, voices: [{ hz: 320, to: 180, wave: 'triangle', decay: .055, cutoff: 2200 }] },
+  // A short woody knock. The FLOOR of the whole mix: it plays on every single
+  // tap, so anything the tap causes must clear it. Was .16 — close enough to
+  // the coin that collecting barely outranked pressing.
+  press:  { gain: .13, voices: [{ hz: 320, to: 180, wave: 'triangle', decay: .055, cutoff: 2200 }] },
   tick:   { gain: .10, voices: [{ hz: 900, to: 780, wave: 'square', decay: .022, cutoff: 3000 }] },
   // Two notes DOWN — the universal "no". Paired with the ui-refuse shake.
-  refuse: { gain: .22, voices: [
+  // Present but under every reward: information, not an event.
+  refuse: { gain: .20, voices: [
     { hz: 220, to: 190, wave: 'square', decay: .09, cutoff: 1200 },
     { hz: 150, to: 120, wave: 'square', decay: .13, delay: .085, cutoff: 900 },
   ] },
   // §3.9's coin chink: two stacked partials a fifth apart, pitch randomised.
-  coin:   { gain: .20, detune: 200, voices: [
+  // The star of the minute loop — RETENTION.md's whole session opens on this
+  // sound, so it sits ABOVE the carpenter (`build`) and well above the tap.
+  coin:   { gain: .24, detune: 200, voices: [
     { hz: 1180, wave: 'triangle', decay: .085, gain: 1 },
     { hz: 1770, wave: 'sine',     decay: .13,  gain: .55, delay: .012 },
   ] },
@@ -79,15 +109,20 @@ const BANK: Record<SfxName, { voices: Voice[]; gain: number; detune?: number }> 
     { hz: 1320, wave: 'sine', decay: .07, gain: .4, delay: .02 },
   ] },
   pop:    { gain: .16, voices: [{ hz: 520, to: 1040, wave: 'sine', decay: .09 }] },
-  // Build complete: a rising major triad. The one genuinely triumphant sound
-  // in the minute-to-minute loop, so it is allowed to be three notes long.
-  build:  { gain: .26, voices: [
+  // Work — a carpenter going out, a finished building's ✓ claimed: a rising
+  // major triad. Grand in SHAPE (three notes) rather than in level: it now
+  // sits one rung under the coin, because collect > place is the ordering the
+  // whole loop teaches, and the triad's length already carries the occasion.
+  build:  { gain: .22, voices: [
     { hz: 523, wave: 'triangle', decay: .16 },
     { hz: 659, wave: 'triangle', decay: .16, delay: .085 },
     { hz: 784, wave: 'triangle', decay: .30, delay: .17 },
     { hz: 1046, wave: 'sine', decay: .34, gain: .5, delay: .17 },
   ] },
-  levelup:{ gain: .28, voices: [
+  // .26, a hair under its old .28: three long bright notes in the ear's most
+  // sensitive band were out-shouting the chest burst — and the burst is the
+  // island's summit, not this.
+  levelup:{ gain: .26, voices: [
     { hz: 659, wave: 'triangle', decay: .13 },
     { hz: 880, wave: 'triangle', decay: .13, delay: .09 },
     { hz: 1318, wave: 'triangle', decay: .38, delay: .18 },
@@ -99,20 +134,32 @@ const BANK: Record<SfxName, { voices: Voice[]; gain: number; detune?: number }> 
    * pitched BELOW the island bank — out there the sea is the loud thing and
    * the UI chimes have no competition, but a cannon over a hull groan needs
    * room at the bottom of the mix. */
-  cannon:  { gain: .30, detune: 300, voices: [
+  // .26, down from .30: the report the player hears every few seconds must
+  // never outrank the hull being bitten (.30) — your guns are routine, your
+  // pain is news. Still the loudest ROUTINE thing at sea, as it should be.
+  cannon:  { gain: .26, detune: 300, voices: [
     { hz: 150, to: 42, wave: 'square', decay: .16, cutoff: 480 },
     { hz: 900, to: 260, wave: 'sawtooth', decay: .05, gain: .5, cutoff: 2600 },
   ] },
   // A wet thud on the target. Quieter than the shot that caused it, or a
-  // volley landing reads louder than the guns firing.
-  hitMob:  { gain: .17, detune: 260, voices: [
-    { hz: 210, to: 70, wave: 'triangle', decay: .085, cutoff: 900 },
+  // volley landing reads louder than the guns firing — but at .17 with one
+  // dark triangle it was the quietest entry in the whole bank, which made the
+  // game's hit-confirm inaudible in the very fight it confirms. Now .22 with
+  // a short bright THWACK over the body: the click is what the ear finds in
+  // a broadside exchange, the thud is still what the hit feels like. Peaks a
+  // clear step under the cannon, no longer a whisper beneath it.
+  hitMob:  { gain: .22, detune: 260, voices: [
+    { hz: 210, to: 70, wave: 'triangle', decay: .085, cutoff: 1300 },
+    { hz: 470, to: 170, wave: 'square', decay: .03, gain: .4, cutoff: 1900 },
   ] },
   // Taking damage is the one sound that must cut through: timber and a
-  // downward slide, so it is unmistakably the player being hit.
+  // downward slide, so it is unmistakably the player being hit. The timber
+  // crack (second voice) carries more of the load now — at .45 the entry was
+  // all sub-bass and actually peaked BELOW the player's own cannon, which is
+  // the one inversion this bank must never have.
   hitHull: { gain: .30, detune: 90, voices: [
     { hz: 120, to: 46, wave: 'sawtooth', decay: .21, cutoff: 620 },
-    { hz: 330, to: 150, wave: 'square', decay: .1, gain: .45, cutoff: 1500 },
+    { hz: 330, to: 150, wave: 'square', decay: .1, gain: .7, cutoff: 1500 },
   ] },
   mobDown: { gain: .26, voices: [
     { hz: 300, to: 120, wave: 'triangle', decay: .16, cutoff: 1400 },
@@ -124,18 +171,44 @@ const BANK: Record<SfxName, { voices: Voice[]; gain: number; detune?: number }> 
     { hz: 480, to: 960, wave: 'sine', decay: .12 },
     { hz: 720, to: 1440, wave: 'triangle', decay: .1, gain: .5, delay: .05 },
   ] },
-  sinking: { gain: .34, voices: [
+  // The sea's summit, and the audit's "must cut through". Two dark voices at
+  // .34 were numerically loud and perceptually buried — a 34 Hz tail under a
+  // cannon exchange is felt at best. .40, plus a MID groan (the new first
+  // voice): timber tearing in the 300 Hz band the battle leaves empty, so the
+  // moment reads over guns, bites and its own compressor ducking. The only
+  // entry allowed past the chest burst, because it is the one that costs.
+  sinking: { gain: .40, voices: [
+    { hz: 340, to: 70, wave: 'sawtooth', decay: .6, gain: .5, delay: .04, cutoff: 1100 },
     { hz: 200, to: 34, wave: 'sawtooth', decay: .9, cutoff: 400 },
     { hz: 90, to: 28, wave: 'square', decay: 1.2, gain: .6, delay: .1, cutoff: 260 },
   ] },
 
   sheetIn:  { gain: .13, voices: [{ hz: 180, to: 420, wave: 'sine', decay: .13, cutoff: 1400 }] },
   sheetOut: { gain: .11, voices: [{ hz: 400, to: 170, wave: 'sine', decay: .1, cutoff: 1400 }] },
-  chestShake: { gain: .14, voices: [{ hz: 140, to: 90, wave: 'square', decay: .07, cutoff: 700 }] },
+  // In practice this is the SQUID TELL (seaScene plays it at −7 st; nothing on
+  // the island calls it today). One knock at .14 was the second-quietest entry
+  // in the bank standing in for the boss's only warning — the audit's walked
+  // voyages died without the player ever hearing it. Now a double rattle with
+  // a dry MID click on each knock and a low swell under them, at .28. The
+  // clicks are the part that survives the −7 shift: everything else in the
+  // entry drops below 100 Hz out there, and a warning made only of bass loses
+  // to the ear before it ever meets the cannon fire. Still short and dry — it
+  // repeats every cast — and still a shaken chest at native pitch if the
+  // staged chest moment ever wants it.
+  chestShake: { gain: .28, voices: [
+    { hz: 140, to: 90, wave: 'square', decay: .07, cutoff: 700 },
+    { hz: 620, to: 430, wave: 'square', decay: .045, gain: .5, cutoff: 2000 },
+    { hz: 132, to: 84, wave: 'square', decay: .07, delay: .09, cutoff: 700 },
+    { hz: 585, to: 400, wave: 'square', decay: .045, gain: .45, delay: .09, cutoff: 2000 },
+    { hz: 70, to: 46, wave: 'sine', decay: .3, gain: .55, cutoff: 300 },
+  ] },
   // §3.22's burst: a bass hit under a bright flash, paired with vibrate(20).
+  // The flash carries a little more of the load (.5 → .62) so the island's
+  // summit stays audibly ABOVE the levelup fanfare, not merely below it in
+  // the bass the ear discounts.
   chestBurst: { gain: .34, voices: [
     { hz: 90, to: 45, wave: 'sine', decay: .42, gain: 1 },
-    { hz: 880, to: 2200, wave: 'triangle', decay: .3, gain: .5 },
+    { hz: 880, to: 2200, wave: 'triangle', decay: .3, gain: .62 },
   ] },
   // §3.22 deals reward tiles a semitone higher each time — see `reveal()`.
   reward: { gain: .22, voices: [

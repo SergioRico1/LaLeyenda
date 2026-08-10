@@ -54,8 +54,11 @@
 /* The capsule is a route into §3.16's finish-now decision, so it is a button
  * and presses like one — it used to absorb the tap and show nothing. */
 .timerbar[role="button"]{ transition:transform .06s ease-out, filter .06s ease-out; }
+/* 2px of travel — the short rung of the ladder for a ~33px object — but the
+ * SAME .94 dim as every other pressed object. It sat at .88, which over a dark
+ * translucent face read as a blink rather than as the shared give. */
 .timerbar[role="button"]:active,
-.timerbar[role="button"].is-pressed{ transform:translateY(2px); filter:brightness(.88); }
+.timerbar[role="button"].is-pressed{ transform:translateY(2px); filter:brightness(.94); }
 
 /* Layer 3 — the warm rim on the top inner edge. Inset from the caps so it
  * follows the straight part of the stadium instead of crossing the curve. */

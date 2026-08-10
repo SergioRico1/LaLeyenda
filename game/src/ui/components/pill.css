@@ -152,6 +152,9 @@
 .plus.is-pressed{
   transform:translateY(calc(-50% + 3px));
   box-shadow:inset 0 2px 0 rgba(255,255,255,.35), 0 1px 0 rgba(0,0,0,.3);
+  /* The shared give: every pressed object travels AND dims by the same .94.
+   * This one travelled without dimming — the odd tap out on the whole HUD. */
+  filter:brightness(.94);
 }
 .plus span{
   font-size:20px; line-height:1;

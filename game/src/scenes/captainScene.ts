@@ -161,11 +161,16 @@ export async function createCaptainScene(
       });
 
   if (uiRoot && !paradeSlot) {
+    // `?tab=` — the capture-only knob captain.ts documents: open the panel on
+    // a named family so every swatch row can be reviewed as pixels. It was
+    // declared on the panel for a round without anything passing it.
+    const tab = params.get('tab');
     panel = createCaptainPanel({
       captain: { ...opening, look },
       onChange: (captain) => { void avatars[0]?.setLook(captain.look); },
       onConfirm: opts.onConfirm,
       onBack: opts.onBack,
+      openSlot: AVATAR_SLOTS.find((slot) => slot === tab),
     });
     uiRoot.append(panel.el);
     stopSpin = turntable(panel.stage, spin);

@@ -6,6 +6,15 @@
  * property of the proprietary Supercell Magic font — hand-typed capitals read
  * as a typo (§6.16). Genuine `small-caps` appears only on timer unit
  * suffixes, where it is a faithful match.
+ *
+ * THE VOICE (round 11 — one reader over every string, see game/VOICE.md):
+ * a warm first mate speaking to their captain. Second person singular (tú),
+ * always. One word per thing, never a synonym: **carpintero** (never
+ * constructor/obrero), **madera / oro / ron / metal / gemas**, **cofre**,
+ * **Ayuntamiento**, **Astillero**. Exclamation marks are spent only on
+ * payoffs the player earned (¡Botín!, ¡Cofre listo!, ¡Zarpar!) — a refusal
+ * or a hint never shouts. Refusals are short, name the fix, and say "te"
+ * rather than reading like a bank statement.
  */
 export const COPY = {
   'cta.sail': '¡Zarpar!',
@@ -23,7 +32,7 @@ export const COPY = {
   'cta.returnHome': 'Volver a la Isla',
   'cta.start': 'Empezar',
   'chip.full': '¡Lleno!',
-  'chip.noBuilders': 'Sin constructores',
+  'chip.noBuilders': 'Sin carpinteros',
   'chip.storageMax': 'Almacén al máximo',
   'chip.repairing': 'Reparando',
   'chip.oneChest': 'Solo un cofre a la vez',
@@ -53,8 +62,12 @@ export const COPY = {
   'toast.builderGone': 'Se acabó el carpintero de guardia',
   'toast.levelUp': '¡Nivel',
   'toast.soon': 'Muy pronto',
-  'toast.sailLocked': 'Construye el Astillero',
-  'panel.builders': 'Constructores',
+  /* The base line for a locked ¡Zarpar! — true once the Ayuntamiento allows
+   * the Astillero. Below that hall level the walked audit (R11 #7) caught it
+   * naming a building the picker refuses with a different reason, so the call
+   * site goes through `sailLockedLine` below, which names the REAL next step. */
+  'toast.sailLocked': 'Construye el Astillero y zarpamos',
+  'panel.builders': 'Carpinteros',
   'panel.ranks': 'Rangos de Capitán',
   'panel.log': 'Diario de a Bordo',
   'panel.gems': 'Gemas',
@@ -118,7 +131,7 @@ export type RefusalKey =
 const REFUSAL: Record<RefusalKey, string> = {
   'unknown-building': 'No disponible',
   busy: 'Ya está en obras',
-  'no-builders': 'Sin constructores libres',
+  'no-builders': 'Sin carpinteros libres',
   'max-level': 'Nivel máximo',
   'max-count': 'Ya tienes el máximo',
   'cell-occupied': 'Aquí no cabe',
@@ -128,8 +141,10 @@ const REFUSAL: Record<RefusalKey, string> = {
   'obstacle': 'Despeja el terreno',
   'unknown-obstacle': 'Ya está despejado',
   'town-hall-too-low': 'Requiere Ayuntamiento',
-  'not-enough-resources': 'Recursos insuficientes',
-  'not-enough-gems': 'Gemas insuficientes',
+  // "Recursos/Gemas insuficientes" was the one place the first mate spoke like
+  // a cashpoint. Same length, same information, the game's own register.
+  'not-enough-resources': 'Te faltan recursos',
+  'not-enough-gems': 'Te faltan gemas',
   'store-full': 'Almacén al máximo',
   'nothing-to-collect': 'Nada que recoger',
   'slot-busy': 'Hueco ocupado',
@@ -142,3 +157,47 @@ export function refusalText(key: RefusalKey, townHall?: number): string {
   const base = REFUSAL[key] ?? 'No disponible';
   return key === 'town-hall-too-low' && townHall ? `${base} ${townHall}` : base;
 }
+
+/**
+ * The locked ¡Zarpar! line — audit R11 #7.
+ *
+ * Walked cold, the refusal said "Construye el Astillero" while the picker
+ * refused that very row with "Requiere Ayuntamiento 3": two answers to one
+ * tap, and the first one was a door two doors away. This resolves it by
+ * naming the step the player can actually take TODAY.
+ *
+ * Both figures come from the caller (islandScene has the state and the
+ * balance in hand — see VOICE.md patch 3), so if the Astillero's gate ever
+ * moves from Ayuntamiento 3 the line moves with it instead of lying.
+ */
+export function sailLockedLine(townHall: number, astilleroAt: number): string {
+  return townHall < astilleroAt
+    ? `El mar pide un Astillero: sube el Ayuntamiento a ${astilleroAt}`
+    : COPY['toast.sailLocked'];
+}
+
+/**
+ * §3.16's unlock row on the Ayuntamiento sheet — audit R11 #8.
+ *
+ * `townHallUnlocks` deals ids; buildings and resources already carry labels in
+ * balance.json, but the FEATURE ids (a chest slot, a carpenter, a hull, a
+ * season) had none — so the game's most-read sheet printed "Desbloquea:
+ * Destilería · Bodega · tablon", and at TH3 it would have printed
+ * "canon_costero · cofre_hueco_4". Every id balance.json can deal is named
+ * here; present.ts consults this table last (see VOICE.md patch 2).
+ *
+ * Terminology holds the line: carpintero (never constructor), and the hull
+ * names match seaHud's SHIP_LABEL — sloop is Balandra everywhere.
+ */
+export const UNLOCK_LABEL: Record<string, string> = {
+  tablon: 'Tablón de Anuncios',
+  canon_costero: 'Cañón Costero',
+  cofre_hueco_4: '4º Hueco de Cofre',
+  defensas: 'Defensas',
+  recoger_todo: 'Recoger Todo',
+  mortero: 'Mortero',
+  sloop: 'Balandra',
+  amenaza: 'Incursiones',
+  constructor_4: '4º Carpintero',
+  temporadas: 'Temporadas',
+};

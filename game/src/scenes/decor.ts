@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CELL, PALETTE, STEP, cellToWorld, isBuildable, type IslandShape } from '../render/island';
+import { CELL, CROP_FIELD_TINT, PALETTE, STEP, cellToWorld, isBuildable, type IslandShape } from '../render/island';
 import type { ScatterItem } from '../render/scatter';
 import { BALANCE, buildingSpec, islandRadius, plotHalf, spotRefusal, type GameState } from '../sim';
 import { Rng } from '../core/rng';
@@ -362,7 +362,7 @@ export const OBSTACLE_MODELS = [
  * palms, rocks, driftwood, totems, the posts, the gate — keep theirs.
  */
 const NO_SHADOW = new Set([
-  'deco_bush', 'deco_bush_alt', 'deco_fern', 'deco_plant', 'deco_hedge',
+  'deco_bush', 'deco_bush_alt', 'deco_fern', 'deco_plant',
   'deco_starfish', 'harv_cotton',
 ]);
 // Freight came OUT of that set. A barrel is waist-high and it is the one prop
@@ -371,6 +371,18 @@ const NO_SHADOW = new Set([
 // building stands on open sand touching it nowhere". They are instanced, so
 // the whole dockside costs the shadow pass three more draw calls, not three
 // hundred.
+//
+// THE HEDGE came out in round eleven, by the same argument. It is the one
+// shrub that is a SOLID MASS — a green cube, waist-high, and the model that
+// carries every hedge run, every planted bed and most of the beach scrub — and
+// the audit's prop-shadow verdict ("several PROP classes still float
+// shadowless") is mostly this class: a hundred-odd solid cubes sitting on lit
+// ground with nothing under them while the barrel beside them casts. What
+// stays in the set really is ankle-high or an open sprig that vanishes into
+// the turf it stands on — a shadow under those is a smudge under nothing.
+// Instanced, so the whole island's hedges cost the shadow pass ONE draw call;
+// the vertex cost was the round-two worry and the hedge is the cheapest model
+// in the shrub family.
 
 /**
  * The shrubs, ordered by how much of the reference's planting they actually do.
@@ -2404,19 +2416,26 @@ export function buildGroundCover(shape: IslandShape, seed: string): THREE.Mesh {
   const GRASS = PALETTE.grass;
   const SAND_BASE = PALETTE.sand;
 
-  // Pale flower heads and a darker tuft, the two things the reference's grass is
-  // covered in. The dirt is for the worn edge where a plot meets its drop.
-  const FLOWERS = [pale(GRASS, 0.86), pale(GRASS, 0.92), pale(GRASS, 0.8), pale(GRASS, 0.95)];
+  // Flower heads for the beds, and a tuft for the surface. The flowers keep a
+  // real lift toward white — clustered into beds they are discrete objects, and
+  // an object may be pale — but the 0.86-0.95 whites of the old sprinkle are
+  // gone: those were the "near-white speckle" at full paper brightness, and at
+  // six per cell over every field they were the loudest surface in the frame.
+  const FLOWERS = [pale(GRASS, 0.72), pale(GRASS, 0.8), pale(GRASS, 0.62), pale(GRASS, 0.85)];
+  // ±9%, down from a −26% floor. A tuft is grain on the field's own green, not
+  // a mark: the round-eight verdict is that the reference's grass is near-flat
+  // colour, and a quarter-dark dot at two screen pixels is not flat anything.
   const TUFTS = [
-    scale(GRASS, 0.82), scale(GRASS, 0.88), scale(GRASS, 0.74),
-    scale(GRASS, 1.04), scale(GRASS, 0.93),
+    scale(GRASS, 0.9), scale(GRASS, 0.94), scale(GRASS, 0.86),
+    scale(GRASS, 1.04), scale(GRASS, 0.96),
   ];
   const WORN = [scale(PALETTE.dirt, 0.98), scale(PALETTE.dirt, 0.86)];
   // Broad, low-contrast mottling — the layer under the tufts. A plot the size
   // of six cells painted in one albedo reads as a rectangle of paint no matter
   // how many dots are sprinkled on it, because the dots are all the same size
-  // and the eye reads the average. These are big enough to be shapes.
-  const MOTTLE = [scale(GRASS, 0.94), scale(GRASS, 0.88), scale(GRASS, 1.06), scale(GRASS, 0.91)];
+  // and the eye reads the average. These are big enough to be shapes — and
+  // quiet enough (±6%, was ±12%) not to be blotch.
+  const MOTTLE = [scale(GRASS, 0.96), scale(GRASS, 0.93), scale(GRASS, 1.045), scale(GRASS, 0.955)];
   // The rows of a worked field: darker than the grass either side of them, so a
   // bed reads as furrows rather than as stripes painted on a lawn.
   const CROP = [scale(GRASS, 0.7), scale(GRASS, 0.78), scale(GRASS, 0.85)];
@@ -2468,25 +2487,44 @@ export function buildGroundCover(shape: IslandShape, seed: string): THREE.Mesh {
       const z0 = z * CELL - (size * CELL) / 2 + CELL / 2;
 
       if (cell.material === 'grass') {
-        // Three scales, laid coarse to fine. One scale of dot cannot break up a
-        // plot: whatever its density, the eye averages it back to the flat fill
-        // underneath. The mottle gives the plot shapes, the tufts give it a
-        // surface, the flowers give it sparkle.
-        for (let i = 0; i < rng.int(3, 5); i++) {
+        /*
+         * THE TURF IS CALM NOW, and this block is where round eleven's
+         * highest-value verdict landed. The audit, at 1:1: *"the grass carries
+         * diagonal hatch streaks plus near-white speckle that reads as static —
+         * cut density by half or more, spend detail on discrete objects."* All
+         * three populations here were guilty and each is answered in kind:
+         *
+         *   THE FURROWS ran on a per-2x2-block hash, 4/9 of every field — a
+         *   diagonal hatch ruled across the whole island. They now run ONLY on
+         *   the olive field, the one island.ts always said the crop rows go on
+         *   (CROP_FIELD_TINT). One worked field, like the reference's one.
+         *
+         *   THE FLOWERS were 28% of 18-26 dots per cell at 0.8-0.95 toward
+         *   white — six near-white specks on every cell of green, which is the
+         *   static. They are now BEDS: one cell in about eight (block-keyed so
+         *   beds are contiguous) carries five or six heads and the rest carry
+         *   none. A patch of pale dots is a flower bed; a sprinkle is dust.
+         *
+         *   THE TUFTS ran 18-26 a cell across a ±15% tone spread. Eight or so
+         *   inside ±9% is a surface rather than a signal — the field's own
+         *   green does the reading now, which is the round-eight inversion
+         *   ("near-flat colour") finally reaching the cover layer.
+         *
+         * Counted: a typical grass cell fell from ~28 cover quads to ~11.
+         */
+        for (let i = 0; i < rng.int(2, 3); i++) {
           quad(
             x0 + rng.range(-0.4, 0.4) * CELL, y, z0 + rng.range(-0.4, 0.4) * CELL,
             rng.range(0.17, 0.32), rng.range(0, Math.PI / 2), rng.pick(MOTTLE)
           );
         }
 
-        // Every third plot is a worked field: four furrows of short dashes on
-        // the grid. Keyed off the cell rather than rolled, so a bed is whole
-        // cells wide and its rows line up with its neighbours' instead of each
-        // cell deciding on its own.
-        // Furrows run the full width of the cell and land on the same lanes in
-        // the cell next door, so a bed several cells across reads as one worked
-        // field rather than as each square deciding for itself.
-        if ((((x >> 1) * 7 + (z >> 1) * 5) % 9) < 4) {
+        // The worked field. Furrows run the full width of the cell and land on
+        // the same lanes in the cell next door, so the bed reads as one field
+        // that somebody ploughed rather than as each square deciding for
+        // itself. The lane direction is keyed to the 5-cell block for the same
+        // reason.
+        if (cell.tint === CROP_FIELD_TINT) {
           const along = ((((x / 5) | 0) + ((z / 5) | 0)) & 1) === 0;
           for (let r = 0; r < 4; r++) {
             const lane = (r / 3 - 0.5) * 0.74;
@@ -2497,16 +2535,30 @@ export function buildGroundCover(shape: IslandShape, seed: string): THREE.Mesh {
           }
         }
 
-        const dots = rng.int(18, 26);
+        // A flower bed on about one grass cell in eight, and nothing on the
+        // rest. Hash-keyed, not rolled, so a bed and its neighbour cell agree
+        // and two runs of the same seed agree; the modulus is prime so the
+        // pattern cannot rhyme with the 4-cell lattices the terrain uses.
+        if (((x * 13 + z * 29) % 17) < 2) {
+          const heads = rng.int(4, 6);
+          const bx = rng.range(-0.22, 0.22);
+          const bz = rng.range(-0.22, 0.22);
+          for (let i = 0; i < heads; i++) {
+            quad(
+              x0 + (bx + rng.range(-0.2, 0.2)) * CELL, y,
+              z0 + (bz + rng.range(-0.2, 0.2)) * CELL,
+              rng.range(0.032, 0.05), rng.range(0, Math.PI / 2), rng.pick(FLOWERS)
+            );
+          }
+        }
+
+        const dots = rng.int(6, 9);
         for (let i = 0; i < dots; i++) {
-          const px = x0 + rng.range(-0.47, 0.47) * CELL;
-          const pz = z0 + rng.range(-0.47, 0.47) * CELL;
-          const flower = rng.chance(0.28);
           quad(
-            px, y, pz,
-            flower ? rng.range(0.028, 0.045) : rng.range(0.05, 0.11),
+            x0 + rng.range(-0.47, 0.47) * CELL, y, z0 + rng.range(-0.47, 0.47) * CELL,
+            rng.range(0.05, 0.1),
             rng.range(0, Math.PI / 2),
-            flower ? rng.pick(FLOWERS) : rng.pick(TUFTS)
+            rng.pick(TUFTS)
           );
         }
         // Where the plot steps down, its lip wears to earth — hugging the side

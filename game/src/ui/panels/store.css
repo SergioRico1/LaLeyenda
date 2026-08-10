@@ -42,7 +42,13 @@
   position: absolute;
   inset: 0;
   background: var(--store-dim);
+  /* The shared overlay grammar (see settings.css): sheet pops, dim fades in
+     over the same 200ms. One enter for every panel in the game. */
+  opacity: 0;
+  animation: ui-scrim-in 0.2s ease-out forwards;
 }
+/* Shot mode kills animations; freeze the scrim at its resting (opaque) state. */
+html.shot:not(.motion) .store__scrim { opacity: 1; }
 
 /* --- the sheet — the same three-layer edge as Ajustes --------------------- */
 .store__sheet {
@@ -190,6 +196,12 @@
   font-size: 15px;
   -webkit-text-stroke-width: 1.9px;
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+  /* §3.20 — "title colour follows the card hue: lime with a dark green outline
+     on a blue card". The picker's blue rows already obey it; these are the
+     same blue item family and had plain white names — the one place the two
+     blue card sets visibly disagreed. Body numerals stay white. */
+  color: #A6F02B;
+  -webkit-text-stroke-color: #20430C;
 }
 
 .store__card-count {

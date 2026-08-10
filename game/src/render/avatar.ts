@@ -580,7 +580,16 @@ export async function bakeSwatches(
     const key = new THREE.DirectionalLight(0xfff6e6, 2.5);
     key.position.set(2.4, 3.2, 3.0);
     scene.add(key);
-    scene.add(new THREE.HemisphereLight(0xe8f6ff, 0xbfae94, 2.5));
+    // The RIM, from behind and above the off shoulder — round 11's audit: the
+    // chistera, the calavera and the vudú baked as black masses that vanished
+    // into the tile's dark lip. Key and fill cannot fix a near-black albedo;
+    // a bright edge along the silhouette is the only thing that separates
+    // dark art from a dark ground, and it is how every dark prop in the
+    // reference shelf is presented.
+    const rim = new THREE.DirectionalLight(0xdcefff, 3.4);
+    rim.position.set(-3.0, 3.8, -2.6);
+    scene.add(rim);
+    scene.add(new THREE.HemisphereLight(0xe8f6ff, 0xcdbfa6, 2.7));
 
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -20, 40);
     const avatar = await createAvatar({ ...MANNEQUIN, body: bodyId }, { animate: false });
@@ -623,7 +632,12 @@ export async function bakeSwatches(
       // 3/4 from the front: the face is +x, so the camera stands off the front
       // quarter and a little above, which is the angle every hat, patch and
       // coat was drawn to be read at.
-      const half = Math.max(span.x, span.y, span.z) * 0.56;
+      //
+      // 0.63, not the 0.56 it shipped at: a box seen at three quarters
+      // projects wider than its widest axis, and at 0.56 the chistera's crown
+      // ran off the tile and every dark hat pressed against the tile's own
+      // dark lip with no ground showing around it.
+      const half = Math.max(span.x, span.y, span.z) * 0.63;
       camera.left = -half;
       camera.right = half;
       camera.top = half;

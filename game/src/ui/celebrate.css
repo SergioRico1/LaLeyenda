@@ -134,14 +134,25 @@
 .ok-bubble.is-bursting{ animation:ui-bubble-burst 180ms ease-in forwards; }
 
 /* --- §3.22 the reward moment --------------------------------------------- */
-/* No card, no border, no radius (§6.12). Only the scrim and the content. */
+/* No card, no border, no radius (§6.12). Only the scrim and the content.
+ *
+ * The scrim is the STAGE, and it is DARK. Measured off cr_chest_reward.jpg:
+ * the world is gone — a near-opaque deep navy field with one radial light
+ * where the payoff stands. Ours was rgba(0,0,0,.48), through which the fully
+ * lit island, the bubbles, the ¡Lleno! chip and the whole navbar kept
+ * shouting; the biggest moment in the loop was fighting its own HUD. The two
+ * navy stops are §1.2's chest-scene tokens doing the job they were named for. */
 .reward{
   position:absolute; inset:0;
   z-index:var(--z-celebrate);
   display:flex; flex-direction:column; align-items:center; justify-content:center;
   gap:14px;
   padding:24px;
-  background:var(--ui-scrim);
+  background:
+    radial-gradient(circle at 50% 32%,
+      rgba(30,84,130,.62) 0%, rgba(14,53,87,.20) 34%, rgba(14,53,87,0) 52%),
+    linear-gradient(180deg,
+      rgba(6,28,46,.93) 0%, rgba(5,20,34,.95) 55%, rgba(3,12,21,.96) 100%);
   pointer-events:auto;
   opacity:0;
   animation:ui-scrim-in 160ms ease-out forwards;
@@ -216,3 +227,12 @@
 /* html.shot: the harness captures two frames after boot, so a dealt grid would
  * be caught mid-deal. Freeze every tile at its resting state. */
 html.shot:not(.motion) .reward__tile{ transform:none; }
+/* The scrim's resting state is LIT. Its base rule is opacity:0 with the fade
+ * driving it to 1, and shot mode kills animations — so the whole reward layer
+ * has been rendering at opacity 0 in every deterministic capture: act-chest
+ * shot the island, tiles "on screen" that no PNG showed, for rounds. Same fix
+ * as the tile row above: freeze at the resting state, not the start state. */
+html.shot:not(.motion) .reward{ opacity:1; }
+/* The banner arrives from scale(0) the same way, so every frozen capture lost
+ * the gold ribbon — the title of the whole moment. */
+html.shot:not(.motion) .reward__banner{ transform:none; }

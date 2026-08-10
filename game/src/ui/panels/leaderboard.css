@@ -32,7 +32,13 @@
   position: absolute;
   inset: 0;
   background: var(--board-dim);
+  /* The shared overlay grammar (see settings.css): sheet pops, dim fades in
+     over the same 200ms. One enter for every panel in the game. */
+  opacity: 0;
+  animation: ui-scrim-in 0.2s ease-out forwards;
 }
+/* Shot mode kills animations; freeze the scrim at its resting (opaque) state. */
+html.shot:not(.motion) .board__scrim { opacity: 1; }
 
 /* --- the sheet — the same three-layer edge as Ajustes --------------------- */
 .board__sheet {

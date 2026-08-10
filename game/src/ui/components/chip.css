@@ -56,8 +56,11 @@
  * shadow like everything else — otherwise the whole top row absorbs a finger
  * and shows nothing back. */
 .cap[role="button"]{ transition:transform .06s ease-out, filter .06s ease-out, box-shadow .06s ease-out; }
+/* brightness(.94) — the ONE dim every pressed object in the game uses. This
+ * capsule sat at .92 and the timer capsule at .88: three shades of "gave" for
+ * one gesture is exactly the drift §5 law 2 exists to stop. */
 .cap[role="button"]:active,
-.cap[role="button"].is-pressed{ transform:translateY(3px); filter:brightness(.92); }
+.cap[role="button"].is-pressed{ transform:translateY(3px); filter:brightness(.94); }
 
 /* --- §3.4 builder chip ---------------------------------------------------
  * Portrait: icon LEFT, overhanging the cap by ~40%, numeral centred-right,

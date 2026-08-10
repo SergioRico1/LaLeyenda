@@ -102,10 +102,29 @@ function measure(column, edge = 0) {
   const contour = near(edge - 2, edge + band) && near(n - edge - band, n - edge + 2);
 
   // The interior is everything between the two contours.
+  //
+  // The scan opens 2 rows above the component to absorb antialiasing, which is
+  // right when what is up there is padding or shadow — and wrong when the
+  // component sits on a BRIGHT PARENT. On the picker row's blue card the old
+  // scan opened on the parent's gloss (L≈190), stopped immediately (≥60), and
+  // the whole read shifted two rows up: the "rim" window filled with parent
+  // face (so a button carrying four rows of L=252 rim was reported rim-less),
+  // the face mean swallowed the contour, and the verdict flipped between
+  // missing-ink and missing-rim with sub-pixel layout. That is the picker-row
+  // CTA that has failed here for months — measured column dump: parent 190,
+  // ink 19×6, rim 252×4, gloss 229→209, step to 165, lip 102, all present.
+  // Same class of error as the contour test that once measured the background
+  // (above), with the same fix: find the ink first, then cross it. The hunt is
+  // bounded to the contour's own search window, so a column with no ink there
+  // measures as it always did — and fails the contour test regardless.
   let top = Math.max(0, edge - 2);
-  while (top < n && L[top] < 60) top++;
+  const topInk = Math.min(n, edge + band);
+  while (top < topInk && L[top] >= 60) top++;    // cross any parent face to the ink
+  while (top < n && L[top] < 60) top++;          // cross the ink into the interior
   let bottom = Math.min(n - 1, n - edge + 1);
-  while (bottom > top && L[bottom] < 60) bottom--;
+  const bottomInk = Math.max(0, n - edge - band);
+  while (bottom > bottomInk && L[bottom] >= 60) bottom--;  // cross shadow/parent to the ink
+  while (bottom > top && L[bottom] < 60) bottom--;         // cross the ink up to the lip
   const interior = L.slice(top, bottom + 1);
   if (interior.length < 8) return { ok: false, why: 'no measurable interior', contour };
 
