@@ -27,6 +27,23 @@ import sharp from 'sharp';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
+
+// This parser used to ignore any flag it did not recognise, and that silence
+// cost two rounds: callers passed `--save demo` believing it reached the
+// shoot, it never did, and the blind compared the wrong game state for nine
+// rounds while everyone read the flag in their scrollback as proof it had not.
+// An option this harness does not understand is now a refusal, not a shrug.
+const KNOWN = new Set(['--piece', '--round', '--swap']);
+for (let i = 0; i < argv.length; i++) {
+  if (argv[i].startsWith('--')) {
+    if (!KNOWN.has(argv[i])) {
+      console.error(`unknown flag ${argv[i]} — the shoot is configured in PIECES, not on this CLI`);
+      process.exit(1);
+    }
+    i++; // skip the flag's value
+  }
+}
+
 const flag = (name, fallback = null) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback;
@@ -36,7 +53,15 @@ const flag = (name, fallback = null) => {
 const PIECES = {
   island: {
     reference: 'reference/island_hero.png',
-    shoot: ['island', '--hud', '0', '--w', '1280', '--h', '720', '--t', '2.0'],
+    // `--save demo` is load-bearing. The reference shows a settlement somebody
+    // played into existence, and for nine rounds this entry silently shot the
+    // DAY-ONE island against it — one lone hall and empty ground, identifiable
+    // as ours on content alone, no metadata needed. Worse, callers passed
+    // `--save demo` on the CLI and this harness ignored every flag it did not
+    // know, so the fix everyone believed was in force never ran. A round-9
+    // judge caught both. Unknown flags are a hard error now for exactly that
+    // reason.
+    shoot: ['island', '--save', 'demo', '--hud', '0', '--w', '1280', '--h', '720', '--t', '2.0'],
     about: 'the home island seen from the builder camera — terrain, lagoon, buildings, light',
   },
   sea: {
@@ -57,6 +82,16 @@ if (!piece) {
 
 const outDir = path.join(ROOT, 'shots', 'blind', `${pieceName}-r${round}`);
 fs.mkdirSync(outDir, { recursive: true });
+
+// The blind directory holds the two candidates and the key — NOTHING else, and
+// that has to be enforced on entry, not assumed. Moving the staging capture out
+// of this directory was not enough: a stale ours.png from a pre-fix run was
+// still sitting in round 9's directory, and a one-line pixel diff against it
+// resolved the mapping. A judge found it. Anything already here that is not
+// ours goes now, whatever left it behind.
+for (const f of fs.readdirSync(outDir)) {
+  if (!['a.png', 'b.png', 'key.json'].includes(f)) fs.rmSync(path.join(outDir, f), { force: true });
+}
 
 // Our raw capture is written OUTSIDE the blind directory and deleted when the
 // pair has been built. It used to sit next to a.png and b.png as `ours.png`,
