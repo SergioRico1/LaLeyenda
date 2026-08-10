@@ -57,7 +57,15 @@ if (!piece) {
 
 const outDir = path.join(ROOT, 'shots', 'blind', `${pieceName}-r${round}`);
 fs.mkdirSync(outDir, { recursive: true });
-const ours = path.join(outDir, 'ours.png');
+
+// Our raw capture is written OUTSIDE the blind directory and deleted when the
+// pair has been built. It used to sit next to a.png and b.png as `ours.png`,
+// and a round-8 judge pointed out that its byte size matched its twin to within
+// 0.1% while the other file was nearly double — so `ls` handed over the mapping
+// before a single image was opened. Every verdict taken before this was fixed
+// has to be read with that in mind.
+const staging = path.join(ROOT, 'shots', `.blind-staging-${pieceName}-r${round}.png`);
+const ours = staging;
 
 const shot = spawnSync('node', [path.join(ROOT, 'tools', 'shoot.mjs'), ...piece.shoot, '--out', ours], {
   cwd: ROOT, encoding: 'utf8', timeout: 600000,
@@ -69,15 +77,55 @@ if (shot.status !== 0 || !fs.existsSync(ours)) {
 
 const W = 1280;
 const H = 720;
+
+/**
+ * The corners the shipped game signs its own screenshots in.
+ *
+ * `island_hero.png` carries a "Pirate Nation" wordmark top-left and a
+ * "ProofOfPlay" watermark bottom-right. Both survived the resize, so the
+ * reference identified itself on sight and the comparison was never blind at
+ * all — a round-8 judge caught it, and I had read one of these frames myself
+ * without connecting the logo to the protocol.
+ *
+ * Painted on BOTH images at the SAME coordinates, because a patch on one only
+ * would be the same tell wearing a different hat. Generous enough to cover the
+ * marks at any of the sizes we normalise to, and neutral mid-grey so it reads
+ * as an obvious redaction rather than as content either game drew.
+ */
+const BRANDING = [
+  { left: 0, top: 0, width: Math.round(W * 0.22), height: Math.round(H * 0.20) },
+  { left: Math.round(W * 0.80), top: Math.round(H * 0.82), width: Math.round(W * 0.20), height: Math.round(H * 0.18) },
+];
+
+const patch = (box) => ({
+  input: {
+    create: {
+      width: box.width, height: box.height, channels: 4,
+      background: { r: 128, g: 128, b: 128, alpha: 1 },
+    },
+  },
+  left: box.left, top: box.top,
+});
+
 // `cover` on both: the reference is cropped to 16:9 rather than squashed, so
-// nothing is judged on a distortion neither game would ever ship.
+// nothing is judged on a distortion neither game would ever ship. Identical
+// encoder settings on both, so the two files cannot be told apart by weight
+// the way ours.png used to give itself away.
 const norm = (src, dest) =>
-  sharp(src).resize(W, H, { fit: 'cover', position: 'centre' }).png().toFile(dest);
+  sharp(src)
+    .resize(W, H, { fit: 'cover', position: 'centre' })
+    .composite(BRANDING.map(patch))
+    .png({ compressionLevel: 9, effort: 7 })
+    .toFile(dest);
 
 const A = path.join(outDir, 'a.png');
 const B = path.join(outDir, 'b.png');
 await norm(ours, swap ? B : A);
 await norm(path.join(ROOT, piece.reference), swap ? A : B);
+
+// The staging capture goes now. Nothing is left in the blind directory but the
+// two candidates and the key.
+fs.rmSync(staging, { force: true });
 
 const key = {
   piece: pieceName,
