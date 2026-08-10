@@ -368,6 +368,56 @@
         "GIVE THE FRAME ONE HOT ACCENT. The reference wins the eye with a single lit forge fire. We have nothing in the world brighter or more saturated than our own HUD button. Light something — a brazier, a forge, a lantern, a cookfire — and let it own the composition.",
         "DAY ONE NEEDS A REASON TO LOOK. Move the wrecked ship in off the frame edge and light it, put something alive in the plaza, and either warm the world up or cool the Zarpar CTA down so the UI stops out-shouting the island."
       ]
+    },
+    {
+      "round": 10,
+      "title": "The polarity fell, the gap narrowed, and the town is too small for its own camera",
+      "a": "shots/blind/island-r10/a.png",
+      "b": "shots/blind/island-r10/b.png",
+      "key": {
+        "a": "reference",
+        "b": "ours"
+      },
+      "better": "B",
+      "weWon": false,
+      "gapSize": "obvious",
+      "biggestFlaw": "Structure scale and spacing: our town crams roughly twice the building count at about a third of the reference's pixel height with no breathing room — the reference gives each ~115px-tall hero building its own grass pad and sand corridor so every silhouette reads at phone distance, while our ~45px roofs collide into an unreadable clot at the exact zoom a player actually holds. Fixing this alone would drag the accent visibility and composition problems along with it.",
+      "differences": [
+        "Scale/spacing: B's hero buildings are ~2.5-3x A's pixel height, each on its own grass pad with sand corridors; A packs ~15 small structures into a quarter-frame clot where roofs merge into noise.",
+        "Composition: B runs the island off-frame diagonally with a stilt-pier reaching into the water and islets anchoring depth; A floats a centered symmetric diamond with dead ocean margin on all four sides.",
+        "Hot accent: B's forge interior glows molten orange and reads at full zoom-out; A's brazier is a dot I had to hunt for in a 2x crop — the blue parasol does more accent work than the fire.",
+        "Prop shadows: B's flagpole/boards/palms throw long soft directional shadows that become compositional elements; A's beach props sit shadowless, pasted onto the sand.",
+        "Water: A's deep field is flat navy with visible diamond tile grain and an even-width confetti foam ring hugging the perimeter like an outline stroke; B's foam is churned and directional with an underwater ledge shadow, so the island sits IN the sea.",
+        "Turf texture: A's grass is a scratch-hatch with heavy white speckle that reads as static at rest; B's is calm near-flat green with sparse flower clusters.",
+        "Riser polarity — A's credit: A samples riser median L95 vs grass L154 (59 L under, brightest riser quartile 128 vs darkest grass quartile 139, zero overlap), a stronger cut-earth read than B's own L111 vs L169 in the same sampler."
+      ],
+      "note": "polarityFixed: TRUE, by the judge's own sampling — median L95 riser under L154 grass with no overlap even in the quartile tails, where round 9 had the walls thirty points OVER. Terraces read as relief, the coastline staircase is gone at shoreline level, and the gap came down from huge to obvious. The new headline is structural: our town crams twice the building count at a third of the reference's pixel height — ~45px roofs against their ~115px heroes — so silhouettes collide at the zoom a phone player actually holds. The meta shipped to the Kingshot chrome bar; the store is under-merchandised (the same gem sprite repeated where Clash escalates pile-bag-sack-chest). And the judge broke the blind a FOURTH way: the reference candidate was byte-identical across rounds and old key.json files named it. Fixed with per-run crop and encoder jitter; verified no shared hashes.",
+      "pieces": [
+        {
+          "piece": "light",
+          "verdict": "shipped and confirmed",
+          "biggestGap": "Riser polarity verified in-frame; 143 casters where there was one; the lamp is the only thing allowed past the tone shoulder."
+        },
+        {
+          "piece": "foam",
+          "verdict": "shipped",
+          "biggestGap": "Three separate emitters were painting open water; foam now has a birth as well as a death — slabs at the waterline, chips at the lace edge, gaps opening onto clean water."
+        },
+        {
+          "piece": "meta",
+          "verdict": "shipped",
+          "biggestGap": "Store and leaderboard real behind two named seams; no save field added, no migration owed. Under-merchandised against Clash — next round dresses the shelf."
+        }
+      ],
+      "nextRound": [
+        "Rescale the settlement: cut day-one/demo structure count, scale hero buildings ~2.5x, and give every building its own grass pad and sand corridor — silhouettes must read at phone zoom.",
+        "Make the hot accent an emitter, not a prop: molten glowing interior on the forge/brazier that reads at full zoom-out, Clash-forge style.",
+        "Prop shadow pass: palms, poles, fences, boards, and figures cast long soft directional shadows on sand, matching the building shadow direction.",
+        "Water pass: kill the diamond tile grain in the deep field, replace the even-width foam halo with churned directional foam plus an underwater ledge shadow at the coast, and thin the white speck confetti into finer sparse glitter.",
+        "Calm the turf: cut the scratch-hatch and white speckle density by half or more; sparse flower clusters only.",
+        "Store merchandising: per-tier product props (handful, bolsa, cofre, arcón as actual models) over radial glow bursts, plus best-value badging; leaderboard: league badge art, trophy icon on scores, top-3 podium treatment.",
+        "Repair the blind: sweep or withhold sibling-round key.json files and jitter the reference encode per run so it is never byte-identical across rounds."
+      ]
     }
   ]
 }
