@@ -266,6 +266,57 @@
         "Palms: three distinct sizes with a 2.5x height spread, at least two lean directions, a second lighter green in the fronds, and let the largest ones overhang the shore and break the island silhouette. Right now they are one asset stamped repeatedly.",
         "For day one specifically: push the camera in, or scale the starter hut up so it is clearly the largest object in frame, and clear the small grey rock scatter out of the plateau interior. The first frame must read as a home, not as a token on an empty board."
       ]
+    },
+    {
+      "round": 8,
+      "title": "Green is the field and sand is the route — and ratio turned out not to be the problem",
+      "a": "shots/blind/island-r8/a.png",
+      "b": "shots/blind/island-r8/b.png",
+      "key": {
+        "a": "ours",
+        "b": "reference"
+      },
+      "better": "A",
+      "weWon": false,
+      "gapSize": "obvious",
+      "biggestFlaw": "The terrain has no third dimension. A's grass is a terraced landform — two or more height tiers stepping against each other, every step faced with a thick brown soil wall that has a lit side, a shadowed side, and a 1px bright-lime lip on the top edge. B's entire island is one flat plane: grass meets sand at a 1px orange hairline, and on roughly half the boundaries (the away-facing ones) at literally nothing. That single absence is why B still reads as green paint on a sand slab regardless of the ratio — and it is why A reads as more of a grass island than B while actually being sandier: I measured 41.3% green share of bare plateau ground on A against 54.0% on B. Ratio was never the problem. Height is.",
+      "differences": [
+        "Elevation: A's grass is terraced with 2+ tiers and thick brown soil cliff faces (lit face vs shadow face, plus a bright lip on the lid). B is one flat plane; the grass/sand seam is a 1px orange hairline and on the far-facing edges there is no seam at all. B has no landform, only a footprint.",
+        "Texture budget is inverted. B's grass is the highest-frequency surface in the whole frame — diagonal hatch streaks plus a dense sprinkle of near-white speckles that reads as static and dust at 1:1. A's grass is near-flat colour with a faint noise floor and spends its detail on discrete objects: bush clumps, white flower dots, crop rows. In A your eye lands on things; in B it lands on noise.",
+        "Building distribution. A spreads structures across all four quadrants plus a pier extending over water, spaced on a legible grid with a plaza between them. B jams all 27 into the top third in an interpenetrating clump whose roofs merge into a single brown mass, and leaves the front two thirds as empty grass. There is no street, no square, no plan.",
+        "Plot borders. Every green area in A is bounded by post-and-rail fence or hedging — that is what makes the sand read as road and the green read as owned plot. B has zero plot boundaries; its green just stops.",
+        "Prop density on the open ground. A's sand plaza carries a signboard, mailbox, torch posts, crates, barrels, a totem and hedges at regular intervals. B has stretches of 200+ px of bare sand with nothing on them; the entire foreground plaza holds two palms and one stray stick.",
+        "Skyline. A breaks its roofline with a derrick/windmill frame, masts, a tower, a pirate flag and a totem pole at four different heights spread across the island. Every tall thing in B sits in the same ~100px band at the top, so the island has no silhouette.",
+        "Staging. A's island fills ~62% of frame width, sits slightly left, and is anchored by a hero ship lower-left and a full dock complex right. B's island is smaller, dead-centre, symmetrical, and its only water-side asset is a small ship half-cropped at the left edge; ~35% of the frame is empty ocean doing nothing.",
+        "Shore construction. A's waterline has a built kerb — a low repeated stone step wall — plus wet-sand darkening and a graded foam band. B's front waterline is a raw stair-stepped sand slope with visible geometric jaggies and a stray brown post.",
+        "Water. A's open sea is one modulated field with whitecaps clustered along a direction. B scatters isolated single white squares evenly across the deep, which reads as sensor noise, and bands harder between shallow ring and deep.",
+        "Outlying islets. A's sit in a graded shallow ring and belong to the same body of water. B's are pale sand pads with a hard edge and a detached drop shadow — they read as pasted sprites floating on the surface.",
+        "Colour discipline. A runs a controlled roof set: cream thatch, teal-blue, coral awnings, one orange family. B's roofs are almost all in the same orange-tan value band so the cluster mushes, and the one saturated accent — a cyan parasol disc dropped in the middle — has nothing else in the frame to talk to.",
+        "Shadows. A casts long consistent directional shadows at one angle, including palm-onto-grass and building-onto-sand, with contact darkening. B's are shorter and weaker, and the thicket of vertical posts plus the small shore props have no contact shadow at all, so they float."
+      ],
+      "note": "Two things were settled by measurement rather than argument. The shore dispute: our shore shows THREE levels but has only TWO heights — the third is the wet-sand albedo strip. Plaza to beach is a 1.4% luminance change, beach to wet is 12%, and the eye reads a hard-edged 12% step on flat ground as a change of level. On the far shores no riser is drawn at all, so those are three terraces with zero geometry. Both observers were half right, exactly as the water dispute went. And the harness itself was broken: the reference carried its own wordmark and watermark, and our raw capture sat in the blind directory at a byte size that matched its twin to a third of a percent. Fixed in 270622d; every earlier verdict is weaker evidence than it was presented as.",
+      "pieces": [
+        {
+          "piece": "the bleaching",
+          "verdict": "FIXED — verified independently",
+          "biggestGap": "Diffed day-one against 27-building pixel for pixel: 2,101 px went grass to sand against 2,377 px going sand to grass, all scattered anti-aliased edges with no footprint under any building. Green share of bare plateau is 51.5% day-one vs 54.0% built — the built island is marginally GREENER. Playing no longer beiges the island."
+        },
+        {
+          "piece": "the real problem",
+          "verdict": "named, not yet fixed",
+          "biggestGap": "We now carry MORE green than the reference — 54.0% against their 41.3% — and still look worse. Their grass is a terraced landform: two or more height tiers stepping against each other, every step faced with a thick soil wall with a lit side, a shadowed side and a bright lip. Ours is one flat plane where grass meets sand at a 1px hairline, and on the away-facing half at literally nothing. Ratio was never the problem. Height is."
+        }
+      ],
+      "nextRound": [
+        "Give the grass height. Raise every grass cell one step above the sand and face that step with a brown soil wall in two values — lit and shadowed — plus a 1px bright-lime lip along the top edge, on all four facings including the ones pointing away from camera. This is the whole ballgame; it converts a painted decal into a landform, and nothing else on this list matters as much.",
+        "Cut the grass texture by two thirds. Delete the white speckle entirely and drop the diagonal hatch to a faint low-frequency mottle, so grass becomes the quietest surface in the frame instead of the loudest. Spend the reclaimed detail budget on discrete props scattered on the green: bush clumps, white flower dots, crop rows — objects the eye can land on.",
+        "Make the sand read as roads. Fix path width at 2 tiles with straight parallel edges, border them with post-and-rail fence or a kerb, and push grass out to within one tile of the beach everywhere except where a road runs to the dock. Right now the sand varies from 8px to 90px wide and forms a perimeter ring plus a fat cross — that is slab leftover, not a route network, and it is the other half of why groundInverted is still false.",
+        "Re-plan the demo layout before shooting it again. Spread the 27 buildings across all four quadrants along the road network with a one-tile minimum gap so no two roofs interpenetrate. The current clump in the top third with two thirds empty grass in front is the single worst compositional decision in the frame and it is a placement-data fix, not an art fix.",
+        "Stage the shot. Push the camera in until the island fills ~60% of frame width, keep the hero ship fully in frame rather than cropped at the edge, and build a pier or dock complex extending over the water on one side. The reference gets roughly a third of its life from things that are not on the island.",
+        "Add three tall silhouettes at different heights — a tower, a derrick or crane, a mast — placed at opposite ends of the island so it has a skyline instead of one lump.",
+        "Populate the plaza: signposts, barrels, crates, torch posts, hedges at intervals such that no run of bare sand exceeds about 60px at hero scale.",
+        "Fix the blind harness before round 10: mask or crop the Pirate Nation wordmark and the ProofOfPlay watermark out of the reference before writing a.png/b.png, write ours.png and key.json outside the comparison directory, and pad both PNGs to an identical byte length. Also add --save demo to the island piece's shoot args so the blind pair is the built-out state by default rather than day-one."
+      ]
     }
   ]
 }
