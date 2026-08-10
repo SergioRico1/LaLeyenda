@@ -20,6 +20,7 @@
  * source it would then have to be trusted about.
  */
 import { spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -146,11 +147,31 @@ const patch = (box) => ({
 // nothing is judged on a distortion neither game would ever ship. Identical
 // encoder settings on both, so the two files cannot be told apart by weight
 // the way ours.png used to give itself away.
+//
+// THE JITTER IS THE FOURTH LEAK'S FIX, and the fourth judge in a row to break
+// this harness earned it. The reference side of every round was byte-identical
+// — r10's candidate carried the same md5 as r9's and r8's — and the earlier
+// rounds' key.json files sit on disk naming which of THEIR files was the
+// reference, so one hash lookup resolved any future round for good. Every pair
+// is therefore built through a random crop window (same window for BOTH
+// candidates, so it is never a tell) and a random encoder level, minted fresh
+// per run from crypto randomness — this is a judging tool, not the sim, so
+// nondeterminism here is the point. Cross-round pixel comparison still exists
+// for a judge willing to correlate through the shift; the honest fix for that
+// would be withholding history entirely, and the progress page needs it. The
+// bar is raised from "one command" to "an argued forensic effort", and a judge
+// that argues it earns the find.
+const JITTER = 8;
+const rnd = (n) => crypto.randomInt(0, n + 1);
+const win = { dx: rnd(JITTER), dy: rnd(JITTER) };
+const level = 7 + rnd(2);
+
 const norm = (src, dest) =>
   sharp(src)
-    .resize(W, H, { fit: 'cover', position: 'centre' })
+    .resize(W + JITTER, H + JITTER, { fit: 'cover', position: 'centre' })
+    .extract({ left: win.dx, top: win.dy, width: W, height: H })
     .composite(BRANDING.map(patch))
-    .png({ compressionLevel: 9, effort: 7 })
+    .png({ compressionLevel: level, effort: 7 })
     .toFile(dest);
 
 const A = path.join(outDir, 'a.png');
