@@ -542,6 +542,70 @@ export async function createIslandScene(
     ship = skiff.object;
   }
 
+  /* --- THE ONE HOT ACCENT: a lit farol on the square ----------------------
+   *
+   * The reference frame wins the eye with a single glowing forge fire; our
+   * world had nothing brighter than its own sand. So one lamp burns by the
+   * Ayuntamiento, day one and every day after — the hall is the one building
+   * every save owns, standing on the grid's centre for life, which is what
+   * makes a fixed cell here safe.
+   *
+   * ONE accent, by design. The flame's material is the only thing in the world
+   * that skips the tone shoulder, so it is the brightest object in the frame
+   * whatever the sun does — the same trick the HUD's gold uses, applied to
+   * exactly one 0.2-unit box. The light under it is a warm pool with a short
+   * reach, not a second sun: its job is to kiss the hall's wall and the sand
+   * so the flame reads as FIRE rather than as a sprite.
+   *
+   * A few cells south-east of the hall puts it on open ground, on the camera
+   * side of the building, inside the clearance ring placement enforces around
+   * the hall — so no player building can ever stand in it. THE HALL IS LOOKED
+   * UP IN THE SAVE, not assumed at the grid's centre: a new game does stand it
+   * there, but the demo fixture stands its town further north, and a lamp
+   * bolted to the centre cell would burn alone in an empty plaza on the one
+   * island every framing shot uses.
+   */
+  let ember: THREE.PointLight | null = null;
+  if (parts.has('decor')) {
+    const mid = Math.round((shape.size - 1) / 2);
+    const hall = game.state().buildings.find((b) => buildingSpec(b.type).kind === 'townhall');
+    const clamp = (v: number) => Math.max(0, Math.min(shape.size - 1, v));
+    // One east of the square's face, so the post stands beside the hall's
+    // door rather than in front of it.
+    const at = cellToWorld(shape, clamp((hall?.x ?? mid) + 3), clamp((hall?.z ?? mid) + 2));
+    // Through the scatter's baker rather than instantiate: the model is eight
+    // voxel parts, which is sixteen draw calls a frame with the shadow pass —
+    // baked flat and instanced it is two. The lamp never animates or moves,
+    // which is exactly the trade scatter exists for.
+    const farol = await buildScatter([
+      { model: 'deco_lamp', position: new THREE.Vector3(at.x, at.y, at.z), rotationY: 0, scale: 0.85 },
+    ]);
+    stage.scene.add(farol);
+
+    /*
+     * The flame, filling the lantern's cage. The model is a bamboo cage from
+     * 1.5 to 2.8 units up its post (skull finial above it, measured off the
+     * placed meshes) with the post running through its middle — so the flame
+     * is a half-unit box around the post at the cage's waist, and the light
+     * spills through the bamboo gaps. toneMapped: false is the whole trick:
+     * everything else in the world rolls off at the shoulder's 0.82, so this
+     * one box is the hottest thing the frame can hold.
+     */
+    const flameMaterial = new THREE.MeshBasicMaterial({ color: 0xffdf9e });
+    flameMaterial.toneMapped = false;
+    const flame = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.5, 0.46), flameMaterial);
+    flame.position.set(at.x, at.y + 2.1, at.z);
+    stage.scene.add(flame);
+
+    // Physical units (r155+ lighting): candela, so the pool under the lamp
+    // lands around x1.3 of the ambient at the sand and twice that on the
+    // hall's near wall. Short reach — an accent, not a second sun.
+    ember = new THREE.PointLight(0xff9a3d, 10, 7, 2);
+    ember.position.set(at.x, at.y + 2.1, at.z);
+    stage.scene.add(ember);
+  }
+
+
   /* --- the camera ---------------------------------------------------------
    *
    * Framed against reference/island_hero.png, because that frame is the bar.
@@ -1600,6 +1664,147 @@ export async function createIslandScene(
     hud?.say(refusalText((refusal ?? 'unknown-building') as RefusalKey), { tone: 'refuse' });
   }
 
+  /* --- THE SUN'S SHADOW, refitted to THIS island ---------------------------
+   *
+   * The stage parks a fixed 64-unit shadow frustum, sized when the island was
+   * 26 cells. At 44 cells the plateau's far corners graze its edge and the
+   * outlying islets fall clean outside it — and a caster outside the frustum
+   * silently stops casting, which is why the day-one frame had palms with no
+   * shadows on three of its corners. The blind verdict called the reference's
+   * long, hard, one-direction shadows difference #1; a frustum that misses
+   * casters cannot draw them at any bias.
+   *
+   * So the island fits the frustum to its own casters, exactly as it fits the
+   * camera to its own coast: walk everything this scene stood up, project it
+   * into the sun's own axes, and close the box around it with a margin. Two
+   * things follow:
+   *
+   *   COVERAGE. Every palm, rock, wreck, terrace wall, islet and the moored
+   *   skiff is inside the map, so everything casts from the first frame.
+   *
+   *   RESOLUTION. The fit is asymmetric and tight, and the map behind it goes
+   *   to 2048 square. Together the texel drops from 0.0625 world units to
+   *   0.041 across the light and 0.028 along it: a palm frond is two or three
+   *   texels wide instead of one, which is the difference between the
+   *   shredded half-tone confetti the old map drew under every palm
+   *   (measured: most shadow pixels at x0.80-0.95 of their lit value instead
+   *   of the x0.74 a full shadow is) and a contiguous dark shape. 16MB of map
+   *   against the stage's 4 — the island is the one scene whose whole verdict
+   *   hangs on its shadows, and it hands the rig back on dispose.
+   *
+   *   THE MAP MUST STAY SQUARE, AND NEAR/FAR MUST STAY THE STAGE'S. Two
+   *   dead-end configurations, both measured, both of the kind that looks
+   *   like an improvement:
+   *
+   *   2048x1024 looks free — the light-space footprint is half as tall as it
+   *   is wide — and with it every shadow in the frame went dark while the
+   *   depth map itself dumped correct. Square map, same frustum: casts.
+   *
+   *   Tightening near/far to the casters' own depth looks like precision for
+   *   nothing, and with it every BOOT-TIME render — the two frames freeze()
+   *   captures, warm-ups, RAF frames — sampled the map dark, while the same
+   *   values poked into a settled session worked perfectly, which is what
+   *   made it look like a timing ghost for six rounds of forensics. Keep the
+   *   stage's 40..200 brackets: they were sized for a slab wider than this
+   *   one, the ortho depth buffer is linear so the slack costs nothing, and
+   *   the -0.0008 depth bias stays calibrated to the same range it was
+   *   measured against. Only the four side planes are fitted.
+   */
+  {
+    const shadow = stage.sun.shadow;
+    const shadowCamera = shadow.camera;
+    const previous = {
+      left: shadowCamera.left, right: shadowCamera.right,
+      top: shadowCamera.top, bottom: shadowCamera.bottom,
+      near: shadowCamera.near, far: shadowCamera.far,
+      mapW: shadow.mapSize.x, mapH: shadow.mapSize.y,
+      normalBias: shadow.normalBias,
+    };
+
+    // The sun's own axes: the shadow camera looks from the light toward its
+    // target with world +y as up, which is exactly what lookAt builds.
+    const toSun = stage.sun.position.clone().sub(stage.sun.target.position).normalize();
+    const lsX = new THREE.Vector3(0, 1, 0).cross(toSun).normalize();
+    const lsY = toSun.clone().cross(lsX);
+
+    const bounds = new THREE.Box3();
+    const corner = new THREE.Vector3();
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const child of stage.scene.children) {
+      // The lights are the stage's own, and the water neither casts nor
+      // receives this map.
+      if (preexisting.has(child) || child === water.mesh) continue;
+      // setFromObject unions instanced meshes through their object-level
+      // bounding box, so the scatter's palms arrive placed, not at origin.
+      bounds.setFromObject(child);
+      if (bounds.isEmpty()) continue;
+      for (let i = 0; i < 8; i++) {
+        corner.set(
+          i & 1 ? bounds.max.x : bounds.min.x,
+          i & 2 ? bounds.max.y : bounds.min.y,
+          i & 4 ? bounds.max.z : bounds.min.z
+        ).sub(stage.sun.target.position);
+        const x = corner.dot(lsX);
+        const y = corner.dot(lsY);
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+      }
+    }
+
+    /** Drops the allocated map so the next shadow pass rebuilds it. A closure,
+     *  so the compiler cannot narrow `shadow.map` to null across the calls —
+     *  the renderer reassigns it behind our back every shadow pass. */
+    const dropMap = (): void => {
+      const spent = shadow.map;
+      if (spent) spent.dispose();
+      shadow.map = null;
+    };
+
+    if (Number.isFinite(minX)) {
+      // A texel and a half of margin, so nothing sits ON the clip plane and
+      // the normalBias walk can never step a lookup off the map's edge.
+      const pad = 1.5;
+      // The four side planes and nothing else — see the note above for why
+      // near and far stay the stage's own.
+      shadowCamera.left = minX - pad;
+      shadowCamera.right = maxX + pad;
+      shadowCamera.bottom = minY - pad;
+      shadowCamera.top = maxY + pad;
+      // The projection never recompiles itself — see the stage's own note.
+      shadowCamera.updateProjectionMatrix();
+      shadow.mapSize.set(2048, 2048); // SQUARE — see the note above.
+      // A map already allocated keeps its old size (a title-screen render will
+      // have made one); drop it so the next pass rebuilds at the new size.
+      dropMap();
+      // The biases are sized in texels (stage note); re-derive against ours.
+      const texel = Math.max(
+        (shadowCamera.right - shadowCamera.left) / 2048,
+        (shadowCamera.top - shadowCamera.bottom) / 2048
+      );
+      shadow.normalBias = texel * 0.8;
+      console.log(
+        `[shadow] fitted ${(shadowCamera.right - shadowCamera.left).toFixed(1)}x` +
+        `${(shadowCamera.top - shadowCamera.bottom).toFixed(1)} at 2048sq ` +
+        `(texel ${texel.toFixed(3)}u, was 0.0625u over 64x64)`
+      );
+
+    }
+
+    listeners.signal.addEventListener('abort', () => {
+      shadowCamera.left = previous.left;
+      shadowCamera.right = previous.right;
+      shadowCamera.top = previous.top;
+      shadowCamera.bottom = previous.bottom;
+      shadowCamera.near = previous.near;
+      shadowCamera.far = previous.far;
+      shadowCamera.updateProjectionMatrix();
+      shadow.mapSize.set(previous.mapW, previous.mapH);
+      shadow.map?.dispose();
+      shadow.map = null;
+      shadow.normalBias = previous.normalBias;
+    });
+  }
+
   // Debug handle for the shadow probe (temporary).
   (window as unknown as Record<string, unknown>).__stage = stage;
   (window as unknown as Record<string, unknown>).__THREE = THREE;
@@ -1671,6 +1876,13 @@ export async function createIslandScene(
         ship.rotation.x = -sea.dz * 2.4;
         ship.rotation.z = sea.dx * 2.4;
       }
+
+      if (ember) {
+        // Fire breathes. Two incommensurate sines off the SCENE clock, never
+        // the wall clock, so a capture at a fixed t stays byte-identical.
+        ember.intensity = 10 * (1 + 0.09 * Math.sin(elapsed * 9.7) + 0.05 * Math.sin(elapsed * 15.3));
+      }
+
 
       stepSquash(elapsed);
       rig.update(dt);

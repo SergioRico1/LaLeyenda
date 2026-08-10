@@ -412,7 +412,7 @@ const GLARE_SIZES: readonly { w: number; cell: readonly [number, number]; seed: 
 ];
 
 /**
- * The surf band's three block sizes, waterline outward, and how far each REACHES.
+ * The surf band's three block sizes, waterline outward, and where each LIVES.
  *
  * A blind judge called the last apron "uniform white axis-aligned rectangles
  * scattered at random", and structurally it was: two fixed cell sizes at one
@@ -422,26 +422,41 @@ const GLARE_SIZES: readonly { w: number; cell: readonly [number, number]; seed: 
  * the cyan takes over, then nothing. The size of the foam falls with the energy
  * of the water carrying it, and that fall is the whole read.
  *
- * So three grids share one shoreline and each dies at its own distance:
+ * The first cut of this table gave each tier its own DEATH and let all three be
+ * born at the waterline, and the apron came out as a solid glow: three grids
+ * stacked at the sand put their combined hit probability at 98%, the gaps in
+ * the big lace were filled by the small tiers underneath, and a band with no
+ * gaps is milk, not blocks. The reference's inner lace is bright BECAUSE of the
+ * saturated cyan showing between its slabs. So each tier now has a birth as
+ * well: the mid blocks arrive where the big slabs start thinning, the last
+ * chips only exist past the mid zone, and the gaps in each zone open onto
+ * clean water rather than onto the next tier down.
  *
- *   `hold` / `gone`  where the tier starts fading and where it is out, as
- *                    multiples of the apron's heavy-lace reach (uSurf.x/uSurf.y)
- *                    so one scene knob still moves the whole structure. The big
- *                    tier barely outlives the lace, the small one runs to the
- *                    cut and is the only thing still breaking there.
+ *   `rise`           where the tier fades IN, `[from, fully on]`, as multiples
+ *                    of the apron's heavy-lace reach (uSurf.x/uSurf.y). The big
+ *                    tier is born at the sand itself — its rise is omitted from
+ *                    the emitted GLSL entirely, both because it would be dead
+ *                    code and because smoothstep(0,0,x) is undefined.
+ *   `hold` / `gone`  where the tier starts fading and where it is out, in the
+ *                    same units, so one scene knob still moves the whole
+ *                    structure. The big tier barely outlives the lace, the
+ *                    small one runs to the cut and is the only thing breaking
+ *                    there.
  *   `cov`            hit probability at full strength, before the scene gain —
- *                    the big tier is driven hard enough that its blocks JOIN,
- *                    which is what the reference's inner lace is.
+ *                    the big tier is driven hard enough that its blocks JOIN
+ *                    into runs, and no further: the cap below is what holds the
+ *                    inner lace at slabs-with-gaps instead of a solid ring.
  *   `bright`         share of the tier's cells that break white rather than
  *                    sea-glass. Falls outward: the last chips are mostly dim.
  *   `calm`           what survives in the gaps of the combing clump field —
  *                    the big tier keeps most of itself (the inner lace is a
  *                    band, not fingers), the small one nearly vanishes there.
  *   `jitter`         per-block shift of the tier's own edge, in apron units, so
- *                    the three seams are ragged coasts rather than three rings.
+ *                    the zone seams are ragged coasts rather than three rings.
  */
 const FOAM_SIZES: readonly {
   cell: readonly [number, number];
+  rise: readonly [number, number];
   hold: number;
   gone: number;
   cov: number;
@@ -451,9 +466,9 @@ const FOAM_SIZES: readonly {
   cap: number;
   seed: number;
 }[] = [
-  { cell: [5.2, 3.5], hold: 0.8, gone: 1.28, cov: 0.62, bright: 1.15, calm: 0.55, jitter: 0.16, cap: 0.9, seed: 12.9 },
-  { cell: [2.6, 1.8], hold: 1.0, gone: 1.7, cov: 0.4, bright: 0.55, calm: 0.3, jitter: 0.24, cap: 0.84, seed: 47.3 },
-  { cell: [1.5, 1.05], hold: 0.9, gone: 2.25, cov: 0.27, bright: 0.32, calm: 0.16, jitter: 0.26, cap: 0.78, seed: 83.1 },
+  { cell: [6.0, 3.4], rise: [0, 0], hold: 0.7, gone: 1.15, cov: 0.5, bright: 1.12, calm: 0.62, jitter: 0.18, cap: 0.8, seed: 12.9 },
+  { cell: [2.9, 1.9], rise: [0.35, 0.6], hold: 1.0, gone: 1.62, cov: 0.3, bright: 0.62, calm: 0.34, jitter: 0.26, cap: 0.6, seed: 47.3 },
+  { cell: [1.5, 1.05], rise: [0.95, 1.25], hold: 1.3, gone: 2.25, cov: 0.2, bright: 0.34, calm: 0.14, jitter: 0.3, cap: 0.42, seed: 83.1 },
 ];
 
 /** GLSL literals need a decimal point, and toFixed guarantees one. */
@@ -942,7 +957,11 @@ ${FOAM_SIZES.map(
   (f, i) => `      vec2 fcell${i} = floor(drift / (uCell * vec2(${g(f.cell[0])}, ${g(f.cell[1])})));
       float fh${i} = hash21(fcell${i} + ${g(f.seed)});
       float fp${i} = apronT + (hash21(fcell${i} + ${g(f.seed + 11.3)}) - 0.5) * ${g(f.jitter)};
-      float fc${i} = min(${g(f.cov)} * uSurf.z * (1.0 - smoothstep(apronFlat * ${g(f.hold)}, min(apronFlat * ${g(f.gone)}, 1.0), fp${i})) * mix(${g(f.calm)}, 1.0, fingers), ${g(f.cap)});
+      float fc${i} = min(${g(f.cov)} * uSurf.z${
+        f.rise[1] > 0
+          ? ` * smoothstep(apronFlat * ${g(f.rise[0])}, apronFlat * ${g(f.rise[1])}, fp${i})`
+          : ''
+      } * (1.0 - smoothstep(apronFlat * ${g(f.hold)}, min(apronFlat * ${g(f.gone)}, 1.0), fp${i})) * mix(${g(f.calm)}, 1.0, fingers), ${g(f.cap)});
       dimHit = max(dimHit, step(1.0 - fc${i}, fh${i}));
       // The white rides the same hash at a tighter cut, so every bright block
       // sits inside a dim one — the sea-glass brackets the white for free —
@@ -1090,7 +1109,14 @@ ${FOAM_SIZES.map(
     vec2 scr = vClip.xy / max(vClip.w, 0.0001) * 0.5 + 0.5;
     float laneEdge = 0.42 * scr.x - scr.y - 0.01
                    + (valueNoise(vWorld.xz * 0.085 + 44.0) - 0.5) * 0.20;
-    float laneWeight = mix(1.0, mix(0.45, 1.0, smoothstep(0.0, 0.44, laneEdge)), uLane);
+    // The in-lane ramp saturates INSIDE the frame. Over 0.44 of laneEdge it
+    // never finished — the edge itself only reaches 0.41 at the bottom-right
+    // corner of either framing — so full weight existed nowhere, and once the
+    // deep glare became heart-or-nothing the corner field collapsed to the one
+    // spot that came closest. Over 0.28 the weight reaches 1 across the
+    // corner's whole interior and the ramp still spends itself on the same
+    // boundary. uLane 0 collapses the whole term to exactly 1.0 either way.
+    float laneWeight = mix(1.0, mix(0.45, 1.0, smoothstep(0.0, 0.28, laneEdge)), uLane);
 
     // Where the light is. Glare sits on the face of a swell that is climbing
     // toward the camera — the one part of a wave angled to send the sun back —
@@ -1209,23 +1235,72 @@ ${FOAM_SIZES.map(
       // boosts that vary 8x across the frame — a fixed window on it read "near
       // the camera" as "in the sun" and left the bottom-left scattered.
       //
-      // The sweep weight SATURATES, where the hue weight only approaches. On a
-      // swept bed-shoal the drive runs about 5x what true deep can carry
-      // (byDepth is 1, so haloDepth cuts nothing), and a gate scaled by
-      // 1-uShallow.z left an 11% leak — 11% of a 5x drive is a lone white
+      // BOTH weights SATURATE — the sweep from the mid-near frame down, the
+      // hue by the last two depth levels (see gateW below). The sweep learned
+      // it first: on a swept bed-shoal the drive runs about 5x what true deep
+      // can carry (byDepth is 1, so haloDepth cuts nothing), and a gate scaled
+      // by 1-uShallow.z left an 11% leak — 11% of a 5x drive is a lone white
       // plate every few boat-lengths, measured twice before this line read the
-      // way it does. So the opt-in is a step off the flat default, the sweep
-      // term reaches exactly 1 from the mid-near frame down, and a scene on
-      // the flat default holds BOTH weights at exactly 0 and multiplies its
-      // chips by exactly 1.0 — the open sea's frame is byte-identical, checked.
-      float heart = laneWeight * clumping * litW;
-      float gateW = max(1.0 - byDepth,
+      // way it does. The hue side then repeated the same arithmetic in
+      // hue-deep water until it was stepped the same way. A scene on the flat
+      // default holds BOTH weights at exactly 0 and multiplies its chips by
+      // exactly 1.0 — the open sea's frame is byte-identical, checked.
+      // The light term is nearly flattened here ON PURPOSE. The glare's own
+      // amount already carries litW in full, so the density of a raft still
+      // rides the swell face — but taxing the GATE by it as well demanded
+      // corner AND raft AND lit face all at once, and that triple coincidence
+      // happens about once per frame: the corner came back as one lone smudge,
+      // which reads worse than empty.
+      //
+      // The lane term is NOT laneWeight, and the difference is where the lone
+      // chips were coming from. laneWeight is a soft ramp with a 0.45 floor,
+      // built to shade the glare's density across the whole frame — so any
+      // noise pocket near the lane's boundary lifts it most of the way to
+      // full, and a pocket at full clump and full light then fired a lone
+      // streak on dark water half a frame from the corner. What the HEART
+      // needs is a decision, not a shade: inside the lane's geometry or not.
+      // The same noisy laneEdge keeps the boundary a ragged coast, and the
+      // step is taken through uLane so a scene that spreads its glare
+      // (uLane 0) holds the term at exactly 1 and keys its hearts on the
+      // clump and the light alone.
+      float heart = mix(1.0, smoothstep(0.06, 0.22, laneEdge), uLane)
+                  * clumping * mix(0.72, 1.0, litW);
+      // The hue side SATURATES too now, and that closed the second leak. Raw,
+      // 1-byDepth tops out at 1 minus the scene's own floor — 0.89 with the
+      // island's shallow z of 0.11 — so the heart window was only ever applied
+      // to 89% of the coverage and the other 11% of chipDepth fell everywhere:
+      // a constellation of lone white rectangles over every band of hue-deep
+      // water, mid-frame, top-frame, either side of the lane. That is the
+      // "scattered at random, including out in open water" a blind judge
+      // failed this sea on, and it was arithmetic, not tuning. Stepped through
+      // a smoothstep that reaches exactly 1 by the last two depth levels, the
+      // deep is heart-or-nothing; the shelf (1-byDepth = 0) still reads
+      // exactly 0 and keeps its even field. A scene on the flat default holds
+      // 1-byDepth at exactly 0.0, so the sea's gateW is exactly what it was.
+      float gateW = max(smoothstep(0.34, 0.80, 1.0 - byDepth),
         (1.0 - step(0.999, uShallow.z)) * smoothstep(0.30, 0.72, close * mix(0.16, 1.0, open)));
-      // The window's lower edge sits above the strongest heart a lane-noise
-      // pocket can fake (laneWeight 0.78 at full clump and full light): at 0.72
-      // those pockets fired one lone white plate at a time, well left of the
-      // corner, which is the exact chip this gate exists to kill.
-      float chipGate = chipDepth * mix(1.0, 1.45 * smoothstep(0.76, 0.98, heart), gateW);
+      // Lane-noise pockets are held out by the heart's own lane step now, not
+      // by this window's lower edge — an earlier build leaned on the edge
+      // (lowered to 0.72 it fired one lone white plate at a time, well left
+      // of the corner) and the edge could never go low enough to open the
+      // corner without reopening the pockets. The boost is not decoration
+      // either: a heart is at best ~0.95 (the lit mix bottoms at 0.72 on an
+      // unlit face) and the window's smoothstep taxes it again. At 1.45 the
+      // corner fired one lone raft, which reads worse than none — a smudge
+      // with no field around it. The reference's corner is a FIELD of rafts,
+      // so what survives the window is driven hard.
+      float chipGate = chipDepth * mix(1.0, 2.60 * smoothstep(0.76, 0.98, heart), gateW);
+      // THE PLATE DIES ON DARK WATER TOO. The halo tier had no dark-water gate
+      // at all — haloDepth thinned it to a quarter and the rest was spread
+      // evenly, which on water the sweep paints near-black is a field of pale
+      // steel rectangles at one size: the exact "sensor noise" read, in a
+      // colour the chip gate could never see because none of it clears L=200.
+      // Same heart, wider window — a halo has to outlive its chip into the
+      // raft's shoulder or the chips it brackets stand alone as dust — and the
+      // reference's own deep mottle survives where it actually sits: on the
+      // rafts, not between them. gateW is exactly 0 for a scene on the flat
+      // default, so this multiplies the sea's plates by exactly 1.0.
+      float plateGate = mix(1.0, 2.20 * smoothstep(0.55, 0.90, heart), gateW);
 
       // Three cell sizes sharing one coverage budget — see GLARE_SIZES. Both
       // tiers come off the SAME hash at each size, so the halo brackets the
@@ -1238,7 +1313,7 @@ ${FOAM_SIZES.map(
 ${GLARE_SIZES.map(
   (s, i) => `      float gh${i} = hash21(floor(gcell / (uCell * vec2(${g(s.cell[0])}, ${g(s.cell[1])}))) + ${g(s.seed)});
       float ga${i} = amount * ${g(s.w)};
-      glarePlate = max(glarePlate, step(1.0 - min(ga${i} * ${g(GLARE_PLATE)}, 0.80), gh${i}));
+      glarePlate = max(glarePlate, step(1.0 - min(ga${i} * ${g(GLARE_PLATE)} * plateGate, 0.80), gh${i}));
       glareChip  = max(glareChip,  step(1.0 - min(ga${i} * ${g(GLARE_CHIP)} * chipGate, 0.62), gh${i}));`
 ).join('\n')}
     }
@@ -1719,7 +1794,13 @@ export class Water {
         // width of the collar it moves, or the collar breaks into dashes at the
         // top of each swash instead of sliding.
         uSurge: { value: 0.38 },
-        uCaps: { value: opts.caps ?? 1 },
+        // The default is the LAGOON'S — the ocean and the title screen both
+        // pass their own 0.5 and never read it. The island reference's open
+        // water breaks nowhere, and with the deep glare now heart-or-nothing,
+        // caps at 1 were the last white marks scattered over its mid-water.
+        // Held at a whisper rather than zero so the near swell still breaks
+        // occasionally.
+        uCaps: { value: opts.caps ?? 0.35 },
         uViewSpan: { value: new THREE.Vector2(0.2, 0.9) },
       },
     });

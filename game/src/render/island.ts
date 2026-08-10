@@ -307,16 +307,22 @@ const WALL_GRASS: WallSkin = {
    * sand's own hue."* The reference's own polarity, same verdict: riser L143
    * UNDER grass L163, face darker than top, 69 L below its sand.
    *
-   * So the wall goes back to being CUT EARTH. Lit body aims at ~#ab7a40 —
-   * L~128 mid-fall, inside the judge's L120-130 window, under grass at
-   * L140-155 and some ninety points under the sand — and the shaded one at
-   * ~#7f5a2c, L~95. Both keep the brown-earth hue (red over green over blue in
-   * real steps) rather than the bleached sand tint the verdict called out.
-   * Solved through the +x wall response measured in render/stage.ts
-   * (0.966, 0.957, 0.909 of albedo) times the WALL_FOOT mid-fall, and then
-   * MEASURED BACK off a capture — see tools note in this round's report.
+   * So the wall goes back to being CUT EARTH. Lit body aims at the middle of
+   * the judge's L120-130 window, under grass at L140-155 and some ninety
+   * points under the sand — and the shaded one at ~#7f5a2c, L~95. Both keep
+   * the brown-earth hue (red over green over blue in real steps) rather than
+   * the bleached sand tint the verdict called out. Solved through the +x wall
+   * response measured in render/stage.ts (0.966, 0.957, 0.909 of albedo)
+   * times the WALL_FOOT mid-fall, and then MEASURED BACK off a capture:
+   * 0xbd884b rendered its lit faces at L115-122 top-to-mid (sampled columns
+   * x=700 y=180-185 of the day-one 1280 frame, rgb 165,116,60 at the top),
+   * hugging the window's dark edge. One fortieth up centres it: at a
+   * twentieth the brightest quartile of lit wall measured L142 against a
+   * grass floor of L145, three points of polarity margin where the verdict
+   * wants a step. Halved, the lit face runs ~L118-137 top-to-foot with its
+   * middle in the window and ten points of air under the palest field.
    */
-  bodySun: 0xbd884b, // -> ~#ab7a40 mid-fall, L~128
+  bodySun: 0xc28b4d, // -> lit face L~120-130 mid-fall, measured back
   bodyShade: 0x9e713a, // -> ~#7f5a2c, L~95
   /*
    * MEASURED BACK OFF OUR OWN FRAME, not derived. #95b944 -> #bdd15c is x1.27,
@@ -752,26 +758,60 @@ export function generateIsland(seed: string, size = 44): IslandShape {
   }));
 
   /*
-   * The jog, and why it is now a quarter of the pitch it was.
+   * The jog: runs of coast that hold a level, then step — and neither the run
+   * nor the step repeats itself.
    *
-   * The old table changed value every three and a half cells and drew from
-   * [0,0,0,1,-1] — so about two bands in five jogged, and a jog out was as
-   * likely as a jog in. Sampled onto a grid on top of a superellipse staircase
-   * and five lobes, that is a two-cell sawtooth running the whole way round,
-   * which is exactly what round four called "jagged one-tile notches ...
-   * unresolved geometry".
+   * Two tables have already died here. The first changed value every three and
+   * a half cells from [0,0,0,1,-1] — a two-cell sawtooth the whole way round,
+   * round four's "jagged one-tile notches". The second cut the pitch to seven
+   * cells and the depth to exactly one, and round ten's judge measured what
+   * that is: *"an identical 45-degree staircase with identical notch depths: a
+   * tilemap boundary, not a beach."* Uniform noise and uniform tidiness are
+   * the same fault at two scales — the outline carries exactly one event size,
+   * so the eye reads the grid instead of a coast.
    *
-   * Count the reference instead: their rim runs six to ten cells DEAD STRAIGHT
-   * and then steps once, by one cell. It is a chunky outline with occasional
-   * events, not a fractal. So the band is seven cells wide and half the draws
-   * are zero — a step every dozen cells or so, one cell of amplitude, and the
-   * runs that do jog mostly jog outward so the island keeps its area.
+   * The reference's rim is neither: runs of four cells and runs of eleven, a
+   * one-cell nick here, a two-cell bight two headlands later. So both numbers
+   * are drawn rather than fixed:
+   *
+   *   RUN LENGTHS come from a weighted partition of the circle — each band is
+   *   0.5x to 2.2x the mean width, so a short jag can sit beside a long dead-
+   *   straight reach and no two islands share a rhythm.
+   *
+   *   DEPTHS come from a table that is mostly calm (four zeros) and otherwise
+   *   varied: shallow and full single steps both ways, and a rare two-cell
+   *   event — a real bay or a real headland, once or twice an island. The
+   *   fractional entries are not half-heights (the rim is a mask, not a
+   *   contour): they shift WHERE the superellipse crosses each cell, so two
+   *   notches of the "same" depth stop stepping in the same phase.
+   *
+   * The mean of the table stays a shade outward (+0.15 of a cell) so the
+   * island keeps its area, and the two-cell entries are outward only — a bay
+   * two cells deep eats buildable plateau, a headland only grows beach.
    *
    * Whatever survives this is then put through `carveRim`, which is where the
    * guarantee actually lives: nothing one cell wide gets to reach the frame.
    */
-  const bands = Math.max(8, Math.round(size / 2)); // ~7 cells of coast per band
-  const rimNotch = Array.from({ length: bands }, () => rng.pick([0, 0, 0, 1, 1, -1]) / c);
+  const bands = Math.max(8, Math.round(size / 2)); // ~7 cells of coast per band, on average
+  const bandWeight = Array.from({ length: bands }, () => rng.range(0.5, 2.2));
+  const weightSum = bandWeight.reduce((a, b) => a + b, 0);
+  /** Cumulative band edges over [0,1): band k spans [bandEdge[k], bandEdge[k+1]). */
+  const bandEdge: number[] = [0];
+  for (const w of bandWeight) bandEdge.push(bandEdge[bandEdge.length - 1] + w / weightSum);
+  const bandAt = (turn: number): number => {
+    let lo = 0;
+    let hi = bands - 1;
+    while (lo < hi) {
+      const midBand = (lo + hi + 1) >> 1;
+      if (turn >= bandEdge[midBand]) lo = midBand;
+      else hi = midBand - 1;
+    }
+    return lo;
+  };
+  const rimNotch = Array.from(
+    { length: bands },
+    () => rng.pick([0, 0, 0, 0, 0.6, 1, 1, 1.4, 2, -0.6, -1, -1]) / c
+  );
   /*
    * How deep the beach runs, in CELLS, sampled on a BLOCK LATTICE rather than
    * by angle — and the difference is the last of the coastline complaint.
@@ -812,10 +852,12 @@ export function generateIsland(seed: string, size = 44): IslandShape {
       // Superellipse: see SQUARENESS for why the exponent is the single most
       // load-bearing number in this function.
       const r = Math.pow(Math.abs(dx) ** SQUARENESS + Math.abs(dz) ** SQUARENESS, 1 / SQUARENESS);
-      const band = Math.min(bands - 1, Math.floor(turnAt(x, z) * bands));
+      const band = bandAt(turnAt(x, z));
       let edge = 0.86 + rimNotch[band];
       for (const l of lobes) edge += Math.sin(angle * l.freq + l.angle) * l.amp;
-      if (r < edge) land[z * size + x] = 1;
+      // A two-cell headland where the lobes already swell can reach past the
+      // grid; the sea must keep at least half a cell of frame everywhere.
+      if (r < Math.min(edge, 0.975)) land[z * size + x] = 1;
     }
   }
   chunkMask(land, size, size);

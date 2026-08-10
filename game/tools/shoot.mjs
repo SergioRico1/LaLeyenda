@@ -44,8 +44,10 @@ const has = (name) => argv.includes(`--${name}`);
 const scene = argv.find((a) => !a.startsWith('--') && argv[argv.indexOf(a) - 1]?.startsWith('--') !== true) ?? 'island';
 
 /** The router's named screens (src/main.ts). `settings` is an overlay that
- *  boots over the title, and is a shootable name for exactly that reason. */
-const SCREENS = new Set(['title', 'captain', 'settings', 'island', 'sea']);
+ *  boots over the title, and is a shootable name for exactly that reason —
+ *  `store` and `leaderboard` are the same trick over the island (PRODUCTION.md
+ *  §5): the router boots the island with that panel already up. */
+const SCREENS = new Set(['title', 'captain', 'settings', 'island', 'sea', 'store', 'leaderboard']);
 /** Not part of the flow: a model viewer and a measuring rig. */
 const DEV_SCENES = new Set(['model', 'measure']);
 
