@@ -317,6 +317,57 @@
         "Populate the plaza: signposts, barrels, crates, torch posts, hedges at intervals such that no run of bare sand exceeds about 60px at hero scale.",
         "Fix the blind harness before round 10: mask or crop the Pirate Nation wordmark and the ProofOfPlay watermark out of the reference before writing a.png/b.png, write ours.png and key.json outside the comparison directory, and pad both PNGs to an identical byte length. Also add --save demo to the island piece's shoot args so the blind pair is the built-out state by default rather than day-one."
       ]
+    },
+    {
+      "round": 9,
+      "title": "The terraces exist and cannot be seen — value polarity, not ratio, not height",
+      "a": "shots/blind/island-r9/a.png",
+      "b": "shots/blind/island-r9/b.png",
+      "key": {
+        "a": "reference",
+        "b": "ours"
+      },
+      "better": "B",
+      "weWon": false,
+      "gapSize": "huge",
+      "biggestFlaw": "Your terrace risers are lit backwards, so the height you built is invisible. Measured: our riser face reads L179 against a grass top of L139-153 — the vertical wall is ~30 luminance points BRIGHTER than the turf it is holding up, which is physically inverted; and it sits at the sand's own hue (45 vs 50) only 27 L below the sand it stands on. The reference runs riser L143 under grass L163 (face darker than top, correct polarity) and 69 L below its sand — 2.5x our separation — plus a 1-2px dark-green turf lip on every riser's top edge and a soft occlusion band at its base. Same geometry, opposite reading: theirs is cut earth, ours is pale ribbons painted on a flat plane. Ratio was not the problem and height was not the problem either — VALUE POLARITY is. You built the walls and then lit them so they cannot be seen.",
+      "differences": [
+        "SHADOWS. In B every single object throws a long, hard-edged, silhouette-accurate shadow in one committed direction — palms across grass AND sand, the tavern, the totem, the signpost, the flagpole, and the terrain steps themselves. That is what welds objects to the ground. In A (day one) the ONLY shadow in the entire 1280x720 frame is under the one hut: I zoomed a full-height palm standing on open sand at 3x and it throws nothing, the flagpole throws nothing, the terrace walls throw nothing. In the built-out demo state palms do throw something, but it is a short round blurred blob with no silhouette that drops the sand by roughly 15 L where B's drop it by 40-50. Worse: shadows appearing in the demo state and vanishing at day one suggests the shadow camera is being fitted to the buildings' bounds, so with one building it covers almost nothing. One object casting while nothing else does reads as a bug, not a style.",
+        "RISER VALUE POLARITY — the measured headline. A: riser L179 / grass L139-153 / sand L206, riser hue 45 vs sand hue 50. B: riser L143 / grass L163 / sand L212, riser hue 46. Ours is brighter than the grass above it and nearly the same colour as the sand below it; theirs is darker than the grass and 69 L clear of the sand. B also caps every riser with a 1-2px dark-green grass lip that overhangs the wall, and lays a soft dark band on the grass at the riser's base. Neither exists in ours. At arm's length ours dissolves.",
+        "ONE TIER vs A LANDFORM. Every step in A is the same single height on one flat floor — eight identical rectangular pens raised one notch above a beige plaza. It reads as an allotment or a set of raised planters, not terrain. B steps tier-on-tier: grass panels at two different heights, and the plateau itself drops to the water in two clear risers with different depths. Ours has relief the way a sheet of stickers has relief.",
+        "FOCAL HIERARCHY. B is composed. It has exactly one hot accent — the forge's lit orange furnace — and one cool complement, the tavern's teal shutters and ship's-wheel window, sitting against warm sand. The eye lands on the tavern, travels right to the fire, then out along the dock into the water. A has no accent above its own noise floor: the lone brown hut sits at the same value as everything around it, and the most saturated objects in frame are scattered little red flag rags that read as litter. At thumbnail size A is a green blob with a grid on it and one orange dot; B is a settlement with a warm cluster of roofs and a legible silhouette.",
+        "COASTLINE AND WATER — the cheapest thing in our frame. Every coastal edge in A is an identical 45-degree staircase with identical notch depths: a tilemap boundary, not a beach. The foam is uniform white axis-aligned rectangles scattered at random, including out in DEEP water hundreds of pixels from shore with nothing to break on. B's grass-to-sand boundary is curved and organic — it looks drawn by a hand — and its foam is organised into ribbons that hug the shore with varied block sizes, plus a bright turquoise shelf that separates land from sea and makes the island pop at thumbnail size.",
+        "PROP DRESSING. B fills the same square metres with crates, barrels, a stone bench, rope-and-post fencing, white flower clumps, a crop field planted in rows, a carved totem, a signpost with a scroll pinned to it, and a galleon with a skull sail, rigging, planked hull and a wake. Even its outlying islets are miniature islands with grass, palms and rocks. A's dressing is unlit grey rock blobs with no colour relationship to either sand or grass, repeated red flag props scattered without logic, and outlying islets that are bare sand shelves with a single green smudge. A's ship is a low-detail hull half-cut by the frame edge.",
+        "SURFACE TEXTURE. A's grass is a high-frequency stipple of near-white pixels sprayed over mid-green — at 1:1 it reads as JPEG artefacting or mould, and at arm's length it just desaturates the field. B's grass carries a fine low-contrast stipple PLUS large-scale value variation, darker where shaded and lighter in sun, so it reads as a field with weather on it. Same story on the palms: B breaks the value between the sunlit top and shaded underside of each frond; A's canopies are one flat dark green — green paper cutouts.",
+        "DAY ONE, JUDGED SEPARATELY — does it read as a place worth starting? NO. It reads as a level editor with a starter hut. Eight empty pens in a symmetric ring around a large dead beige plaza, one small building dead centre, nothing moving, no smoke, no birds, no boat under sail, flags that are static rags. The empty pens do at least communicate 'there is room here', which is legitimate builder-game affordance — but they are the wrong shape for it, reading as a vegetable allotment rather than a pirate island. Damningly, the most saturated and highest-contrast object on the day-one screen is the HUD's orange Zarpar CTA: the UI beats the world it is sitting on. Nothing in the frame tells the eye where to go, and there is no reason to want to be there. Our own built-out demo state is a different and far better picture, but it is not what a new player sees, and it is not what the blind harness has been shooting for nine rounds."
+      ],
+      "note": "CAVEAT ON THIS VERDICT: the judge caught the harness comparing our DAY-ONE island against their built-out settlement — the shoot config had silently ignored the --save demo flag for nine rounds — so the composition complaints (empty pens, lone hut) conflate game state with craft. The riser-polarity measurement is state-independent and stands: our riser face reads L179 against grass at L139-153, BRIGHTER than the turf it holds up, at nearly the sand's own hue; the reference runs its riser darker than its top with 2.5x our separation from the sand. 'You built the walls and then lit them so they cannot be seen.' The pair shown here was regenerated post-fix on the demo island. Also this round: the tutorial (21 headless cases, resumable, never blocks on a timer, and the gate caught it telling the player to clear a tree the game could not clear), and settings with save export/import finally off the JS console. 215 sim cases.",
+      "pieces": [
+        {
+          "piece": "terrain height",
+          "verdict": "built, invisibly lit",
+          "biggestGap": "raiseTerraces(): 686/282/143 cells at three levels where 1111 lay flat, 116 camera-facing inland steps, walls at 11px vs the reference's 12. The geometry landed; the lighting inverted it."
+        },
+        {
+          "piece": "tutorial",
+          "verdict": "shipped",
+          "biggestGap": "A resolver, not a cursor: each beat derives done/aim from the save, so resume is structural. Taught in 138s of island time, longest cardless stretch 30s, zero seconds with an idle carpenter and nothing to do."
+        },
+        {
+          "piece": "settings",
+          "verdict": "shipped",
+          "biggestGap": "Export/import off the console at last; import is three deliberate acts. No Música row because there is no music to mute — a switch wired to nothing is worse than no switch."
+        }
+      ],
+      "nextRound": [
+        "INVERT THE RISER VALUE. The vertical face must be darker than the horizontal plane it supports, not brighter. Target the riser around L120-130 against grass at L140-155 — face at least 15-20 L below the top plane — and push it 60-70 L below the sand rather than the current 27. Then add the two details that do the real work: a 1-2px darker turf lip along the top edge of every riser, and a soft occlusion band on the floor where the riser meets it. This one change is worth more than the last three rounds of geometry.",
+        "MAKE EVERYTHING CAST, AT DAY ONE. Fit the shadow camera to the whole plateau, not to the buildings' bounding box — right now day one has one shadow in the frame and the demo has a few, which is why the relief work did not pay. Every palm, prop, fence and terrace step must cast. Make the shadows harder-edged, longer, silhouette-shaped rather than round blobs, and darker: drop the sand by 40-50 L, not 15.",
+        "STACK A SECOND TIER. Every step in our frame is the same height on one floor. Give the plateau a high side and a low side so the coastline steps down twice and the grass panels sit at two different elevations. Uniform step height is what makes it read as planters instead of land.",
+        "FIX THE HARNESS BEFORE ROUND 10, OR ROUND 10 IS WASTED TOO. Add --save demo to the island entry in the PIECES config so the blind actually compares the built-out state the brief has been describing for nine rounds, and delete ours.png from the output directory — it is sitting next to a.png and b.png and a single pixel-diff gives away the mapping 3.5 to 1.",
+        "KILL THE DEEP-WATER FOAM AND BREAK THE COASTLINE OFF THE GRID. Confine foam to a band that follows the shore with varied block sizes instead of uniform white rectangles scattered across open ocean, and vary the coastal notch depths so the shore stops being an identical 45-degree staircase. Round the grass-to-sand boundary.",
+        "GIVE THE FRAME ONE HOT ACCENT. The reference wins the eye with a single lit forge fire. We have nothing in the world brighter or more saturated than our own HUD button. Light something — a brazier, a forge, a lantern, a cookfire — and let it own the composition.",
+        "DAY ONE NEEDS A REASON TO LOOK. Move the wrecked ship in off the frame edge and light it, put something alive in the plaza, and either warm the world up or cool the Zarpar CTA down so the UI stops out-shouting the island."
+      ]
     }
   ]
 }
