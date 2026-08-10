@@ -98,6 +98,74 @@ import * as THREE from 'three';
  * chips stay on the water they were on; only the corner they are weighted toward
  * follows the frame.
  *
+ * THE SPARKLE IS A FUNCTION OF DEPTH
+ *
+ * The glare above was built to answer "white dashes all the same size at even
+ * density". It clumps, it comes in three sizes and it rides the light — and a
+ * later blind judge still called it "a uniform noise field scattered over the
+ * whole surface, including grey chips", because all three of those properties
+ * are about the TEXTURE of the field and none of them is about WHERE it is.
+ *
+ * HOW NOT TO MEASURE IT, first, because the obvious way is wrong twice and cost
+ * most of a round. Run a distance transform off the reference's land and bucket
+ * its sea by distance from the sand: seeded from "anything that is not blue",
+ * their own surf lace and their own sun chips become islands, and the tool then
+ * reports that their bright water stops four world units offshore, which it does
+ * not. Seed land from CLEARLY WARM or CLEARLY GREEN only, hold out the logo and
+ * the watermark, clean up with an opening rather than a fat dilate — and the
+ * answer still cannot be set beside ours, because their island holds 0.70 of its
+ * frame's width and ours holds 0.55, so the same screen distance is a different
+ * world distance in the two frames.
+ *
+ * Depth is in the WATER'S OWN HUE, which is what a depth ramp encodes and what
+ * no framing can move. cyan = (g - r) / (b - r) runs about 0.95 on their shelf
+ * and 0.48 in their dark, and being a ratio of differences it does not shift
+ * when a frame is lighter or darker overall. Read it off the dark quartile of a
+ * window and the chips cannot poison the bucket they land in. Share of each band
+ * that is a chip (L>200):
+ *
+ *   cyan        0.40-0.58  0.58-0.66  0.66-0.73  0.73-0.80  0.80-0.87  0.94+
+ *               deep ..............................................  shelf
+ *   reference        1.5%       2.3%       0.3%       4.6%      19.2%  41.5%
+ *   ours             5.8%       2.6%       0.7%       2.2%      13.4%  53.9%
+ *
+ * A quarter of either frame is that first band. We were carrying four times
+ * their white in it, at sd 44 against their 30, while running SHORT on the two
+ * shelf bands — the field was strongest exactly where theirs is weakest. Their
+ * specular is a property of the shallows; ours was a property of the surface.
+ *
+ * The table above is the BEFORE, and it is quoted from the tool this change was
+ * tuned with. The gate re-ran the same method from an independent implementation
+ * and got the same story at different tenths (their 0.94+ came back at 60% there
+ * rather than 42%), so treat these as the shape of the problem and not as a
+ * calibration: the numbers the island is actually tuned against, band by band
+ * and including what is still short, live beside `shallow` in scenes/islandScene.ts.
+ *
+ * So the glare is now weighted by the depth ramp's own curve — uShallow,
+ * scene-owned, flat by default — in five hard steps with a per-tile dither. It
+ * is stepped rather than ramped because a soft falloff is the one failure this
+ * surface would not survive: everything else on it is a block.
+ *
+ * The two tiers fall at DIFFERENT rates, which is not visible until the bands
+ * above are counted. Over their shelf the white and the pale halo around it
+ * cover about the same area, 41% and 52%. In their deep water it is 1.2% and
+ * 6.4%: the chips are all but gone and the halo is five times what is left of
+ * them. Deep water in their frame is not bare, it is mottled.
+ *
+ * AND EVERY CHIP IS WHITE. The second tier used to be a painted steel plate, and
+ * sampled over a quadrant of our own deep water it was the most common non-base
+ * tone in the frame — 2376 pixels of #587898, L=116 at chroma 64, lying on a
+ * saturated navy. Their halo at the same depth measures #a0c1c2 and #5d93a5, at
+ * L=180 and L=136 and at chroma 33 and 72. The brighter of the two is LESS
+ * saturated than the plate we were drawing. It is four times as light, and that
+ * is the whole difference: what separates a halo from grit is not its colour, it
+ * is that it sits well above the sea. So at uHalo 1 the tier stops being a
+ * colour at all and becomes the water under it, lifted toward the pale steel
+ * this file already measured off their distant chips — near-white over the mint
+ * shelf, a mid teal over the navy, grey nowhere, because there is no grey in it.
+ * The chip stops cooling into steel with distance for the same reason: white or
+ * absent, and the depth fall is what makes it absent.
+ *
  * THE SEABED
  *
  * "The ocean is a flat backdrop, not water. One uniform cobalt" — and it was,
@@ -470,6 +538,9 @@ const fragmentShader = /* glsl */ `
   uniform float uLane;          // 1 weights the glare into the sun corner of the
                                 // FRAME, 0 spreads it over the whole sea
   uniform float uReef;          // gain on the seabed field under the depth ramp
+  uniform vec3  uShallow;       // xyz = glare falls from depth x to depth y, keeping
+                                // z of itself in the deep. (0,1,1) is flat.
+  uniform float uHalo;          // 0 paints the steel tier, 1 lifts the water itself
   uniform vec4  uStreak;        // xy along the grain, zw across it (see STREAK)
   uniform vec2  uDash;          // axis a glare chip is drawn out along
   uniform float uRampDist;      // world units the depth ramp's exponential runs over
@@ -671,6 +742,14 @@ ${SWELL_GLSL}
     // 5.2 puts the whole of it inside three units, which is a halo rather than a
     // lagoon and is most of why our island reads as sitting ON the water.
     float t = 1.0 - exp(-d * depthScale / uRampDist);
+    // How deep this water is, before the ramp quantises it: 0 at the waterline,
+    // 1 out in the dark. THE ONE RULER THE SPARKLE READS — see THE SPARKLE IS A
+    // FUNCTION OF DEPTH at the top of the file. It is taken here rather than
+    // from d on purpose, because depthScale has already folded the seabed
+    // into it: a shoal sixty units offshore is shallow water and gets a shoal's
+    // glitter, and the colour it is drawn and the light it throws back come out
+    // of the same number instead of disagreeing.
+    float depth01 = t;
     vec2 tile = floor(vWorld.xz / (uCell * 2.0));
     t = clamp(floor(t * 11.0 + hash21(tile) * 0.85) / 11.0, 0.0, 1.0);
     vec3 col = rampColour(t);
@@ -874,6 +953,66 @@ ${SWELL_GLSL}
     // apron, and the collar is the one edge nothing is allowed to compete with.
     float open = smoothstep(uOpen.x, uOpen.y, d);
 
+    // THE SPARKLE IS A FUNCTION OF DEPTH — see the note at the top of the file.
+    //
+    // The open term above is a gate and it only ever opens: it holds glare off the
+    // collar and then, from a few units out, lets it through at full strength
+    // for ever. Which is arithmetically an even field, and an even field of
+    // white is what a blind judge read as "a uniform noise field scattered over
+    // the whole surface". Their sea does the opposite: bucket both frames by the
+    // water's own hue (see the note at the top for why hue and not geometry) and
+    // the share of each band that is a chip runs
+    //
+    //   cyan          0.40-0.58  0.58-0.66  0.66-0.73  0.73-0.80  0.80-0.87
+    //   reference          1.5%       2.3%       0.3%       4.6%      19.2%
+    //   ours               5.8%       2.6%       0.7%       2.2%      13.4%
+    //
+    // — strongest in their shallows and strongest in OUR deep, which is the same
+    // field drawn upside down. So this is the term that turns it the right way
+    // up: full glitter on the shelf, a floor out in the dark, keyed off the same
+    // depth the colour ramp is keyed off.
+    //
+    // STEPPED AND DITHERED, never a smooth falloff. Five levels on the same
+    // 2-cell tile the depth ramp bands on, jittered by most of a level so the
+    // rings break up into a ragged coast instead of drawing contours around the
+    // island. A soft gradient here would be a worse failure than the dirt it
+    // replaces: it is the one thing on this surface that no other part of the
+    // shader would forgive.
+    //
+    // Written as 1 - s*(1 - z) rather than as a mix so that a scene which does
+    // not opt in gets EXACTLY 1.0 — the open sea's material is defined by these
+    // numbers being untouched, and mix(1.0, 1.0, s) is only exactly one if the
+    // driver happens to fuse it that way.
+    float shallowT = clamp((depth01 - uShallow.x) / max(uShallow.y - uShallow.x, 0.0001), 0.0, 1.0);
+    shallowT = clamp(floor(shallowT * 5.0 + hash21(tile + 5.1) * 0.85) / 5.0, 0.0, 1.0);
+    float byDepth = 1.0 - shallowT * (1.0 - uShallow.z);
+    // THE TWO TIERS FALL AT DIFFERENT RATES, and this is the part that is not
+    // obvious until their sea is cut into depth bands and counted. Over their
+    // shallow shelf the white chips and the pale halo around them cover about
+    // the same area — 41% and 52%. Out in their deep water it is 1.2% and 6.4%:
+    // the chips are all but gone and the halo is FIVE TIMES what is left of
+    // them. Deep water in their frame is not bare, it is mottled — pale blocks
+    // with the occasional white one in them.
+    //
+    // So the chip takes the whole fall and the halo keeps about a quarter of
+    // itself. Cut together (this was one factor, and then the square root of it)
+    // the deep came out as isolated single white specks on flat navy, which is
+    // dust: a chip with no bracket has nothing to be a highlight OF.
+    //
+    // Overshoot the halo and it stops being a bracket: left at 0.42 of itself
+    // the deep water came back as continuous mats of pale steel — 11.3% of it
+    // against the reference's 6.4% — which is the same dirt in a lighter colour.
+    // At 0.23 it measures 4.5% and reads as what it is, a few blocks of brighter
+    // water with the white sitting in them.
+    //
+    // The chip's factor stacks ON TOP of the halo's, because the shared amount
+    // below already carries haloDepth. Both are written as 1 minus a share of
+    // the fall, and never as a ratio of the two: a division here is one rounding
+    // step the compiler is free to schedule differently, and it moved a pixel of
+    // the open sea that has to stay byte-identical.
+    float haloDepth = 1.0 - (1.0 - byDepth) * 0.86;
+    float chipDepth = 1.0 - (1.0 - byDepth) * 0.60;
+
     // THE GLARE — every bit of white on this sea that is not surf or whitecap.
     // See the note at the top of the file.
     //
@@ -970,7 +1109,7 @@ ${SWELL_GLSL}
     // back of a swell is darker than its face, it is not bare. Gated outright,
     // half the sea went to zero chip and the frame came back at a third of the
     // reference's white however hard the rest of the chain was driven.
-    float glare = uGlitter * detail * open * laneWeight * clumping
+    float glare = uGlitter * detail * open * laneWeight * clumping * haloDepth
                 * mix(0.80, 3.60, close)
                 * mix(0.85, 1.35, shoalField)
                 * mix(0.35, 1.0, smoothstep(0.28, 0.78, lit));
@@ -995,13 +1134,18 @@ ${SWELL_GLSL}
       float amount = glare * twinkle;
 
       // Three cell sizes sharing one coverage budget — see GLARE_SIZES. Both
-      // tiers come off the SAME hash at each size, so the steel brackets the
-      // cream for free and every chip lands in its own halo.
+      // tiers come off the SAME hash at each size, so the halo brackets the
+      // white for free and every chip lands in its own.
+      //
+      // The chip carries the steeper of the two depth falls here rather than in
+      // the shared amount, which is what lets the halo outlive it in the deep and keeps
+      // the nesting intact while it does — a smaller threshold is still a subset
+      // of a larger one off the same hash, whatever the two are scaled by.
 ${GLARE_SIZES.map(
   (s, i) => `      float gh${i} = hash21(floor(gcell / (uCell * vec2(${g(s.cell[0])}, ${g(s.cell[1])}))) + ${g(s.seed)});
       float ga${i} = amount * ${g(s.w)};
       glarePlate = max(glarePlate, step(1.0 - min(ga${i} * ${g(GLARE_PLATE)}, 0.80), gh${i}));
-      glareChip  = max(glareChip,  step(1.0 - min(ga${i} * ${g(GLARE_CHIP)}, 0.62), gh${i}));`
+      glareChip  = max(glareChip,  step(1.0 - min(ga${i} * ${g(GLARE_CHIP)} * chipDepth, 0.62), gh${i}));`
 ).join('\n')}
     }
 
@@ -1095,13 +1239,47 @@ ${GLARE_SIZES.map(
     vec3 foamDim = mix(uFoamDim, uHorizon, haze);
     vec3 foamBright = mix(uFoamBright, uHorizon, haze);
 
-    // The glare's two tiers, cooled as they go away as well as hazed: the near
-    // chips in both references are a warm cream and the far ones a pale steel,
-    // which is what a white chip looks like through that much air over that much
-    // water. Two colour pairs rather than one, and they are the reference's own
-    // two measurements.
-    vec3 glarePlateCol = mix(mix(uLanePlate, uGlintDim, distant), uHorizon, haze);
-    vec3 glareChipCol = mix(mix(uLaneChip, uGlintBright, distant), uHorizon, haze);
+    // THE GLARE'S TWO TIERS, AND WHY ONE OF THEM STOPPED BEING A COLOUR.
+    //
+    // Painted (uHalo 0): a steel plate under a cream chip, both cooled toward
+    // their far-field measurements as they go away. That is the open sea's
+    // material and every one of its tunings was made against it.
+    //
+    // Lifted (uHalo 1): the halo is not painted at all. It is the WATER, pulled
+    // toward its own light tone — so it comes out mint over the mint shelf, teal
+    // over the teal shelf and a pale cerulean over the navy, and it cannot come
+    // out grey at any depth because there is no grey anywhere in it. The steel
+    // plate could: sampled over a quadrant of our own deep water, the single
+    // most common non-base tone in the frame was #587898 at L=116 and chroma 64
+    // — twenty-four hundred pixels of slate lying on a saturated navy, against
+    // the reference's halo of #90c9c7 and #4f97a9 at the same depths. A grey
+    // chip is not a highlight; it is dirt, and the answer is to delete the tier
+    // rather than to dim it.
+    //
+    // The CHIP stops cooling into steel at the same time. uGlintBright is a pale
+    // #BDD4DF, which is a perfectly good measurement of a distant chip and
+    // exactly the wrong thing to draw: white or absent is the rule, and the
+    // depth fall above is what makes it absent. Distance still hazes it toward
+    // the horizon, because that is air and not dirt.
+    vec3 haloPaint = mix(mix(uLanePlate, uGlintDim, distant), uHorizon, haze);
+    // WHAT SEPARATES A HALO FROM GRIT IS NOT ITS COLOUR, IT IS THAT IT SITS WELL
+    // ABOVE THE SEA. Cut a patch of their water past the shelf and the two tiers
+    // over it measure #a0c1c2 and #5d93a5 — L=180 and L=136, on water whose own
+    // mean is L=40, and at chroma 33 and 72. The brighter of the two is barely
+    // more saturated than the plate this replaced. It is four times as light,
+    // and that is the whole difference.
+    //
+    // Which is why the target is not uCrest alone. uCrest is the water's own
+    // light tone and over near-black navy 0.62 of it lands at L=125 — under the
+    // mid tone of the frame it is supposed to be the highlight of, so it reads
+    // as a teal patch rather than as water catching the sun. Carried most of the
+    // way to the pale steel this file already measured off their distant chips,
+    // it lands where theirs does, and on the mint shelf the same mix lands
+    // nearly white.
+    vec3 haloTone = mix(uCrest, uGlintBright, 0.55);
+    vec3 haloLift = mix(col, mix(haloTone, uHorizon, haze * 0.5), 0.62);
+    vec3 glarePlateCol = haloPaint + (haloLift - haloPaint) * uHalo;
+    vec3 glareChipCol = mix(mix(uLaneChip, uGlintBright, distant * (1.0 - uHalo)), uHorizon, haze);
 
     // The glare, under the shore's own white so nothing here can crowd the
     // collar. The bright tier goes on at 0.94 and not at 0.6: the tier is
@@ -1294,6 +1472,30 @@ export interface WaterOptions {
    *  0 gives back a sea whose only depth cue is the beach. */
   reef?: number;
   /**
+   * How the sparkle reads DEPTH: `[fades from, gone by, share kept in the deep]`.
+   *
+   * The first two are positions on the depth ramp's own curve
+   * (`1 - exp(-d / rampDist)`, seabed folded in), not world units, so a shoal
+   * far offshore counts as shallow and glitters like one. The third is the floor
+   * — what still breaks white out in the dark.
+   *
+   * `[0, 1, 1]` is flat, which is what the open sea has always drawn and
+   * therefore the default. Anything else is a scene saying "my white belongs to
+   * my shelf". Applied as five hard steps with a per-tile dither, never as a
+   * gradient — see the shader.
+   */
+  shallow?: readonly [number, number, number];
+  /**
+   * Which halo sits under the white chips: `0` paints the steel plate the open
+   * sea was tuned with, `1` lifts the water's own light tone instead.
+   *
+   * At 1 the halo can never come out grey, because nothing in it is grey — it is
+   * the colour of the water under it, brightened. It also stops the chip itself
+   * cooling into steel with distance, which is the other half of "white or
+   * absent". Defaults to 0, so no scene inherits the change by accident.
+   */
+  halo?: number;
+  /**
    * Which way the streaks and the sparkle lie — see the Sparkle type.
    *
    * Defaults to `grid`, the fixed diagonal the open sea and the title screen
@@ -1389,6 +1591,10 @@ export class Water {
         uGlitter: { value: opts.glitter ?? 1 },
         uLane: { value: opts.lane ?? (opts.shoreSDF ? 1 : 0) },
         uReef: { value: opts.reef ?? 1 },
+        // Flat by default, which is the sea every existing tuning was made
+        // against — see WaterOptions.shallow.
+        uShallow: { value: new THREE.Vector3(...(opts.shallow ?? [0, 1, 1])) },
+        uHalo: { value: opts.halo ?? 0 },
         uStreak: { value: new THREE.Vector4(...STREAK[opts.sparkle ?? 'grid']) },
         uDash: { value: new THREE.Vector2(...DASH[opts.sparkle ?? 'grid']) },
         uRampDist: { value: opts.rampDist ?? 5.2 },

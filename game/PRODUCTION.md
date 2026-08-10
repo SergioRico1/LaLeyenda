@@ -142,7 +142,28 @@ Each judged on rendered pixels against `reference/clash/` and
 
 ## 7 · Ship quality, independent of features
 
-- [ ] **Draw calls < 100.** Currently **436** against PLAN.md's budget.
+- [ ] **Draw calls < 100.** Measured with `node tools/perf.mjs`, which reads
+      `renderer.info.render.calls` after a real frame. The 436 recorded here was
+      stale by several rounds; round 8's gate re-measured both island states:
+
+      | `--parts` | day one (1 building) | `?save=demo` (11 buildings) |
+      |---|---|---|
+      | terrain | 7 | 7 |
+      | terrain,decor | 50 | 45 |
+      | terrain,decor,buildings | 110 | 1255 |
+      | everything (+ ship) | **132** | **1279** |
+
+      (`tools/perf.mjs` only drives the island; the sea has never been measured.)
+
+      Read down the columns rather than at the totals, because they say something
+      the totals hide. **Terrain is 7 calls and decor is under 45** — both are
+      merged and instanced and neither is the problem. **The buildings are the
+      whole of it**: 60 calls for one Ayuntamiento, 1210 for eleven, which is
+      about 110 draw calls per building. Each optimised `.glb` still arrives as a
+      mesh per material and nothing merges or instances them, so the budget is
+      blown by the fourth building a player places. Not a regression — HEAD
+      measured 132 and 1277 — and not fixable in the island renderer. The lever
+      is `tools/optimize.mjs` and the model loader.
 - [ ] Initial download < 10 MB
 - [ ] 60 fps on a mid-range phone — needs a real device; SwiftShader cannot
       answer it

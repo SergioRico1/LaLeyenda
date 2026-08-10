@@ -202,6 +202,28 @@ export async function createIslandScene(
     // ...and enough of it. Their near water is a mid blue carrying a sixth of
     // its area in white blocks; at gain 1 ours carried a twentieth, which is
     // what reads as "speckled" rather than as sunlight.
+    //
+    // AND NO MORE THAN THAT, because `shallow` below does not trade one part of
+    // the sea against another and the gain cannot buy back what it takes. This
+    // was raised to 2.6 on the reasoning that the depth weighting spends an
+    // even gain on the shelf, so the shelf needed the rise to stand still. The
+    // gate measured both, same frame, same tool as `shallow`'s own table —
+    // share of each hue band that is a chip (L>200):
+    //
+    //   cyan       0.40-0.58  0.58-0.66  0.66-0.73  0.73-0.80  0.80-0.87  0.87-0.94  0.94+
+    //              deep ...................................................... shelf
+    //   reference       1.2%       2.9%       0.3%       2.7%      16.6%      25.8%  60.4%
+    //   glitter 2.6     2.0%       2.3%       0.6%       1.4%       8.2%      19.0%  49.2%
+    //   glitter 1.9     1.5%       1.6%       0.5%       1.3%       8.0%      19.0%  49.1%
+    //
+    // The shelf does not move: a tenth of a point at 0.94+, nothing at all at
+    // 0.87-0.94. It cannot, because those bands are pinned by the chip's own
+    // coverage cap in the shader (`min(ga * GLARE_CHIP, 0.62)`) long before the
+    // gain runs out. The ONLY thing the extra gain reaches is the deep, where it
+    // puts a third more white back into the one band this whole round exists to
+    // empty. So the rise bought nothing and cost the thesis, and the number goes
+    // back. If the shelf is to be raised toward their 60% it has to come from
+    // the cap or from `open`, not from here.
     glitter: 1.9,
     // Gathered into fewer, denser rafts than the open sea's, with cleaner water
     // between them. Raising the gain alone put an even white speckle over the
@@ -209,6 +231,53 @@ export async function createIslandScene(
     // glare read as sunlight is the CLEAN blue next to it. The low contrast is
     // what lets the threshold bite at all — see the option's own note.
     clump: [0.48, 0.9, 0.02, 1.55],
+    // WHERE THE SPARKLE IS ALLOWED TO BE, which is the one thing four rounds of
+    // work on the glare never said. Everything above tunes what a chip LOOKS
+    // like; this says the chips belong to the shelf.
+    //
+    // Positions on the depth ramp's own curve, so the seabed field counts: a
+    // shoal forty units out still reads 0.45 on it and glitters like the shallow
+    // water it is, while open water twelve units offshore reads 0.70 and does
+    // not.
+    //
+    // HOW THIS WAS MEASURED, because the obvious way is wrong twice over. A
+    // distance transform run off the reference's land is contaminated: seeded
+    // from "anything that is not blue" it makes their own surf lace and their
+    // own sun chips into islands, and then reports that their bright water stops
+    // four units offshore. And even segmented properly it cannot be compared
+    // across the two frames, because their island holds 0.70 of its frame's
+    // width and ours holds 0.55 — the same screen distance is a different world
+    // distance in each.
+    //
+    // So depth is read off the water's own HUE instead, which is what a depth
+    // ramp encodes and what no framing can move: cyan = (g-r)/(b-r), taken from
+    // the DARK QUARTILE of an 8px window so the chips cannot poison their own
+    // bucket. Share of each band that is a chip (L>200) — re-measured by the
+    // gate with an independent implementation of the same method, which is why
+    // these differ by a few tenths from the ones this line was first tuned on:
+    //
+    //   cyan       0.40-0.58  0.58-0.66  0.66-0.73  0.73-0.80  0.80-0.87  0.87-0.94  0.94+
+    //              deep ...................................................... shelf
+    //   reference       1.2%       2.9%       0.3%       2.7%      16.6%      25.8%  60.4%
+    //   round 6         5.2%       2.1%       0.5%       1.2%       8.2%      18.4%  49.6%
+    //   now             1.5%       1.6%       0.5%       1.3%       8.0%      19.0%  49.1%
+    //
+    // Nearly a quarter of the frame is that first band and we were carrying
+    // four times their white in it. That is the inversion, and the row above is
+    // it being undone: 5.2% down to 1.5% against their 1.2%.
+    //
+    // WHAT IS STILL WRONG, said here so the next pass does not have to find it
+    // again: the SHELF is short. 49% against their 60%, 8% against their 17%,
+    // and neither budged when the gain was moved (see `glitter`). Those bands
+    // are pinned by the chip's coverage cap in the shader, so the shelf is a
+    // separate fix and not a knob on this one.
+    shallow: [0.46, 0.78, 0.11],
+    // The halo stops being a painted steel plate and becomes the water's own
+    // light tone. The plate was the single most common non-base tone in our
+    // frame — 2376 pixels of #587898, L=116 at chroma 64, lying on a saturated
+    // navy — which is dirt rather than light. Every chip on this sea is now
+    // white or it is absent.
+    halo: 1,
   });
   water.mesh.position.y = STEP * 0.82; // waterline just below the beach top
   stage.scene.add(water.mesh);
