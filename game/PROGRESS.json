@@ -418,6 +418,27 @@
         "Store merchandising: per-tier product props (handful, bolsa, cofre, arcón as actual models) over radial glow bursts, plus best-value badging; leaderboard: league badge art, trophy icon on scores, top-3 podium treatment.",
         "Repair the blind: sweep or withhold sibling-round key.json files and jitter the reference encode per run so it is never byte-identical across rounds."
       ]
+    },
+    {
+      "round": 10.5,
+      "title": "10b — the hall reads at 115px, the kraken fights, and the fleet is real",
+      "a": "shots/r10b_demo.png",
+      "b": "shots/r10b_demo.png",
+      "key": {
+        "a": "ours",
+        "b": "ours"
+      },
+      "better": null,
+      "weWon": false,
+      "gapSize": "not blind-judged",
+      "biggestFlaw": "Judged by its gate's measurements rather than a blind critic: the round-11 final pass was ordered while the blind judge was mid-run, so it was stopped and its job folded into round 11's own definitive judge. The gate's numbers: the hall solves to 115px — the reference's own height, named by the round-10 judge as the single biggest lever — 260 tests green, and the cold-player walk caught a stale helm: a newly bought hull inherited the previous voyage's stick state.",
+      "differences": [
+        "The demo island re-laid as a settlement: fewer buildings, spread, each on its own pad with corridors — an inventory became a town.",
+        "Shipyard: five hulls priced and ownable, the next voyage visibly sails the owned hull with different stats.",
+        "The Giant Squid fights: a tell, a dodge window the stick can steer out of, two phases, and a chest of the deep through the same loot path as everything else.",
+        "Store shelf escalates puñado → bolsa → cofre → arcón as drawn art; leaderboard wears league badges and a season plate."
+      ],
+      "pieces": []
     }
   ]
 }
