@@ -6,7 +6,11 @@ import { createCaptainScene } from './scenes/captainScene';
 import { createGame, type Game } from './core/game';
 import { adoptSave, importSaveFile, peekSavedGame } from './core/save';
 import { createSettingsPanel, type SettingsPanel } from './ui/panels/settings';
+import { createStorePanel, type StorePanel } from './ui/panels/store';
+import { createLeaderboardPanel, fetchStandings, type LeaderboardPanel } from './ui/panels/leaderboard';
 import { createTutorial, type Tutorial } from './ui/tutorial';
+import { bakeIcons } from './ui/icons';
+import { creditPack } from './sim/gems';
 import {
   createCaptain, landCargoInPlace, setCaptain, setFlag, townHallLevel,
   type Captain, type GameState,
@@ -175,6 +179,11 @@ async function runRouter(stage: Stage): Promise<void> {
 
   let settings: SettingsPanel | null = null;
   let tutorial: Tutorial | null = null;
+  // The two meta overlays (PRODUCTION.md §5): the Tienda and the Clasificación.
+  // Same lifecycle as Ajustes — owned here, mounted in overlayRoot, closed by
+  // every navigation — because both need the GAME, which only the router has.
+  let store: StorePanel | null = null;
+  let board: LeaderboardPanel | null = null;
 
   /**
    * Every navigation started by a tap goes through here.
@@ -223,6 +232,8 @@ async function runRouter(stage: Stage): Promise<void> {
     after?: () => void | Promise<void>
   ): Promise<void> {
     closeSettings();
+    closeStore();
+    closeBoard();
     tutorial?.dispose();
     tutorial = null;
 
@@ -310,16 +321,26 @@ async function runRouter(stage: Stage): Promise<void> {
     await toIsland();
   }
 
-  async function toIsland(): Promise<void> {
+  async function toIsland(opts: { panel?: 'store' | 'leaderboard' } = {}): Promise<void> {
+    // `?screen=store` / `?screen=leaderboard` boot the island with that overlay
+    // already up, exactly as `?screen=settings` boots the title with Ajustes up
+    // — the awaited `after` is what lets the shot path photograph an overlay.
+    const openPanel = async (): Promise<void> => {
+      if (opts.panel === 'store') await openStore();
+      else if (opts.panel === 'leaderboard') await openBoard();
+    };
+
     // Shot mode boots exactly one scene and never switches, so the island keeps
     // making its own game exactly as it always has — persistence off AND the sim
     // clock frozen inside the scene, which is what makes an island capture
     // byte-identical between runs. Handing it the router's would change every
     // island shot in the project, so it does not.
     if (shotMode) {
-      await show('island', () => createIslandScene(stage, seed), () => {
+      await show('island', () => createIslandScene(stage, seed), async () => {
         watchNavSettings();
+        watchNavMeta();
         maybeTeach(null);
+        await openPanel();
       });
       return;
     }
@@ -331,9 +352,11 @@ async function runRouter(stage: Stage): Promise<void> {
         game: live,
         onSail: () => nav(toSea),
       }),
-      () => {
+      async () => {
         watchNavSettings();
+        watchNavMeta();
         maybeTeach(live);
+        await openPanel();
       }
     );
   }
@@ -492,6 +515,93 @@ async function runRouter(stage: Stage): Promise<void> {
     settings = null;
   }
 
+  /* --- la tienda y la clasificación (PRODUCTION.md §5) -------------------- */
+
+  /**
+   * Both overlays need a live game — the store credits ITS gems, the board
+   * ranks ITS island — so each ensures one exists. On the island there always
+   * is one; under a capture this is the same on-demand creation Ajustes uses,
+   * with the frozen clock, so the panels photograph deterministically.
+   */
+  async function openStore(): Promise<void> {
+    if (store) return;
+    const live = await ensureGame();
+    // Cached after the HUD's own bake, so this is free on the island; it only
+    // actually renders when a capture opens the store before any HUD exists.
+    const icons = await bakeIcons(stage.renderer);
+    store = createStorePanel({
+      gems: () => live.state().gems,
+      // The ledger credit (src/sim/gems.ts), dispatched like every action so
+      // autosave, onChange and the HUD's gem counter see it the ordinary way.
+      // The payment has ALREADY happened behind the panel's ✎ SEAM by the time
+      // this runs; saveNow follows immediately because a paid-for credit must
+      // not be sitting in memory when the app is backgrounded.
+      onBuy: (packId) => {
+        const result = live.dispatch((state) => creditPack(state, packId));
+        if (result.ok) void live.saveNow();
+        return { ok: result.ok, gems: result.gems };
+      },
+      onClose: () => closeStore(),
+      gemIcon: icons.gema,
+    });
+    overlayRoot.append(store.el);
+  }
+
+  function closeStore(): void {
+    store?.dispose();
+    store = null;
+  }
+
+  async function openBoard(): Promise<void> {
+    if (board) return;
+    const live = await ensureGame();
+    // Through the ✎ SEAM (src/ui/panels/leaderboard.ts), which is async and
+    // fallible like the real fetch it stands in for: a rejection renders the
+    // panel's offline face rather than a blank sheet or a dead tap.
+    const now = live.now();
+    const data = await fetchStandings(live.state(), now).catch(() => null);
+    board = createLeaderboardPanel({
+      standings: data,
+      now,
+      onClose: () => closeBoard(),
+    });
+    overlayRoot.append(board.el);
+  }
+
+  function closeBoard(): void {
+    board?.dispose();
+    board = null;
+  }
+
+  /**
+   * ✎ SEAM — the island HUD's two meta doors, caught the same way Ajustes is
+   * (see watchNavSettings above, which documents why: the HUD's routes land in
+   * islandScene, and both of those files belong to other builders' rounds).
+   * The gem pill's `+` has carried aria-label "Gemas" since the HUD was built,
+   * and the rank cell carries "Clasificación" (hud.ts); this listens for those
+   * taps and opens the panels before the HUD's own handler toasts "soon". The
+   * moment islandScene grows onOpenStore/onOpenLeaderboard options this goes,
+   * and the flow does not change.
+   */
+  function watchNavMeta(): void {
+    if (metaWatchInstalled) return;
+    metaWatchInstalled = true;
+    document.addEventListener(
+      'click',
+      (event) => {
+        if (currentName !== 'island' || settings || store || board) return;
+        const target = event.target as HTMLElement | null;
+        const hit = target?.closest?.('[aria-label="Gemas"], [aria-label="Clasificación"]');
+        if (!hit) return;
+        event.stopPropagation();
+        event.preventDefault();
+        nav(hit.getAttribute('aria-label') === 'Gemas' ? openStore : openBoard);
+      },
+      { capture: true }
+    );
+  }
+  let metaWatchInstalled = false;
+
   /**
    * ✎ SEAM — the island HUD's Ajustes slot, until it has a route of its own.
    *
@@ -541,6 +651,10 @@ async function runRouter(stage: Stage): Promise<void> {
     // rows live instead of with every one of them correctly disabled.
     if (shotMode) await ensureGame();
     await toTitle({ settings: true });
+  } else if (requested === 'store' || requested === 'leaderboard') {
+    // The Tienda and the Clasificación are overlays too, but they are island
+    // doors, so they boot OVER the island — same pattern, other end of it.
+    await toIsland({ panel: requested });
   } else if (isScreen(requested)) {
     if (requested === 'title') await toTitle();
     else if (requested === 'captain') await toCaptain();

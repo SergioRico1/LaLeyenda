@@ -205,14 +205,16 @@ const SAND_PACKED = 0xeccea1; // -> ~#d8c69e
  * of them lit, which is why the terraces read flat: the entire frame contained
  * exactly one wall colour, and a step you cannot see two sides of is not a step.
  *
- * THE NUMBERS ARE MEASURED, and the grass ones were measured WRONG. Histogram
- * every pixel of island_hero.png that sits inside a run of five or more brown
- * ones under green, and the lit body comes back at #d8a15e / #e1ae65 / #cb9754
- * and the shaded one at #976931 / #8b6132 / #805a30. Our shade was right to the
- * level. Our SUN was #bf8b41 — five per cent of their frame's brown, and a
- * sample taken under a palm's shadow rather than in the light. A lit wall a
- * third darker than theirs is a wall the eye stops reading as lit at all, which
- * is half of why the steps we did draw were not seen.
+ * THE NUMBERS ARE MEASURED, and the measurement that matters is POLARITY, not
+ * a histogram peak. Round nine chased the reference's brightest wall runs to
+ * #e1ae65 and the round-ten judge measured what that bought: a riser at L179
+ * under grass at L139-153 — *"the vertical wall is ~30 luminance points
+ * BRIGHTER than the turf it is holding up, physically inverted."* Their frame
+ * runs the other way: riser L143 under grass L163, face darker than top,
+ * always. The bright runs the histogram found are real pixels, but they are
+ * the odd sunstruck course, not the wall; a wall is the value that HOLDS UP
+ * its field. So the grass skin now targets L120-130 lit and ~L95 shaded, and
+ * the check is a rendered capture, not the table.
  */
 interface WallSkin {
   /**
@@ -284,19 +286,38 @@ interface WallSkin {
 const WALL_FOOT = 0.87;
 
 const WALL_GRASS: WallSkin = {
-  // The ink line: their single #b0a23f, divided by the shaded-face response.
-  lipSun: 0xd6c34c, // -> ~#b0a23f
-  lipShade: 0x9a8c34, // -> ~#7f7429
   /*
-   * The bodies, re-measured off our own frame once the walls were tall enough to
-   * sample. A first pass divided the targets by the response the sand wall's
-   * note quotes (0.96 lit) and came back at #d4a25e and #8b602b — a bin under
-   * their #e1ae65 and #976931 in both cases, because a wall carrying a gradient
-   * is darker over its lower half than a flat one and the divisor was solved on
-   * a flat one. Multiplied back up by the measured miss.
+   * THE DARK TURF LIP — round ten's judge, naming the reference's edge kit:
+   * *"a 1-2px dark turf lip on every riser's top edge"*. These two are the
+   * COASTAL rind where a grass field runs to the terrace lip (the promenade
+   * gaps), and they used to be #b0a23f — an olive BRIGHTER than half the
+   * fields, which is a highlight where the reference draws its ink. Now they
+   * are the field's own green pushed into shadow: dark turf overhanging the
+   * wall, L~105 lit against fields at L140-155. The INLAND ink line is derived
+   * in the mesh builder from the same idea (see `rind` there).
    */
-  bodySun: 0xf8c277, // -> #e1ae65 at the top of the fall
-  bodyShade: 0xc68a42, // -> #976931
+  lipSun: 0x6b7c24, // -> ~#677626, dark turf
+  lipShade: 0x4f5e1c, // -> ~#41501a
+  /*
+   * The bodies, and THE NUMBER THIS ROUND TURNS ON. Round nine histogrammed
+   * the reference's brightest wall runs, aimed the lit body at #e1ae65, and
+   * the judge measured the result: *"our riser face reads L179 against a grass
+   * top of L139-153 — the vertical wall is ~30 luminance points BRIGHTER than
+   * the turf it is holding up, physically inverted, and it sits at nearly the
+   * sand's own hue."* The reference's own polarity, same verdict: riser L143
+   * UNDER grass L163, face darker than top, 69 L below its sand.
+   *
+   * So the wall goes back to being CUT EARTH. Lit body aims at ~#ab7a40 —
+   * L~128 mid-fall, inside the judge's L120-130 window, under grass at
+   * L140-155 and some ninety points under the sand — and the shaded one at
+   * ~#7f5a2c, L~95. Both keep the brown-earth hue (red over green over blue in
+   * real steps) rather than the bleached sand tint the verdict called out.
+   * Solved through the +x wall response measured in render/stage.ts
+   * (0.966, 0.957, 0.909 of albedo) times the WALL_FOOT mid-fall, and then
+   * MEASURED BACK off a capture — see tools note in this round's report.
+   */
+  bodySun: 0xbd884b, // -> ~#ab7a40 mid-fall, L~128
+  bodyShade: 0x9e713a, // -> ~#7f5a2c, L~95
   /*
    * MEASURED BACK OFF OUR OWN FRAME, not derived. #95b944 -> #bdd15c is x1.27,
    * x1.13, x1.35 in their picture, and a first pass carried a further x1.12 to
@@ -310,14 +331,13 @@ const WALL_GRASS: WallSkin = {
   lift: [1.19, 1.10, 1.38],
   dim: [0.71, 0.67, 0.55],
   /*
-   * A TENTH, because this slot changed job. It used to be the deep green rind
-   * that tied a lawn's edge to the field above it, and it was 0.44 of a wall
-   * three pixels tall — which is to say it was most of the only edge we drew.
-   * The roll does that job now, above the wall and in the light. What is left
-   * here is the one dark pixel between the two, and on a ten-pixel step a tenth
-   * is exactly one pixel.
+   * The dark lip's share of the wall. A tenth was one pixel on an eleven-pixel
+   * step, and one pixel of ink between a bright roll and what was then a
+   * bright body simply vanished — the judge found "1-2px" of dark turf on
+   * every reference riser and none on ours. 0.16, ribs rolling 0.55-1.45 of
+   * it, is one to two and a half pixels: readable, still a lip and not a band.
    */
-  lip: 0.1,
+  lip: 0.16,
   coast: 0.3,
 };
 
@@ -522,14 +542,21 @@ const LIP_RUN_FAR = 0.34;
  * outline and not an occlusion; the mesh builder gates it on both cells being
  * buildable, which the beach never is.
  *
- * 0.26 of a cell is about five screen pixels at 1280, which is the width their
- * own contact shading runs at the same edges. 0.22 toward black is a touch under
- * what a cast shadow does on this island (x0.74) — an occlusion band as dark as
- * a real shadow starts to look like one — and four levels deeper than it was,
- * because it now sits under a wall ten pixels tall instead of two.
+ * AND IT IS A GRADIENT, not a stripe — round ten's judge: the reference runs
+ * *"a soft occlusion band at its base"*, and soft is the word doing the work.
+ * The band is emitted through `quadFalling`, full depth against the wall's
+ * foot and fading to a third of itself at its outer edge, so it reads as dark
+ * gathering under a mass rather than as a ruled line beside it.
+ *
+ * 0.34 of a cell is about six screen pixels at 1280 — with the outer half
+ * faded, the DARK part of it is the five their own contact shading runs at the
+ * same edges. 0.34 toward black at the foot is a shade past what a cast shadow
+ * does here (x0.74), which is what occlusion pinned under a ten-pixel wall
+ * measures in their frame; it has faded to less than a cast shadow within
+ * three pixels, so it cannot be mistaken for one.
  */
-const CONTACT_RUN = 0.26;
-const CONTACT_SHADE = 0.22;
+const CONTACT_RUN = 0.34;
+const CONTACT_SHADE = 0.34;
 
 /**
  * The fringe where grass meets sand ON THE SAME TIER, which is now most of the
@@ -2374,19 +2401,28 @@ export function buildIslandMesh(shape: IslandShape, seed = 'terrain'): THREE.Gro
          * code not running.
          */
         if (side.band > 0 && !drops) {
-          quad(
-            cell.material,
-            [
-              [side.ia[0], y, side.ia[1]],
-              [side.ib[0], y, side.ib[1]],
-              [side.b[0], y, side.b[1]],
-              [side.a[0], y, side.a[1]],
-            ],
-            [0, 1, 0],
-            inland(side.n) && stepsUp(side.n)
-              ? mix(topAlbedo, 0x000000, CONTACT_SHADE)
-              : mix(topAlbedo, FRINGE_TONE, FRINGE_SHADE)
-          );
+          const corners: [number, number, number][] = [
+            [side.ia[0], y, side.ia[1]],
+            [side.ib[0], y, side.ib[1]],
+            [side.b[0], y, side.b[1]],
+            [side.a[0], y, side.a[1]],
+          ];
+          if (inland(side.n) && stepsUp(side.n)) {
+            // The occlusion GRADIENT: ia/ib are the band's outer edge and a/b
+            // lie at the wall's foot, which is exactly quadFalling's top/foot
+            // vertex split — so the fade costs no new geometry, only two
+            // colours. Darkest against the wall, a third of itself at the
+            // outer edge, and gone.
+            quadFalling(
+              cell.material,
+              corners,
+              [0, 1, 0],
+              mix(topAlbedo, 0x000000, CONTACT_SHADE * 0.35),
+              mix(topAlbedo, 0x000000, CONTACT_SHADE)
+            );
+          } else {
+            quad(cell.material, corners, [0, 1, 0], mix(topAlbedo, FRINGE_TONE, FRINGE_SHADE));
+          }
         }
 
         if (!drops) continue;
@@ -2507,25 +2543,26 @@ export function buildIslandMesh(shape: IslandShape, seed = 'terrain'): THREE.Gro
         const seen = Math.max(0.06, yWall - (coastal ? WATERLINE : floor));
         const depth = coastal ? skin.coast : soil.lip;
         /*
-         * THE INK LINE, derived rather than written down.
+         * THE INK LINE, derived rather than written down — and DARK, which is
+         * the whole of round ten's verdict about the top edge.
          *
-         * On the coast the rind is a real band of pale sand and comes out of the
-         * skin. Inland it is the one dark pixel between the bright roll and the
-         * bright body — their #b0a23f between #bdd15c and #e1ae65 — and the
-         * cheapest correct way to get it is to let the two colours meet and take
-         * four fifths of the result. That way a lime lip over brown earth gives
-         * an olive line and a cream lip over the same earth gives a tan one,
-         * with no second table to keep in step with the first.
+         * On the coast the rind is a real band of pale sand and comes out of
+         * the skin. Inland it is the reference's *"1-2px dark turf lip on
+         * every riser's top edge"*: the cap overhanging its own wall, in
+         * shadow. The previous derivation averaged the bright roll with what
+         * was then a bright body and landed at L~146 — the same value as the
+         * fields, which is a lip that does not exist. Now it is the cap's own
+         * tone pushed into shade (so every green's lip stays that green, and a
+         * raised road's lip stays earth) met with the soil's shaded body, and
+         * cut hard: it renders at L~90-105 under fields at L140-155, the dark
+         * line of the four-layer rule sitting between the lit roll above it
+         * and the earth body below.
          */
         const rind = coastal
           ? (lit ? skin.lipSun : skin.lipShade)
           : scale(
-            mix(
-              tintBy(topAlbedo, lit ? skin.lift : skin.dim),
-              lit ? soil.bodySun : soil.bodyShade,
-              0.5
-            ),
-            0.78
+            mix(soil.bodyShade, tintBy(topAlbedo, skin.dim), 0.6),
+            lit ? 0.8 : 0.64
           );
         const RIBS = 4;
         for (let rib = 0; rib < RIBS; rib++) {

@@ -1600,6 +1600,10 @@ export async function createIslandScene(
     hud?.say(refusalText((refusal ?? 'unknown-building') as RefusalKey), { tone: 'refuse' });
   }
 
+  // Debug handle for the shadow probe (temporary).
+  (window as unknown as Record<string, unknown>).__stage = stage;
+  (window as unknown as Record<string, unknown>).__THREE = THREE;
+
   // PLAN.md promises the player a manual backup. Until Ajustes has a panel this
   // is the route to it, and it is a real one.
   (window as unknown as Record<string, unknown>).laLeyenda = {

@@ -11,6 +11,8 @@ import './save.test';
 import './tokens.test';
 import './decor.test';
 import './sea.test';
+import './store.test';
+import './rivals.test';
 import { runCases } from './harness';
 
 export function run(): number {

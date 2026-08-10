@@ -20,8 +20,13 @@
  * and these are the invocations that reach the feature:
  *
  *   island (default)  picker · pickerOpen · place · placed · blocked · refused
- *                     · upgrade · pan · pinch
+ *                     · upgrade · pan · pinch · store · leaderboard
  *   island --save demo            working · chest · finished · inaugurate
+ *                                 (store and leaderboard run here too — the demo
+ *                                  island is the one with 256 gems and a
+ *                                  mid-table score, so it is what the panel
+ *                                  shots use; add --panel confirm / --panel
+ *                                  paid / --panel top for the deeper states)
  *   island --tutorial 1           teach
  *   island --t 35 --motion 1      guide   (§3.4's tooltip is suppressed under a
  *                                          deterministic capture on purpose —
@@ -458,6 +463,37 @@ export const ACTS = {
       }
     }
     throw new Error('act: never hit a building that was not already building');
+  },
+
+  /**
+   * The gem store (PRODUCTION.md §5), opened the way a player opens it: the
+   * `+` on the gem pill. The router catches the tap (main.ts watchNavMeta)
+   * and raises the Tienda over the island.
+   *
+   *   npm run shoot -- island --save demo --mobile --act store
+   *   npm run shoot -- island --save demo --mobile --act store --panel confirm
+   *   npm run shoot -- island --save demo --mobile --act store --panel paid
+   */
+  async store(page) {
+    await (await need(page, 'button[aria-label="Gemas"]', 'the gem pill +')).click();
+    await need(page, '.store__sheet', 'the Tienda sheet');
+    await need(page, '.store__card', 'the gem shelf');
+    await step(page, 2);
+  },
+
+  /**
+   * The leaderboard (PRODUCTION.md §5), opened from the rank cell in the top
+   * capsule. `--save demo` is the island with a mid-table score, so the shot
+   * shows the player's row both in place and pinned under the list.
+   *
+   *   npm run shoot -- island --save demo --mobile --act leaderboard
+   *   npm run shoot -- island --save demo --mobile --act leaderboard --panel top
+   */
+  async leaderboard(page) {
+    await (await need(page, '[aria-label="Clasificación"]', 'the rank cell')).click();
+    await need(page, '.board__sheet', 'the Clasificación sheet');
+    await need(page, '.board__row--you', 'the player\'s own row');
+    await step(page, 2);
   },
 
   /* --- the open sea ------------------------------------------------------ */

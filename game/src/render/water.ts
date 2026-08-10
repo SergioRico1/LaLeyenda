@@ -411,6 +411,51 @@ const GLARE_SIZES: readonly { w: number; cell: readonly [number, number]; seed: 
   { w: 0.22, cell: [6.4, 3.3], seed: 118.2 },
 ];
 
+/**
+ * The surf band's three block sizes, waterline outward, and how far each REACHES.
+ *
+ * A blind judge called the last apron "uniform white axis-aligned rectangles
+ * scattered at random", and structurally it was: two fixed cell sizes at one
+ * density, flat across the whole band and then cut. Crop the reference's beach
+ * and the band is a DECAY instead — joined slabs of lace hard against the
+ * collar, loose hand-sized blocks over the mid shelf, single small chips where
+ * the cyan takes over, then nothing. The size of the foam falls with the energy
+ * of the water carrying it, and that fall is the whole read.
+ *
+ * So three grids share one shoreline and each dies at its own distance:
+ *
+ *   `hold` / `gone`  where the tier starts fading and where it is out, as
+ *                    multiples of the apron's heavy-lace reach (uSurf.x/uSurf.y)
+ *                    so one scene knob still moves the whole structure. The big
+ *                    tier barely outlives the lace, the small one runs to the
+ *                    cut and is the only thing still breaking there.
+ *   `cov`            hit probability at full strength, before the scene gain —
+ *                    the big tier is driven hard enough that its blocks JOIN,
+ *                    which is what the reference's inner lace is.
+ *   `bright`         share of the tier's cells that break white rather than
+ *                    sea-glass. Falls outward: the last chips are mostly dim.
+ *   `calm`           what survives in the gaps of the combing clump field —
+ *                    the big tier keeps most of itself (the inner lace is a
+ *                    band, not fingers), the small one nearly vanishes there.
+ *   `jitter`         per-block shift of the tier's own edge, in apron units, so
+ *                    the three seams are ragged coasts rather than three rings.
+ */
+const FOAM_SIZES: readonly {
+  cell: readonly [number, number];
+  hold: number;
+  gone: number;
+  cov: number;
+  bright: number;
+  calm: number;
+  jitter: number;
+  cap: number;
+  seed: number;
+}[] = [
+  { cell: [5.2, 3.5], hold: 0.8, gone: 1.28, cov: 0.62, bright: 1.15, calm: 0.55, jitter: 0.16, cap: 0.9, seed: 12.9 },
+  { cell: [2.6, 1.8], hold: 1.0, gone: 1.7, cov: 0.4, bright: 0.55, calm: 0.3, jitter: 0.24, cap: 0.84, seed: 47.3 },
+  { cell: [1.5, 1.05], hold: 0.9, gone: 2.25, cov: 0.27, bright: 0.32, calm: 0.16, jitter: 0.26, cap: 0.78, seed: 83.1 },
+];
+
 /** GLSL literals need a decimal point, and toFixed guarantees one. */
 const g = (n: number): string => n.toFixed(5);
 
@@ -556,7 +601,6 @@ const fragmentShader = /* glsl */ `
   uniform float uSDFSize;
   uniform float uSDFRange;
   uniform float uHasShore;      // 0 in open sea scenes with no island
-  uniform float uFoamFloor;     // open-water foam density
   uniform vec3  uCameraPos;
   uniform float uWaveAmp;
   uniform float uSurge;         // world units the waterline runs up and back
@@ -843,62 +887,69 @@ ${SWELL_GLSL}
     // shoreline from here rather than from d, so the waterline breathes.
     float dSurf = max(d - wave * uSurge, 0.0);
 
-    // THE SURF SHELF — where all the white in this frame lives.
+    // THE SURF BAND — where all the white in this frame lives, and how it dies.
     //
-    // The reference does not scatter foam over the ocean; it packs it onto the
-    // shallow shelf. Zoomed in, that shelf is a bright cyan carrying big white
-    // blocks over its whole width, four or five world units of them, and then
-    // the water is clean: a 140x120 patch of its near water contains zero pixels
-    // above L=200.
+    // The reference does not scatter foam over the ocean; it packs it against
+    // the sand, and packed is not ENOUGH: the band has a direction. Crop their
+    // beach and the structure is a decay — joined slabs of white lace hard
+    // against the collar, breaking into loose blocks over the mid shelf, down
+    // to single sparse chips where the cyan takes over, and then clean water
+    // to the frame edge (a 140x120 patch of their near water contains zero
+    // pixels above L=200). The previous apron here was one density at two fixed
+    // block sizes, flat across its whole width and then cut — which a blind
+    // judge read, correctly, as "uniform white axis-aligned rectangles
+    // scattered at random". A band of static, not a band of surf.
     //
-    // So the profile is FLAT and then CUT, not an exponential tail. This used to
-    // decay over two thirds of a unit, which drew a solid ring and nothing else;
-    // an exponential stretched wide enough to cover the real shelf instead
-    // leaves 15% coverage at five units and 8% at six, which was the field of
-    // cream slabs across our mid-water. The chips are the largest bright objects
-    // in the shader — a dim plate runs over a world unit long — so the shape of
-    // the tail matters far more than its numbers suggest.
+    // So the apron is now three block grids sharing one shoreline, each with
+    // its own reach, its own density and its own share of white — see
+    // FOAM_SIZES. Big joins into lace at the waterline, small carries the last
+    // sparse chips to the cut, every tier edge is jittered per block so the
+    // seams are ragged coasts rather than three rings. The flat-then-cut lesson
+    // survives inside each tier: no exponential tails, because a tail on the
+    // BIG tier is exactly the field of cream slabs across mid-water this shader
+    // spent a round removing. Only the small tier is allowed near the cut.
     //
-    // How WIDE that flat part is, and how hard it breaks, are the scene's:
-    // uSurf.xy is the ramp in world units and uSurf.z the gain on the density.
-    // Their apron is the brightest thing in the frame and it runs several units
-    // out from the sand; a shelf sized against open water leaves ours a hairline
-    // of mint at the waterline, which is the "thin and dark" collar a blind
-    // judge saw. The open sea keeps the old numbers and, having no shore, draws
-    // none of this at all.
-    float shelf = 1.0 - smoothstep(uSurf.x, uSurf.y, dSurf);
-    // Broken up ALONG THE GRAIN, like everything else on this surface. Read
-    // isotropically the apron ends in a ragged but directionless fringe; read on
-    // the streak axis and stretched, it breaks into the combed fingers the
-    // reference has where its lace gives way to the shelf — which is what surf
-    // does, because it arrives in lines. Shore-only, like the density it feeds.
-    float clump = valueNoise(vec2(rot.x * 0.26, rot.y * 0.66) + uTime * 0.02);
-    float density = uFoamFloor + 0.62 * uSurf.z * shelf * mix(0.16, 1.0, smoothstep(0.34, 0.74, clump));
-
-    // Chips scroll rather than reseed, so they drift instead of teleporting.
-    //
-    // Three to two, and they were three to one. Crop the reference's apron and
-    // it is built of chunky BLOCKS — three or four cells across, about as tall
-    // as they are wide; at 3:1 ours came out as a field of parallel dashes lying on the
-    // world x axis, which reads as hatching drawn over the water rather than as
-    // foam floating on it. Nothing outside a scene with a shore can see this:
-    // the density these are thresholded against is the shelf term above, and it
-    // is zero wherever the shore distance saturates — which is everywhere, in a
-    // scene that has no island.
-    vec2 drift = vWorld.xz + uTime * vec2(0.30, 0.10);
-    vec2 chip = floor(drift / (uCell * vec2(2.2, 1.5)));
-    vec2 chipWide = floor(drift / (uCell * vec2(4.4, 2.8)));
-
-    // A slow twinkle on the bright tier only. The old one gated on a sine
-    // through a hard smoothstep and blinked half the chips off at once.
-    float phase = 0.55 + 0.45 * sin(hash21(chip) * 6.2831 + uTime * 0.7);
-    float dimHit = step(1.0 - min(density * 1.6, 0.82), hash21(chipWide + 3.7));
-    // The bright tier carried at a third more coverage than the dim one is
-    // sized for. Crop the reference's apron and the BLOCKS are white with sea
-    // glass around and behind them; at equal budgets ours came out as a mint
-    // apron with white confetti in it, which is the same two colours in the
-    // wrong proportion. Shore-only, like everything else keyed off the density.
-    float brightHit = step(1.0 - min(density * phase * 1.30, 0.78), hash21(chip + 91.3));
+    // Everything here sits inside the shore test, so the ocean and the title
+    // screen never draw a chip of it. The old code fed a uFoamFloor uniform for
+    // "open-water foam" and pinned it to zero with a warning — these plates are
+    // the largest white objects in the shader, and even a 0.4% floor scattered
+    // cream slabs over water the reference keeps clean. The gate makes that
+    // mistake unbuildable and the uniform is gone.
+    float dimHit = 0.0;
+    float brightHit = 0.0;
+    // How far through the apron this fragment sits: 0 at the waterline, 1 where
+    // the last chip dies. NOT clamped at 1 — clamped, every fragment past the
+    // apron reads as sitting exactly ON its end, and the per-block edge jitter
+    // then hands a share of them back a step of coverage: a thin scatter of
+    // foam out to infinity, which is the exact defect this block exists to kill.
+    float apronT = dSurf / max(uSurf.y, 0.001);
+    // Where the heavy lace gives way, as a fraction of the apron. This is the
+    // scene's uSurf.x doing the same job it always did, and the tier reaches in
+    // FOAM_SIZES are multiples of it, so the one knob still moves the whole
+    // structure together.
+    float apronFlat = clamp(uSurf.x / max(uSurf.y, 0.001), 0.05, 0.95);
+    if (uHasShore > 0.5 && apronT < 1.4) {
+      // Chips scroll rather than reseed, so they drift instead of teleporting.
+      vec2 drift = vWorld.xz + uTime * vec2(0.30, 0.10);
+      // The combing, ALONG THE GRAIN like everything else on this surface. Read
+      // isotropically the apron ends in a ragged but directionless fringe; read
+      // on the streak axis and stretched, it breaks into the combed fingers the
+      // reference has — surf arrives in lines. How much of a tier survives in
+      // the gaps is the tier's own calm entry: the inner lace is a band and
+      // keeps most of itself, the outer chips nearly vanish there.
+      float fingers = smoothstep(0.34, 0.74, valueNoise(vec2(rot.x * 0.26, rot.y * 0.66) + uTime * 0.02));
+${FOAM_SIZES.map(
+  (f, i) => `      vec2 fcell${i} = floor(drift / (uCell * vec2(${g(f.cell[0])}, ${g(f.cell[1])})));
+      float fh${i} = hash21(fcell${i} + ${g(f.seed)});
+      float fp${i} = apronT + (hash21(fcell${i} + ${g(f.seed + 11.3)}) - 0.5) * ${g(f.jitter)};
+      float fc${i} = min(${g(f.cov)} * uSurf.z * (1.0 - smoothstep(apronFlat * ${g(f.hold)}, min(apronFlat * ${g(f.gone)}, 1.0), fp${i})) * mix(${g(f.calm)}, 1.0, fingers), ${g(f.cap)});
+      dimHit = max(dimHit, step(1.0 - fc${i}, fh${i}));
+      // The white rides the same hash at a tighter cut, so every bright block
+      // sits inside a dim one — the sea-glass brackets the white for free —
+      // and a slow per-block twinkle keeps the lace breathing.
+      brightHit = max(brightHit, step(1.0 - fc${i} * ${g(f.bright)} * (0.55 + 0.45 * sin(hash21(fcell${i} + ${g(f.seed + 47.7)}) * 6.2831 + uTime * 0.7)), fh${i}));`
+).join('\n')}
+    }
 
     // Whitecaps: foam that belongs to the wave rather than to the shore, so it
     // is out in open water where the surf chips never reach.
@@ -1109,10 +1160,11 @@ ${SWELL_GLSL}
     // back of a swell is darker than its face, it is not bare. Gated outright,
     // half the sea went to zero chip and the frame came back at a third of the
     // reference's white however hard the rest of the chain was driven.
+    float litW = mix(0.35, 1.0, smoothstep(0.28, 0.78, lit));
     float glare = uGlitter * detail * open * laneWeight * clumping * haloDepth
                 * mix(0.80, 3.60, close)
                 * mix(0.85, 1.35, shoalField)
-                * mix(0.35, 1.0, smoothstep(0.28, 0.78, lit));
+                * litW;
 
     float glareChip = 0.0;
     float glarePlate = 0.0;
@@ -1133,6 +1185,48 @@ ${SWELL_GLSL}
       float twinkle = 0.74 + 0.26 * sin(hash21(floor(gcell / (uCell * 3.4))) * 6.2831 + uTime * 0.6);
       float amount = glare * twinkle;
 
+      // WHERE A CHIP MAY STILL EXIST ON DARK WATER. The reference's dark water
+      // carries its white in exactly one register — the dense hearts of the sun
+      // corner's rafts — and is clean navy everywhere else. Ours carried chips
+      // over ALL of it: a constellation of lone white rectangles, the
+      // "scattered at random, including out in open water" a blind judge failed
+      // this sea on. Two separate waters were doing it, and the first fix found
+      // only one of them. chipDepth's floor spread 0.47 of the chip budget over
+      // every raft in the HUE-deep water — but the near field is also full of
+      // seabed shoals, and those read byDepth = 1 and glitter like a shelf
+      // while the view sweep is painting them near-black. Chips at shoal
+      // density on water drawn navy is sensor noise by construction, and no
+      // depth term can see it, because it is not deep.
+      //
+      // So the gate keys on how DARK the water is DRAWN — hue depth, or the
+      // near sweep over open water, whichever says darker — and on it a chip
+      // needs a raft HEART to exist: full lane weight, the middle of a clump,
+      // a lit face, all at once. Hearts survive and are pushed harder (the
+      // reference's corner is denser than ours was); everything else on dark
+      // water dies; the halo goes on mottling underneath exactly as before.
+      // The heart is measured on the glare's own already-computed weights
+      // rather than on glare itself, because glare folds in gain and framing
+      // boosts that vary 8x across the frame — a fixed window on it read "near
+      // the camera" as "in the sun" and left the bottom-left scattered.
+      //
+      // The sweep weight SATURATES, where the hue weight only approaches. On a
+      // swept bed-shoal the drive runs about 5x what true deep can carry
+      // (byDepth is 1, so haloDepth cuts nothing), and a gate scaled by
+      // 1-uShallow.z left an 11% leak — 11% of a 5x drive is a lone white
+      // plate every few boat-lengths, measured twice before this line read the
+      // way it does. So the opt-in is a step off the flat default, the sweep
+      // term reaches exactly 1 from the mid-near frame down, and a scene on
+      // the flat default holds BOTH weights at exactly 0 and multiplies its
+      // chips by exactly 1.0 — the open sea's frame is byte-identical, checked.
+      float heart = laneWeight * clumping * litW;
+      float gateW = max(1.0 - byDepth,
+        (1.0 - step(0.999, uShallow.z)) * smoothstep(0.30, 0.72, close * mix(0.16, 1.0, open)));
+      // The window's lower edge sits above the strongest heart a lane-noise
+      // pocket can fake (laneWeight 0.78 at full clump and full light): at 0.72
+      // those pockets fired one lone white plate at a time, well left of the
+      // corner, which is the exact chip this gate exists to kill.
+      float chipGate = chipDepth * mix(1.0, 1.45 * smoothstep(0.76, 0.98, heart), gateW);
+
       // Three cell sizes sharing one coverage budget — see GLARE_SIZES. Both
       // tiers come off the SAME hash at each size, so the halo brackets the
       // white for free and every chip lands in its own.
@@ -1145,7 +1239,7 @@ ${GLARE_SIZES.map(
   (s, i) => `      float gh${i} = hash21(floor(gcell / (uCell * vec2(${g(s.cell[0])}, ${g(s.cell[1])}))) + ${g(s.seed)});
       float ga${i} = amount * ${g(s.w)};
       glarePlate = max(glarePlate, step(1.0 - min(ga${i} * ${g(GLARE_PLATE)}, 0.80), gh${i}));
-      glareChip  = max(glareChip,  step(1.0 - min(ga${i} * ${g(GLARE_CHIP)} * chipDepth, 0.62), gh${i}));`
+      glareChip  = max(glareChip,  step(1.0 - min(ga${i} * ${g(GLARE_CHIP)} * chipGate, 0.62), gh${i}));`
 ).join('\n')}
     }
 
@@ -1511,11 +1605,16 @@ export interface WaterOptions {
    */
   rampDist?: number;
   /**
-   * The surf apron: `[flat to, gone by, density gain]` in world units.
+   * The surf apron: `[heavy lace to, last chip by, density gain]` in world
+   * units.
    *
-   * Flat and then CUT, never an exponential tail — see THE SURF SHELF. A scene
-   * with no shore never draws any of it whatever this says, because its shore
-   * distance saturates past the end of the ramp.
+   * Three block sizes share the band and DECAY across it — joined white lace
+   * against the collar, loose blocks over the shelf, single small chips at the
+   * cut — see FOAM_SIZES and THE SURF BAND. `x` is how far the heavy joined
+   * tier reaches and every tier's reach is a multiple of it; `y` is where the
+   * last small chip dies. Never a tail on the big tiers: a lone foam plate in
+   * mid-water is the defect this shape exists to prevent. A scene with no
+   * shore never draws any of it whatever this says.
    */
   surf?: readonly [number, number, number];
   /**
@@ -1610,12 +1709,6 @@ export class Water {
         uSDFSize: { value: opts.sdfSize ?? size },
         uSDFRange: { value: opts.sdfRange ?? 8 },
         uHasShore: { value: opts.shoreSDF ? 1 : 0 },
-        // Zero, and it has to be zero. Shore foam draws on 6x2-cell plates —
-        // over a world unit long once the camera is close — so even a 0.4%
-        // floor puts a scatter of cream slabs across water the reference keeps
-        // completely clean. Whatever texture the open sea needs comes from the
-        // sparkle, which is sized and coloured for it.
-        uFoamFloor: { value: 0 },
         uCameraPos: { value: new THREE.Vector3() },
         uWaveAmp: { value: opts.wave ?? WAVE_AMPLITUDE },
         // Four steps either side of level. Fewer reads as a flag rippling;

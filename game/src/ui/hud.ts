@@ -287,6 +287,21 @@ export async function createHud(
   }
   syncReadout();
 
+  // PRODUCTION.md §5's Clasificación needs a door on the HUD, and the rank
+  // cell is the one figure up here that IS the leaderboard's own number —
+  // RETENTION.md's HUD spec puts the trophy tap in Zone A for exactly this.
+  // LAYOUT_SPEC §2's "nothing inside the capsule takes a tap" was earned by
+  // duplicating the builder chip's route in the thumb zone; the ranking has
+  // no thumb-zone slot to duplicate into, so this one cell keeps its own
+  // door, the way the gem pill's `+` does beside it. The cell is built once
+  // and survives every staged-reveal resync, so the listener holds.
+  const rango = readout.cell('rango');
+  if (rango) {
+    rango.el.setAttribute('role', 'button');
+    rango.el.setAttribute('aria-label', 'Clasificación');
+    pressable(rango.el, () => open('Clasificación'));
+  }
+
   /* --- ZONE C — the bottom nav bar (LAYOUT_SPEC §1) ----------------------
    * Five slots, one bar. Slot 3 is the §3.5 CTA unchanged, merely raised. */
   const sail = createTile({
