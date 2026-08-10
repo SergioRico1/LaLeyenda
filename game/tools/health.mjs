@@ -109,6 +109,12 @@ for (const run of runs.sort()) {
   else if (freshest === null) verdict = 'BROKEN — agents started but no transcript';
   else if (freshest < 300) verdict = 'ALIVE';
   else if (freshest < 1800) verdict = 'WATCH — quiet a while';
+  // A stalled run is only ACTIONABLE while its work is still on the floor.
+  // Once the tree is clean there is nothing left to salvage from it, and
+  // shouting about a run that died yesterday is how a real one gets missed —
+  // four ancient corpses were firing the alarm every heartbeat and would
+  // eventually have masked a fresh death. Still listed, just not alarming.
+  else if (dirty.length === 0) verdict = 'abandoned — nothing to recover, tree is clean';
   else verdict = 'STALLED — nothing written, treat as dead';
 
   if (verdict.startsWith('STALLED') || verdict.startsWith('BROKEN')) raise('STALLED');
