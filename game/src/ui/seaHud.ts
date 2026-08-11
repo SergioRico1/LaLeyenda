@@ -1,6 +1,6 @@
 import './seaHud.css';
 import type { ResourceId } from '../sim';
-import { HARBOUR, SHIPS, bearingHome, holdUsed, ringOf, SEA_CELL, type Voyage } from '../sim/sea';
+import { HARBOUR, MOBS, SHIPS, bearingHome, holdUsed, ringOf, SEA_CELL, type Voyage } from '../sim/sea';
 import { CAPTURE } from './env';
 import { HELM_STEER } from './stick';
 
@@ -194,9 +194,33 @@ export interface SeaHud {
    * scene raises the key and this screen owns the Spanish.
    */
   banner(kind: SeaBanner): void;
-  /** Shows the end-of-voyage card. Resolves when the player dismisses it. */
-  finish(voyage: Voyage, reason: 'home' | 'sunk' | 'left'): Promise<void>;
+  /**
+   * The sim says the ship has crossed into water its hull is not rated for
+   * ('zone-warning', once per crossing). A brief plate names both numbers —
+   * the zone's and the hull's — because round 11's playtest lost most of a
+   * skiff to ring-3 tritons with nothing on screen saying zones outrank the
+   * starter boat. The scene raises the event; this screen owns the Spanish.
+   */
+  warnZone(ring: number, rated: number): void;
+  /**
+   * Shows the end-of-voyage card. Resolves when the player dismisses it.
+   *
+   * `preview` is what the island will actually BANK and REFUSE — the scene
+   * computes it with the sim's own `previewLanding` over the stored save.
+   * Round 11's finding 1 was this card reciting the manifest ("Ron 180 ·
+   * Metal 99") while a capless island spilled every drop of it; with the
+   * preview the card prints the landing, loss and all, BEFORE the tap that
+   * performs it. Null (no save to read — captures, storage refusals) falls
+   * back to listing the hold.
+   */
+  finish(voyage: Voyage, reason: 'home' | 'sunk' | 'left', preview?: LandingPreview | null): Promise<void>;
   dispose(): void;
+}
+
+/** The landing's two halves, exactly as `previewLanding` hands them over. */
+export interface LandingPreview {
+  landed: Partial<Record<ResourceId, number>>;
+  spilled: Partial<Record<ResourceId, number>>;
 }
 
 export interface SeaHudOptions {
@@ -262,6 +286,23 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
 
     <div class="sea__alert" data-alert hidden></div>
 
+    <!-- The boss bar. One creature in this sea has phases, and a fight whose
+         health lives in a 5-unit strip over the water is a fight the player
+         cannot pace. Name, phase pips, health — up while the kraken is met,
+         gone with it. -->
+    <div class="sea__boss" data-boss hidden>
+      <div class="sea__bossHead">
+        <span class="sea__bossName">El Kraken</span>
+        <span class="sea__bossPips" aria-hidden="true">
+          <span class="sea__bossPip is-on" data-pip1></span>
+          <span class="sea__bossPip" data-pip2></span>
+        </span>
+      </div>
+      <div class="sea__bossTrack">
+        <div class="sea__bossFill" data-bossfill style="width:100%"></div>
+      </div>
+    </div>
+
     <!-- The shipyard's product, named at the dock. Stands while the ship is
          still in home water and steps aside the moment the voyage is really
          on, so it teaches the hull without ever costing fighting screen. -->
@@ -304,6 +345,9 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
   const holdLabel = root.querySelector('[data-holdlabel]') as HTMLElement;
   const ringOut = root.querySelector('[data-ring]') as HTMLElement;
   const alertOut = root.querySelector('[data-alert]') as HTMLElement;
+  const bossEl = root.querySelector('[data-boss]') as HTMLElement;
+  const bossFill = root.querySelector('[data-bossfill]') as HTMLElement;
+  const bossPip2 = root.querySelector('[data-pip2]') as HTMLElement;
   const dockName = root.querySelector('[data-dockname]') as HTMLElement;
   const dockStats = root.querySelector('[data-dockstats]') as HTMLElement;
   const bannerOut = root.querySelector('[data-banner]') as HTMLElement;
@@ -330,12 +374,37 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
     if (node.dataset[key] !== value) node.dataset[key] = value;
   };
 
+  /**
+   * One mechanism for everything the sea shouts: the fixed lines (banner) and
+   * the composed zone warning share the element, the pop and the capture rule.
+   */
+  function shout(text: string, kind: string): void {
+    setText(bannerOut, text);
+    setData(bannerOut, 'kind', kind);
+    bannerOut.hidden = false;
+    // Restart the entrance even if one line lands on another's heels.
+    bannerOut.classList.remove('is-live');
+    void bannerOut.offsetWidth;
+    bannerOut.classList.add('is-live');
+    if (bannerTimer !== null) clearTimeout(bannerTimer);
+    // The moment outlives its timeout in a capture: the harness advances the
+    // SIM synchronously but this timer runs on the wall clock, so the one
+    // frame a critic can inspect had already dropped the line by the time it
+    // was taken. A frozen frame keeps its banner.
+    if (!CAPTURE) bannerTimer = setTimeout(() => { bannerOut.hidden = true; }, 3400);
+  }
+
   // --- the first-voyage coach mark ----------------------------------------
   // `?coach=1` / `?coach=0` forces it either way. The screenshot harness gets a
   // fresh profile on every run, so without the override the only frame it could
   // ever capture is a first voyage — and the veteran's screen, which is the one
   // a player spends every other voyage looking at, would go unreviewed.
   const coachParam = new URLSearchParams(location.search).get('coach');
+  // `?zone=0` mutes the zone plate for a capture. Under CAPTURE a shouted line
+  // is held for the frame (see shout), which is right for photographing the
+  // warning itself and wrong for photographing anything else that happens in
+  // rated water — every fight capture starts by dropping the ship there.
+  const zoneMuted = new URLSearchParams(location.search).get('zone') === '0';
   const wantCoach = coachParam === null ? !helmTaught() : coachParam === '1';
 
   let coach: HTMLElement | null = null;
@@ -424,6 +493,32 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
         ringOf(Math.round(voyage.x / SEA_CELL), Math.round(voyage.y / SEA_CELL))
       ));
 
+      // --- the boss bar ------------------------------------------------------
+      // Up while a kraken is met — inside its tether's reach, or already hurt —
+      // and gone with it. Health and phase come straight off the sim's own mob
+      // fields; nothing here decides anything. The bar stays up through a dive
+      // (the fight is still on, that is the point of a bar), dimmed so the
+      // untouchable state reads.
+      const squid = voyage.mobs.find((m) => m.kind === 'squid');
+      const bossOn = !!squid && !voyage.sunk
+        && (squid.hp < MOBS.squid.hp
+          || Math.hypot(squid.x - voyage.x, squid.y - voyage.y) < 80);
+      if (bossEl.hidden !== !bossOn) bossEl.hidden = !bossOn;
+      if (root.classList.contains('has-boss') !== bossOn) {
+        root.classList.toggle('has-boss', bossOn);
+      }
+      if (squid && bossOn) {
+        const bossFraction = Math.max(0, Math.min(1, squid.hp / MOBS.squid.hp));
+        const bossWidth = `${(bossFraction * 100).toFixed(1)}%`;
+        if (bossFill.style.width !== bossWidth) bossFill.style.width = bossWidth;
+        const frenzy = squid.frenzied === true;
+        if (bossPip2.classList.contains('is-on') !== frenzy) {
+          bossPip2.classList.toggle('is-on', frenzy);
+        }
+        setData(bossEl, 'phase', frenzy ? 'frenzy' : 'calm');
+        setData(bossEl, 'dived', squid.dive ? '1' : '0');
+      }
+
       // --- the hierarchy ----------------------------------------------------
       // One thing at a time takes the light, and a hull that is going wins over
       // a hold that is full, because one of them ends the voyage for you.
@@ -484,40 +579,49 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
     },
 
     banner(kind) {
-      setText(bannerOut, BANNER_TEXT[kind]);
-      setData(bannerOut, 'kind', kind);
-      bannerOut.hidden = false;
-      // Restart the entrance even if one line lands on another's heels.
-      bannerOut.classList.remove('is-live');
-      void bannerOut.offsetWidth;
-      bannerOut.classList.add('is-live');
-      if (bannerTimer !== null) clearTimeout(bannerTimer);
-      // The moment outlives its timeout in a capture: the harness advances the
-      // SIM synchronously but this timer runs on the wall clock, so the one
-      // frame a critic can inspect had already dropped the line by the time it
-      // was taken. A frozen frame keeps its banner.
-      if (!CAPTURE) bannerTimer = setTimeout(() => { bannerOut.hidden = true; }, 3400);
+      shout(BANNER_TEXT[kind], kind);
     },
 
-    finish(voyage, reason) {
+    warnZone(ring, rated) {
+      if (zoneMuted) return;
+      shout(`Aguas de zona ${ring} — tu casco es de zona ${rated}`, 'zone');
+    },
+
+    finish(voyage, reason, preview) {
       // A card on top of a coach mark is two things asking to be read at once,
       // so the hint goes — but it is NOT marked as taught. A voyage can end
       // without a thumb ever going down (the abandon button, or a mob sinking a
       // ship that never moved), and only steering proves the lesson landed.
       dismissCoach(false);
       return new Promise((resolve) => {
-        const landed = Object.entries(voyage.cargo)
-          .filter(([, amount]) => (amount ?? 0) > 0)
-          .map(([res, amount]) =>
-            `<span class="sea__endItem">${RESOURCE_LABEL[res] ?? res} ${Math.round(amount ?? 0)}</span>`)
-          .join('');
+        const chips = (entries: Partial<Record<string, number>>): string =>
+          Object.entries(entries)
+            .filter(([, amount]) => (amount ?? 0) > 0)
+            .map(([res, amount]) =>
+              `<span class="sea__endItem">${RESOURCE_LABEL[res] ?? res} ${Math.round(amount ?? 0)}</span>`)
+            .join('');
+
+        // What the card lists is what will LAND — the preview is the landing's
+        // own arithmetic, run for us by the scene. Only a card with no save to
+        // read (captures) falls back to reciting the hold.
+        const landed = chips(preview ? preview.landed : voyage.cargo);
+        const spilled = preview ? chips(preview.spilled) : '';
 
         const title = reason === 'sunk' ? '¡Nos hunden!' : 'De vuelta a puerto';
         const note = reason === 'sunk'
           ? 'La tripulación se salva y llega a nado con la mitad de la carga.'
           : landed
             ? 'La carga pasa a tus almacenes.'
-            : 'Sin carga esta vez.';
+            : spilled
+              ? 'Esta vez no desembarca nada.'
+              : 'Sin carga esta vez.';
+        // The loss is said AT THE DOCK, before the tap that performs it. The
+        // arrival toast on the island repeats it with the missing store named
+        // — same numbers, because it is the same arithmetic.
+        const spill = spilled
+          ? `<div class="sea__endSpillNote">Sin almacén donde guardarlo, esto se va al agua:</div>
+            <div class="sea__endList sea__endList--spill">${spilled}</div>`
+          : '';
 
         const end = document.createElement('div');
         end.className = 'sea__end';
@@ -526,6 +630,7 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
             <div class="sea__endTitle">${title}</div>
             <div class="sea__endNote">${note}</div>
             <div class="sea__endList">${landed}</div>
+            ${spill}
             <button class="sea__endCta tap" type="button">A la isla</button>
           </div>
         `;

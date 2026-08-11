@@ -1,14 +1,14 @@
 import { BALANCE, type ResourceId } from './balance';
 import {
-  buildersFree, finishNowCost, placeInPlace, placeRefusal, spotRefusalNow, startUpgradeInPlace,
-  upgradeRefusal,
+  buildersFree, finishNowCost, gemSpeedupCost, placeInPlace, placeRefusal, spotRefusalNow,
+  startUpgradeInPlace, upgradeRefusal,
 } from './build';
 import { sanitizeCaptain } from './captain';
 import { clearRefusal, startClearInPlace } from './obstacles';
 import {
   awardChestInPlace, openChestInPlace, skipCost, startChestInPlace, startRefusal,
 } from './chests';
-import { clone, collectInPlace, isProducer } from './economy';
+import { clone, collectInPlace, isProducer, spilledStoreNeeded } from './economy';
 import { advanceInPlace, type OfflineSummary } from './offline';
 import { claimDailyInPlace, claimQuestInPlace, dailyAvailable, noteInPlace } from './progression';
 import type { ActionResult, Captain, GameState, SimEvent, SimResult } from './types';
@@ -44,10 +44,10 @@ export {
 } from './obstacles';
 export {
   storeCap, storeCaps, producerCapacity, producerRate, producerResource, isProducer, isFull,
-  landCargoInPlace,
+  landCargoInPlace, previewLanding, spilledStoreNeeded,
   townHallLevel, fillTimeMs, canAfford, productionMultiplier,
 } from './economy';
-export { readyCount, unlockingSlot, skipCost, type Loot } from './chests';
+export { chestTrayHint, readyCount, unlockingSlot, skipCost, type ChestTrayHint, type Loot } from './chests';
 export {
   dailyAvailable, dailyReward, claimableQuests, questComplete, localDayIndex, xpForLevel,
 } from './progression';
@@ -163,6 +163,37 @@ export function clearObstacle(state: GameState, obstacleId: number, now: number)
   return { state: next, events: [], ok: true };
 }
 
+/**
+ * What "Terminar Ya" costs on a RUNNING clear, or null when there is nothing
+ * to rush. Round 11's playtest, finding 3: a fifteen-minute peñasco job had no
+ * visible state and no way out, "it reads as a soft-lock". The price rides
+ * §4.4's one ladder — the same curve a construction pays, golden rule included
+ * — because a second price list for the same wait would be a second thing to
+ * learn and a first thing to exploit.
+ */
+export function clearNowCost(state: GameState, obstacleId: number, now: number): number | null {
+  const target = state.obstacles.find((o) => o.id === obstacleId);
+  if (!target?.work) return null;
+  return gemSpeedupCost(target.work.endsAt - now);
+}
+
+/** The gem rush on a clear job — the exact shape of a building's finishNow:
+ *  pay, land the timer on `now`, and let the tick own completion and payout. */
+export function finishClearNow(state: GameState, obstacleId: number, now: number): ActionResult & { gems: number } {
+  const next = clone(state);
+  const target = next.obstacles.find((o) => o.id === obstacleId);
+  if (!target) return { ...fail(next, 'unknown-obstacle'), gems: 0 };
+  if (!target.work) return { ...fail(next, 'not-ready'), gems: 0 };
+  const cost = gemSpeedupCost(target.work.endsAt - now);
+  if (next.gems < cost) return { ...fail(next, 'not-enough-gems'), gems: cost };
+  next.gems -= cost;
+  target.work.endsAt = now;
+  // Completion, the madera payout, XP and the obstacle-cleared event all
+  // belong to the tick, so a paid clear celebrates exactly like a waited one.
+  const { events } = advanceInPlace(next, now);
+  return { state: next, events, ok: true, gems: cost };
+}
+
 /** "Terminar Ya" — pay gems, and the last five minutes always cost exactly 1. */
 export function finishNow(state: GameState, buildingId: number, now: number): ActionResult & { gems: number } {
   const next = clone(state);
@@ -208,6 +239,21 @@ export function setCaptain(state: GameState, captain: Captain): ActionResult {
 export function setFlag(state: GameState, key: string, value = true): ActionResult {
   const next = clone(state);
   next.flags = { ...next.flags, [key]: value };
+  return { state: next, events: [], ok: true };
+}
+
+/**
+ * The island has said the landing out loud — round 11's finding 1.
+ *
+ * Marks the report seen so a reload does not repeat the toast, WITHOUT
+ * forgetting the loss: the report itself stays until the next voyage replaces
+ * it, because `spilledStoreNeeded` keeps pointing at the missing store for as
+ * long as the spill is the island's live problem. Idempotent and never
+ * refused — acknowledging news twice is not an error a player should hear.
+ */
+export function markLandingSeen(state: GameState): ActionResult {
+  const next = clone(state);
+  if (next.landing) next.landing = { ...next.landing, seen: true };
   return { state: next, events: [], ok: true };
 }
 
@@ -280,7 +326,8 @@ export function claimQuest(state: GameState, index: number): ActionResult {
  * §4.8 — the next-action resolver, as a mechanism rather than an intention
  * ----------------------------------------------------------------------- */
 
-export type NextAction = 'construir' | 'cofres' | 'diario' | 'pills' | 'zarpar' | 'recoger' | 'obras' | 'none';
+export type NextAction =
+  | 'construir' | 'almacen' | 'cofres' | 'diario' | 'pills' | 'zarpar' | 'recoger' | 'obras' | 'none';
 
 /**
  * Evaluated on every session start and after every state change; the first hit
@@ -288,6 +335,13 @@ export type NextAction = 'construir' | 'cofres' | 'diario' | 'pills' | 'zarpar' 
  * caller is expected to log it.
  */
 export function nextAction(state: GameState, now: number): NextAction {
+  // Round 11's playtest, finding 1: the last voyage lost cargo to a store that
+  // does not exist. While that report stands, the store is genuinely buildable
+  // and a carpenter is free, the first thing to say is BUILD IT — the loss is
+  // the live problem, and 'construir' alone would leave the picker to explain
+  // why. Same tap as rule 1 (the picker), sharper words on the objective line.
+  if (buildersFree(state, now) > 0 && spilledStoreNeeded(state) !== null) return 'almacen';
+
   if (buildersFree(state, now) > 0) return 'construir';
 
   // §4.8 #2: a chest sitting in the tray with nothing brewing, or one already

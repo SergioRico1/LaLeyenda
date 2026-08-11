@@ -146,6 +146,17 @@ import * as THREE from 'three';
  * is stepped rather than ramped because a soft falloff is the one failure this
  * surface would not survive: everything else on it is a block.
  *
+ * The depth weighting has a second half, learned a round later: the NEAR dark
+ * water is not clean either. Cut the reference's last three eighths and they
+ * run 10-17% white — fine chips in caustic webs, clean navy between — while
+ * the heart-gated build measured 0-4% there and a judge read the remainder as
+ * "hard white popcorn chips over flat navy". THE CAUSTIC WEB in the fragment
+ * shader (and the CAUSTIC table below) is that register: near-field chips at
+ * half the glare's finest size, clustered by a fine two-octave field instead
+ * of by the fifty-unit rafts, gated on the swept-dark near frame and on the
+ * same flat-default step as everything else scene-shaped, so the ocean and
+ * the title never draw a pixel of it.
+ *
  * The two tiers fall at DIFFERENT rates, which is not visible until the bands
  * above are counted. Over their shelf the white and the pale halo around it
  * cover about the same area, 41% and 52%. In their deep water it is 1.2% and
@@ -439,6 +450,36 @@ const GLARE_SIZES: readonly { w: number; cell: readonly [number, number]; seed: 
 ];
 
 /**
+ * The caustic web — the near water's sparkle, at the reference's own scale.
+ *
+ * Cut the reference's near water and its white is neither rafts nor an even
+ * field: fine chips a fraction of a world unit across, clustered into webs a
+ * couple of units wide, with clean navy runs between the clusters. Ours were
+ * unit-wide slabs gated to one raft coincidence per frame, which is where
+ * "hard white popcorn chips over flat navy" came from — the chips were four
+ * times their size and a tenth their number. See THE CAUSTIC WEB in the
+ * fragment shader for the gating; this table is the texture.
+ *
+ * Two cell sizes, both SMALLER than the glare's finest, because that is the
+ * measured difference: their near chips run 0.15-0.7 units against our 1.0+.
+ * `chip` and `plate` share each grid's hash at two thresholds, so every chip
+ * is born inside its own lifted-water bracket and the web reads as joined
+ * caustics rather than as scatter. The caps are what hold a fully-lit,
+ * fully-webbed corner at "dense" instead of "solid".
+ */
+const CAUSTIC = {
+  /** Multiplies uGlitter: the island's 1.9 lands the near band at the
+   *  reference's 10-17% white once the web and the lit floor have thinned it.
+   *  Walked 0.5 -> 0.55 -> 0.75 against the band table; the caps above are
+   *  what keep the sun corner from going solid while this climbs. */
+  gain: 0.75,
+  sizes: [
+    { cell: [1.0, 0.68], chip: 0.55, chipCap: 0.33, plate: 1.05, plateCap: 0.55, seed: 141.7 },
+    { cell: [2.2, 1.4], chip: 0.30, chipCap: 0.24, plate: 0.62, plateCap: 0.42, seed: 208.3 },
+  ],
+} as const;
+
+/**
  * The surf band's three block sizes, waterline outward, and where each LIVES.
  *
  * A blind judge called the last apron "uniform white axis-aligned rectangles
@@ -493,9 +534,14 @@ const FOAM_SIZES: readonly {
   cap: number;
   seed: number;
 }[] = [
+  // `bright` falls harder down the tiers than it used to (0.62/0.34 on the
+  // outer two): the reference's outer shelf foam is sea-glass AQUA with the
+  // occasional white block, and at a third white ours read as "hard white
+  // chips" scattered past the lace. The white belongs to the joined lace at
+  // the sand; the decay past it is mostly dim.
   { cell: [6.0, 3.4], rise: [0, 0], hold: 0.7, gone: 1.15, cov: 0.5, bright: 1.12, calm: 0.62, jitter: 0.18, cap: 0.8, seed: 12.9 },
-  { cell: [2.9, 1.9], rise: [0.35, 0.6], hold: 1.0, gone: 1.62, cov: 0.3, bright: 0.62, calm: 0.34, jitter: 0.26, cap: 0.6, seed: 47.3 },
-  { cell: [1.5, 1.05], rise: [0.95, 1.25], hold: 1.3, gone: 2.25, cov: 0.2, bright: 0.34, calm: 0.14, jitter: 0.3, cap: 0.42, seed: 83.1 },
+  { cell: [2.9, 1.9], rise: [0.35, 0.6], hold: 1.0, gone: 1.62, cov: 0.3, bright: 0.46, calm: 0.34, jitter: 0.26, cap: 0.6, seed: 47.3 },
+  { cell: [1.5, 1.05], rise: [0.95, 1.25], hold: 1.3, gone: 2.25, cov: 0.2, bright: 0.2, calm: 0.14, jitter: 0.3, cap: 0.42, seed: 83.1 },
 ];
 
 /** GLSL literals need a decimal point, and toFixed guarantees one. */
@@ -1434,6 +1480,63 @@ ${GLARE_SIZES.map(
       float ga${i} = amount * ${g(s.w)};
       glarePlate = max(glarePlate, step(1.0 - min(ga${i} * ${g(GLARE_PLATE)} * plateGate, 0.80), gh${i}));
       glareChip  = max(glareChip,  step(1.0 - min(ga${i} * ${g(GLARE_CHIP)} * chipGate, 0.62), gh${i}));`
+).join('\n')}
+    }
+
+    // THE CAUSTIC WEB — the near water's own sparkle, and the half of the
+    // reference the heart gate threw out with the noise.
+    //
+    // The heart machinery above exists because lone chips scattered over dark
+    // water read as sensor grit, and it works: mid-frame navy is clean now.
+    // But cut the reference's NEAR water — its last three eighths run 10, 17
+    // and 14 percent of their pixels above L=200 — and it is not clean at all,
+    // and not rafts either. It is a WEB: fine chips a fraction of a unit
+    // across, packed into clusters a couple of units wide, joined by pale
+    // lifted water, with runs of untouched navy between the clusters. Caustic
+    // structure, at caustic scale. Our frame measured 4% and 0% in the same
+    // two bands, because the heart demands a fifty-unit raft coincidence that
+    // happens once or twice per frame, and everything else on swept-dark
+    // water dies. "Hard white popcorn chips over flat navy" is that
+    // arithmetic seen from the front.
+    //
+    // So near water gets a third register, between "shelf field" and "raft
+    // heart": chips whose CLUSTERING is a fine two-octave field (about five
+    // units along the grain, under two across — read on the same streak axis
+    // as everything else, so the web lies along the crests), whose cells are
+    // HALF the size of the glare's finest (the reference's near chips are
+    // fractions of a unit; ours were unit-wide slabs, which is the popcorn),
+    // and whose halo comes off the same hash a cut looser so every chip sits
+    // joined into its own web instead of standing alone.
+    //
+    // Gated on the same swept-dark term the heart window uses — close times
+    // open — so the shelf, the collar and the mid-frame keep exactly the
+    // rules they had, and by the flat-default step, so a scene that has not
+    // opted into depth-shaped sparkle (the ocean, the title) holds this whole
+    // block at exactly 0.0 and skips it: their frames are byte-identical,
+    // checked by hash. The lane weight shades it across the frame the same
+    // way the reference's is shaded — densest in the sun corner, thinner but
+    // present at the far side — and the lit floor keeps it riding the swell.
+    float sweepNear = (1.0 - step(0.999, uShallow.z))
+                    * smoothstep(0.30, 0.72, close * mix(0.16, 1.0, open));
+    float caustic = ${g(CAUSTIC.gain)} * uGlitter * sweepNear * detail * laneWeight;
+    if (caustic > 0.004) {
+      float web = valueNoise(vec2(rot.x * 0.16, rot.y * 0.44) + uTime * vec2(0.012, 0.005)) * 0.60
+                + valueNoise(vec2(rot.x * 0.46, rot.y * 1.30) + 27.0) * 0.40;
+      // A LONG ramp, not a gate. Cut hard (0.55-0.80) the web came out as
+      // solid white islands on bare navy — binary again, cotton instead of
+      // popcorn. The reference's near field is graded: most of it carries
+      // SOME chip at varying density and the clean navy is runs, not a
+      // background. The wide window is what buys that grade.
+      web = smoothstep(0.44, 0.86, (web - 0.5) * 1.7 + 0.5);
+      // The web breathes the way the glare does: per cluster, shallow, slow.
+      vec2 cdrift = wp + uTime * vec2(0.16, 0.06);
+      vec2 ccell = vec2(dot(cdrift, uDash), dot(cdrift, vec2(-uDash.y, uDash.x)));
+      float ctw = 0.80 + 0.20 * sin(hash21(floor(ccell / (uCell * 5.0)) + 3.7) * 6.2831 + uTime * 0.5);
+      float amt = caustic * web * mix(0.30, 1.0, smoothstep(0.24, 0.72, lit)) * ctw;
+${CAUSTIC.sizes.map(
+  (s, i) => `      float wh${i} = hash21(floor(ccell / (uCell * vec2(${g(s.cell[0])}, ${g(s.cell[1])}))) + ${g(s.seed)});
+      glarePlate = max(glarePlate, step(1.0 - min(amt * ${g(s.plate)}, ${g(s.plateCap)}), wh${i}));
+      glareChip  = max(glareChip,  step(1.0 - min(amt * ${g(s.chip)}, ${g(s.chipCap)}), wh${i}));`
 ).join('\n')}
     }
 

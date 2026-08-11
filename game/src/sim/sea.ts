@@ -433,6 +433,9 @@ export interface ShipSpec {
   /** Hull a second the crew patches back on, once nothing has touched the ship
    *  for `CALM` seconds. See balance.json `sea.ships` for why this exists. */
   repair: number;
+  /** The deepest ring this hull is a match for. One ring further out and the
+   *  voyage raises 'zone-warning' — see balance.json `sea.$rated`. */
+  rated: number;
 }
 
 /**
@@ -553,6 +556,14 @@ export interface Voyage {
    * Null whenever nobody is over the side.
    */
   boarding: { siteId: string; left: number; span: number } | null;
+  /**
+   * The deepest ring this voyage has already been warned about — 0 until the
+   * first 'zone-warning'. The latch that makes the warning ONE event per
+   * crossing rather than a toast per step: a deeper crossing warns again, a
+   * ship bobbing on a ring boundary does not, and a retreat-and-return is not
+   * re-lectured about water it has already been told about.
+   */
+  warnedRing: number;
 }
 
 export type SeaEvent =
@@ -566,6 +577,12 @@ export type SeaEvent =
   | { kind: 'hold-full' }
   | { kind: 'sunk'; lost: Partial<Record<ResourceId, number>> }
   | { kind: 'home' }
+  /** The ship has crossed into a ring deeper than its hull is rated for
+   *  (`ShipSpec.rated`) — round 11's playtest finding 6: twin ring-3
+   *  hammerdeads melted a skiff with no warning that zones outrank the
+   *  starter hull. Once per crossing, deterministic, and only ever deeper:
+   *  the presentation layer draws it, the player still chooses. */
+  | { kind: 'zone-warning'; ring: number; rated: number }
   // --- the boss's beats. Every one is a picture the scene owes the player. --
   /** Tentacles rise: the strike circles are on the water, and there are
    *  `seconds` left to not be inside one. */
@@ -600,6 +617,7 @@ export function startVoyage(
     sunk: false, departed: false, home: false,
     deepChest: opts.deepChest ?? true,
     boarding: null,
+    warnedRing: 0,
   };
 }
 
@@ -1195,6 +1213,23 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
              && Math.hypot(v.x, v.y) < SEA_CELL * HARBOUR) {
     v.home = true;
     events.push({ kind: 'home' });
+  }
+
+  // --- the water outranks the hull -----------------------------------------
+  // Finding 6 of round 11's playtest, verbatim: "twin zone-3 tritons melt a
+  // skiff 86%->6% in one exchange with no warning that zones outrank the
+  // starter hull." The fleet table says ring 3 is a wall rather than a cliff —
+  // a skiff still comes home 99 times in a hundred, a fifth of the hull
+  // poorer — so the mobs stay as they are and the missing thing is the
+  // WARNING. Purely positional, so the same voyage replays the same events;
+  // `warnedRing` above is why it is one event per crossing rather than a
+  // banner per step, and why only a DEEPER crossing speaks again.
+  if (!v.sunk) {
+    const ring = ringOf(Math.round(v.x / SEA_CELL), Math.round(v.y / SEA_CELL));
+    if (ring > spec.rated && ring > v.warnedRing) {
+      v.warnedRing = ring;
+      events.push({ kind: 'zone-warning', ring, rated: spec.rated });
+    }
   }
 
   // The latch. Having gone is not a distance, and treating it as one stranded

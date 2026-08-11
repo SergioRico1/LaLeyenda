@@ -13,6 +13,7 @@ import {
   type Mob, type MobKind, type SeaEvent, type Site, type Voyage,
 } from '../sim/sea';
 import { shipForVoyage } from '../sim/shipyard';
+import { previewLanding, type GameState } from '../sim';
 import { season } from '../sim/rivals';
 
 declare global {
@@ -160,10 +161,16 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
   // line to write, not this file's.
   const shipParam = params.get('ship');
   let shipType = shipParam && SHIPS[shipParam] ? shipParam : 'skiff';
-  if (!shipParam && !shot) {
+  // Kept for the end-of-voyage card: the same bytes that choose the hull also
+  // know the island's store caps, and the card must print what will actually
+  // LAND — round 11's finding 1 was this card reciting the manifest while a
+  // capless island spilled the lot. Null in a capture or with no save, and the
+  // card falls back to the hold itself.
+  let islandSave: GameState | null = null;
+  if (!shot) {
     try {
-      const saved = await peekSavedGame();
-      if (saved) shipType = shipForVoyage(saved);
+      islandSave = await peekSavedGame();
+      if (islandSave && !shipParam) shipType = shipForVoyage(islandSave);
     } catch {
       /* No save, or storage said no — the skiff is always seaworthy. */
     }
@@ -360,7 +367,13 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
   function end(reason: 'home' | 'sunk' | 'left'): void {
     if (ended) return;
     ended = reason;
-    void hud?.finish(voyage, reason).then(() => opts.onEnd?.(voyage, reason));
+    // The card the player reads at the dock and the landing main.ts performs
+    // are ONE arithmetic: previewLanding is landCargoInPlace run on a copy, so
+    // "what will land" on the card is what the island ledger will say. The
+    // save peeked at boot is the honest source — nothing at sea can touch the
+    // island's stores while the voyage runs.
+    const preview = islandSave ? previewLanding(islandSave, voyage.cargo) : null;
+    void hud?.finish(voyage, reason, preview).then(() => opts.onEnd?.(voyage, reason));
   }
 
   let voyage = startVoyage(seed, shipType, { deepChest: deepChestOwed });
@@ -873,22 +886,6 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
    * they carry is said by the shots.
    */
   const FAN_FAR = 21 * hullScale;
-  /**
-   * How wide the boundary is drawn ON THE WATER, in world units.
-   *
-   * The number that had to exist. The limit lines were a fixed fraction of the
-   * ARC — a gaussian in `v` — so their width on the sea grew with the radius:
-   * one and a bit units at the muzzle and nearly four at the far end. Four
-   * units is a third of the ship's length, and four units of flat sandy orange
-   * laid on blue water is not a line, it is a beach. Read back off the frame,
-   * that is exactly what it was: I saw two sandbars either side of the ship and
-   * only then read them as gun arcs, which means every player would have steered
-   * to avoid their own broadside.
-   *
-   * Holding the width in world units instead makes it an instrument mark: the
-   * same line at the muzzle and at thirty units, about a foot of sea wide.
-   */
-  const EDGE_WIDTH = 1.15;
   /** The gauge is a band along the rail, where the guns are, and it is DELIBERATELY
    *  small: at 5.4 to 8.6 it drew a white collar the size of the ship and read
    *  as foam rather than as an instrument. On the rail means scaled with it. */
@@ -924,48 +921,137 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
   const arcs = new THREE.Group();
   stage.scene.add(arcs);
 
-  // THE WEDGE, and why it is mostly its own outline.
+  // THE ARC IS FOAM, and this table is its grain.
   //
-  // The first build filled the sector with additive white. Over water this
-  // bright it came out as a pale wash with no boundary — the frame looked like
-  // it had fog in one corner, and a boundary is the entire content of "inside
-  // this and you get shot". So the alpha carries two things at once: a thin
-  // BRIGHT LINE down each limit of the arc, which is the edge a player reads
-  // and steers against, and a weak fill between them that says which side of
-  // the line is the dangerous one.
+  // The wedge this replaces was drawn as chrome laid on the sea — a warm limit
+  // line, a tinted fill, a scarlet lock state — and a blind judge called the
+  // result exactly what it was: "raw orange arcs and hard-edged red gradient
+  // wedges". Every other mark on this ocean is water. The reference's combat
+  // frame has no painted overlays at all: everything on its surface is foam,
+  // shadow or sparkle. So the firing arc stops being a diagram and becomes the
+  // thing it always claimed to be — the strip of sea the guns keep CHURNED.
   //
-  // It also has to DECAY with range, and the comment that used to sit here said
-  // so while the code did nothing of the kind. The arc runs off the side of a
-  // thirty-three-unit frame long before it ends, so a limit line at full
-  // strength all the way out is a stripe from one edge of the glass to the
-  // other with no shape in it. Fading it out over the last third puts the whole
-  // read in the near water, where the player is looking anyway, and lets the
-  // shape end instead of hitting the frame.
+  // Structurally it is the same instrument. Two broken lines of foam chips lie
+  // along the limits of the firing arc (the boundary a player steers against),
+  // a sparse wash of dimmer chips hugs the muzzle inside the wedge (which side
+  // of the line is dangerous), and everything decays toward the far mouth
+  // because nothing happens out there. The chips drift slowly OUTWARD along
+  // their lines — water pushed away from a gun deck — die at both ends of the
+  // run so the drift has no visible seam, and each one pulses on its own
+  // phase, so the arc reads as churn rather than as dashes on a chart.
   //
-  // The columns went from 24 to 44 for one reason: a line held at a constant
-  // WIDTH ON THE WATER is about a unit across, and at the far end of the sector
-  // one column of a 24-wide lattice is a unit and a half. There was nothing to
-  // draw the line on.
-  const fanGrid = lattice(
-    6, 44,
-    (u, v) => {
+  // What it no longer does is carry the lock in its colour. Foam is white or
+  // it is not foam; WHO the guns have chosen is the gold ring's job (drawRings)
+  // and the arc says only WHERE they bear — locked, it churns harder and
+  // brighter, which is what a gun crew standing to actually looks like from
+  // above. Chips, not a ribbon, for the same reason the surf apron is chips:
+  // a smooth band on this sea is chrome, and chrome is the verdict this block
+  // exists to reverse.
+  interface FoamChip {
+    /** 0..1 along the limit line. Drifts outward with time. */
+    u: number;
+    /** Which run this chip belongs to: -1/+1 the two limit lines, 0 the wash. */
+    line: -1 | 0 | 1;
+    /** Angular jitter — a hair off the line, most of the wedge for the wash. */
+    skew: number;
+    size: number;
+    base: number;
+    phase: number;
+    flow: number;
+  }
+  const foamRng = new Rng(`${seed}:arc-foam`);
+  const FOAM_CHIPS: FoamChip[] = [];
+  for (const line of [-1, 1] as const) {
+    for (let i = 0; i < 16; i++) {
+      FOAM_CHIPS.push({
+        u: (i + foamRng.range(0.08, 0.92)) / 16,
+        line,
+        skew: foamRng.range(-0.05, 0.05),
+        size: foamRng.range(0.6, 1.3) * hullScale,
+        base: foamRng.range(0.6, 1),
+        phase: foamRng.range(0, Math.PI * 2),
+        flow: foamRng.range(0.03, 0.055),
+      });
+    }
+  }
+  for (let i = 0; i < 10; i++) {
+    FOAM_CHIPS.push({
+      u: foamRng.range(0.04, 0.55),
+      line: 0,
+      skew: foamRng.range(-0.7, 0.7),
+      size: foamRng.range(0.5, 0.95) * hullScale,
+      base: foamRng.range(0.14, 0.28),
+      phase: foamRng.range(0, Math.PI * 2),
+      flow: foamRng.range(0.02, 0.04),
+    });
+  }
+
+  /** One quad per chip; positions and alpha rewritten every frame. */
+  function foamGeometry(): THREE.BufferGeometry {
+    const n = FOAM_CHIPS.length;
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 12), 3));
+    const colour = new Float32Array(n * 16);
+    colour.fill(1);
+    geometry.setAttribute('color', new THREE.BufferAttribute(colour, 4));
+    const index: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const a = i * 4;
+      index.push(a, a + 1, a + 2, a, a + 2, a + 3);
+    }
+    geometry.setIndex(index);
+    return geometry;
+  }
+
+  /**
+   * Lays one side's churned water down its firing arc.
+   *
+   * `gain` is the heat — 0 folds the whole thing away — and `churn` is how
+   * hard the water works: a locked side runs half again as fast and brighter,
+   * which reads as urgency without a single painted colour. Chips ride the
+   * swell individually, one surface sample each; hard-edged quads, because
+   * every piece of foam this game draws is a block.
+   */
+  function layFoamArc(
+    mesh: THREE.Mesh, bearing: number, half: number,
+    gain: number, churn: number, time: number
+  ): void {
+    const attr = mesh.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const colour = mesh.geometry.getAttribute('color') as THREE.BufferAttribute;
+    for (let i = 0; i < FOAM_CHIPS.length; i++) {
+      const chip = FOAM_CHIPS[i];
+      const u = (chip.u + time * chip.flow * churn) % 1;
+      const angle = bearing + (chip.line === 0 ? chip.skew * half : chip.line * half + chip.skew);
       const radius = FAN_NEAR + (FAN_FAR - FAN_NEAR) * u;
-      // How far off the limit this vertex sits, ON THE SEA rather than in the
-      // sector's own coordinates. This is the whole fix for the sandbars.
-      const off = (1 - Math.abs(v)) * spec.arc * radius;
-      const limit = Math.exp(-Math.pow(off / EDGE_WIDTH, 2));
-      // The mouth that closes the far end, at a fifth: it says the shape stops,
-      // it does not claim anything happens there.
-      const mouth = Math.exp(-Math.pow(((1 - u) * (FAN_FAR - FAN_NEAR)) / EDGE_WIDTH, 2)) * 0.22;
-      return Math.max(limit, mouth) * (0.18 + 0.82 * Math.pow(1 - u, 1.1));
-    },
-    // And the fill hugs the muzzle. It was a sector twenty-six units deep at a
-    // few percent of an orange, which sounds like nothing and is not: a wash
-    // that faint still has a HARD BOUNDARY, and a hard boundary over that much
-    // water is a shape whatever its alpha. Read off a nine-hundred-pixel frame
-    // it was a pale fog bank filling the bottom-left quarter of the picture.
-    (u, v) => Math.pow(Math.max(0, 1 - v * v), 1.4) * Math.pow(1 - u, 2.6)
-  );
+      const cx = Math.cos(angle) * radius;
+      const cz = Math.sin(angle) * radius;
+      const lift = water.surfaceAt(voyage.x + cx, voyage.y + cz, time).height + 0.16;
+      // The streak lies along its own line — foam trails the flow, and the
+      // flow here runs out from the hull. LONG and thin, deliberately: the
+      // open sea's own glare is squarish chips on the world grid, and an
+      // instrument drawn at the sea's own mark size vanishes into it — the
+      // first cut of this arc did, measured by looking. A streak three times
+      // longer than anything the water draws by itself is what makes the arc
+      // readable AS an arc without borrowing a single painted colour.
+      const ax = Math.cos(angle);
+      const az = Math.sin(angle);
+      const len = chip.size * (chip.line === 0 ? 0.7 : 1.45);
+      const wid = chip.size * 0.26;
+      const base = i * 4;
+      attr.setXYZ(base, cx - ax * len + az * wid, lift, cz - az * len - ax * wid);
+      attr.setXYZ(base + 1, cx + ax * len + az * wid, lift, cz + az * len - ax * wid);
+      attr.setXYZ(base + 2, cx + ax * len - az * wid, lift, cz + az * len + ax * wid);
+      attr.setXYZ(base + 3, cx - ax * len - az * wid, lift, cz - az * len + ax * wid);
+      // Dies at both ends of its run (which is what hides the drift's wrap),
+      // decays toward the mouth, and breathes on its own clock.
+      const ends = Math.pow(Math.sin(u * Math.PI), 0.7);
+      const pulse = 0.5 + 0.5 * Math.sin(time * 2.2 * churn + chip.phase);
+      const alpha = Math.min(1, chip.base * ends * (1 - 0.45 * u) * (0.55 + 0.45 * pulse) * gain);
+      for (let c = 0; c < 4; c++) colour.setW(base + c, alpha);
+    }
+    attr.needsUpdate = true;
+    colour.needsUpdate = true;
+  }
   // The gauge is solid across its width and softened only at its two ends, so
   // the charge sweeping into it has a clean leading edge to read.
   const gaugeGrid = lattice(1, 18, (_u, v) => Math.min(1, (1 - Math.abs(v)) * 7));
@@ -978,15 +1064,18 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
 
   function makeBroadside(): Broadside {
     // Plain alpha, not additive: additive over a sea this bright is white on
-    // white. A warm tint LAID on the blue is what keeps an edge an edge.
+    // white, and foam is PAINTED water, not light.
     const fanMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffd98a, transparent: true, opacity: 1, depthWrite: false,
+      color: 0xeefaf2, transparent: true, opacity: 1, depthWrite: false,
       side: THREE.DoubleSide, vertexColors: true, fog: false,
     });
-    const fan = new THREE.Mesh(fanGrid.geometry.clone(), fanMaterial);
+    const fan = new THREE.Mesh(foamGeometry(), fanMaterial);
     fan.frustumCulled = false;
     fan.renderOrder = 2;
 
+    // The groove the charge fills: stilled dark water, the one mark on this
+    // sea that is allowed to be a well because the game's own UI wells are
+    // exactly this — dark track, light fill.
     const track = new THREE.Mesh(trackGrid.geometry.clone(), new THREE.MeshBasicMaterial({
       color: 0x02060c, transparent: true, opacity: 0.62, depthWrite: false,
       side: THREE.DoubleSide, vertexColors: true, fog: false,
@@ -994,11 +1083,11 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
     track.frustumCulled = false;
     track.renderOrder = 3;
 
-    // Also plain alpha. Additive amber over this sea comes out white, and a
-    // white gauge on white foam beside a white wake is three things nobody can
-    // tell apart at arm's length.
+    // The charge itself is foam too now — the last amber thing on this water
+    // went with the wedge. Sea-glass aqua while it fills, white when the side
+    // is ready: the same two-tier language as the surf, on an instrument.
     const gaugeMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffc65a, transparent: true, opacity: 1, depthWrite: false,
+      color: 0xffffff, transparent: true, opacity: 1, depthWrite: false,
       side: THREE.DoubleSide, vertexColors: true, fog: false,
     });
     const gauge = new THREE.Mesh(gaugeGrid.geometry.clone(), gaugeMaterial);
@@ -1060,6 +1149,31 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
     }),
     RING_CAP
   );
+  /**
+   * The mass beneath: a dark disc under anything about to strike.
+   *
+   * The telegraphs used to be bare red rings, which is a diagram. What the
+   * water actually shows when something big is coming up under it is a SHADOW
+   * — the body seen through the surface — and the foam only breaks at the
+   * edge of it. So every tell is now two parts water: this disc darkening as
+   * the thing nears the surface, and a foam ring breaking around it. The red
+   * survives only as the last half-second's flash, because red is the game's
+   * one danger colour and the moment before teeth is the one moment that has
+   * earned it.
+   */
+  const SHADE_CAP = 12;
+  const shadeMesh = new THREE.InstancedMesh(
+    new THREE.CircleGeometry(1, 20).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({
+      transparent: true, opacity: 0.34, depthWrite: false,
+      side: THREE.DoubleSide, fog: false,
+    }),
+    SHADE_CAP
+  );
+  shadeMesh.frustumCulled = false;
+  shadeMesh.count = 0;
+  shadeMesh.renderOrder = 4;
+  stage.scene.add(shadeMesh);
   /** Shockwaves: light, so they can die away to nothing. */
   const shockMesh = new THREE.InstancedMesh(
     ringGeometry,
@@ -1440,6 +1554,15 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
         kick(0.9);
         smoke(voyage.x, voyage.y, fxRng.range(0, Math.PI * 2), 1.6);
         break;
+      case 'zone-warning':
+        // Round 11's playtest, finding 6: twin ring-3 tritons melted a skiff
+        // 86%->6% with no warning that zones outrank the starter hull. The sim
+        // raises this once per crossing; the HUD owns the Spanish. The sound
+        // is the two-note "no" — a caution, not an alarm, because the player
+        // is allowed to keep sailing.
+        sfx('refuse', -4);
+        hud?.warnZone(event.ring, event.rated);
+        break;
 
       // --- the boss ---------------------------------------------------------
       case 'boarding-started':
@@ -1591,26 +1714,22 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
       const want = engaged * (locked ? 1 : 0.46) + gun.flash * 1.4;
       gun.heat += (want - gun.heat) * Math.min(1, dt * 9);
 
-      // COLOUR says WHO, alpha says WHETHER. That split is the fix for the thing
-      // that defeated three earlier passes: a warm line dimmed by its alpha does
-      // not go quiet over this blue, it goes tan, and tan on water is sand. With
-      // the resting state gone the line is only ever drawn at a strength where
-      // its hue survives, so the colour is free to carry the one distinction
-      // that matters — a beam with a target on it is scarlet, a beam that is
-      // merely bearing on open water is amber.
-      //
-      // Both are SATURATED, and that is the lesson of the sandbars: this world
-      // has cream sand and blue water in it, so any warm colour that lands
-      // between them is read as a beach. There is no pale end of this ramp.
-      gun.fanMaterial.color.setRGB(1, locked ? 0.05 : 0.34, locked ? 0.01 : 0.05);
+      // FOAM says WHERE, the gold ring says WHO. The wedge that used to live
+      // here carried the lock as scarlet and the bearing as amber, and a blind
+      // judge read the pair as "raw orange arcs and hard-edged red gradient
+      // wedges" — chrome laid on the sea. The arc is churned water now (see
+      // FOAM_CHIPS): white or absent, like every other piece of foam in this
+      // game, and a locked side simply churns harder and faster, which is what
+      // urgency looks like on water. A muzzle flash still kicks the whole run
+      // bright for a breath.
       const lit = Math.min(1, gun.heat * 1.9);
       // Nothing in reach is nothing drawn — four fewer draw calls on an empty
       // sea as well, which on a phone is not nothing either.
       gun.fan.visible = lit > 0.015;
       gun.track.visible = lit > 0.015;
       gun.gauge.visible = lit > 0.015;
-      layArc(gun.fan, fanGrid, bearing, spec.arc, FAN_NEAR, FAN_FAR, 0.14, elapsed,
-        lit, 0.12 * gun.heat);
+      layFoamArc(gun.fan, bearing, spec.arc, lit * (locked ? 1.28 : 0.85) + gun.flash * 2,
+        locked ? 1.6 : 1, elapsed);
 
       // The gauge: an empty groove off the rail and a charge sweeping out from
       // the beam to fill it. A broadside that just went off reads as spent
@@ -1625,9 +1744,13 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
       layArc(gun.track, trackGrid, bearing, span, GAUGE_NEAR, GAUGE_FAR, 0.16, elapsed, lit);
       layArc(gun.gauge, gaugeGrid, bearing, span * Math.max(0.02, charge),
         GAUGE_NEAR, GAUGE_FAR, 0.2, elapsed, lit);
+      // Sea-glass while it fills, white the moment it is ready — the surf's
+      // own two tiers, worn as an instrument. The dark track under it is what
+      // keeps the fill readable beside the white of the arc foam.
       const pulse = ready ? 0.93 + 0.07 * Math.sin(elapsed * 5.5) : 0.82;
       gun.gaugeMaterial.opacity = Math.min(1, pulse + gun.flash * 3);
-      gun.gaugeMaterial.color.setRGB(1, ready ? 0.34 : 0.14, ready ? 0.04 : 0.015);
+      gun.gaugeMaterial.color.setRGB(
+        ready ? 1 : 0.56, ready ? 1 : 0.78, ready ? 0.97 : 0.82);
 
       // One dry tick the moment a side comes back. It is the only sound in the
       // game that says "you may fire again", and it is what lets a player keep
@@ -1664,6 +1787,7 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
   function drawRings(elapsed: number, dt: number): void {
     let marks = 0;
     let waves = 0;
+    let shades = 0;
     const place = (
       mesh: THREE.InstancedMesh, index: number,
       x: number, y: number, radius: number, r: number, g: number, b: number
@@ -1674,6 +1798,20 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
       pose.updateMatrix();
       mesh.setMatrixAt(index, pose.matrix);
       mesh.setColorAt(index, tint.setRGB(r, g, b));
+    };
+    /** The dark body under the surface. Slightly lower than the rings so a
+     *  ring drawn over its own shadow wins the overlap. */
+    const shade = (x: number, y: number, radius: number, depth: number): void => {
+      if (shades >= SHADE_CAP) return;
+      pose.position.set(x, SEA_Y + water.surfaceAt(x, y, elapsed).height + 0.12, y);
+      pose.rotation.set(0, 0, 0);
+      pose.scale.setScalar(radius);
+      pose.updateMatrix();
+      shadeMesh.setMatrixAt(shades, pose.matrix);
+      // Darker as it rises: the disc colour is the navy the deep field is
+      // painted in, pulled toward ink as `depth` closes on the surface.
+      shadeMesh.setColorAt(shades, tint.setRGB(0.03 * (1 - depth), 0.10 * (1 - depth) + 0.02, 0.20 * (1 - depth) + 0.05));
+      shades++;
     };
 
     // Who the guns have chosen, on both sides.
@@ -1702,33 +1840,50 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
     }
 
     // What is about to bite. Drawn second so a creature that is both locked and
-    // lunging shows the red over the gold — the guns can wait, the teeth cannot.
+    // lunging shows its tell over the gold — the guns can wait, the teeth
+    // cannot. The tell is WATER now: the creature's shadow gathering under the
+    // surface with a ring of broken foam closing on it, and only the last
+    // instant — menace past 0.62, the bite already inevitable — flashes the
+    // ring red. A red ring floating on open water is a diagram; a shadow with
+    // foam breaking over it is something coming up under the boat.
     for (const mob of voyage.mobs) {
       if (mob.kind === 'squid') continue; // the boss telegraphs with circles, below
       const menace = menaceOf(mob);
       if (menace <= 0.02 || marks >= RING_CAP) continue;
       const radius = MOBS[mob.kind].radius * (1.75 - 0.6 * menace);
-      place(markMesh, marks++, mob.x, mob.y, radius, 1, 0.04 + 0.1 * menace, 0.03);
+      shade(mob.x, mob.y, MOBS[mob.kind].radius * 1.5, menace);
+      if (menace > 0.62) {
+        const hot = (menace - 0.62) / 0.38;
+        place(markMesh, marks++, mob.x, mob.y, radius, 1, 0.7 - 0.62 * hot, 0.6 - 0.55 * hot);
+      } else {
+        place(markMesh, marks++, mob.x, mob.y, radius, 0.93, 0.98, 0.95);
+      }
     }
 
-    // THE BOSS'S TELL, which is the whole fight. Each strike circle is painted
-    // at exactly the radius the sim will resolve — a warning drawn smaller than
-    // the danger is a lie with a red border — and a second ring closes onto it
-    // as the timer runs, so the beat is readable without a number. Dived, the
-    // squid keeps one pale breathing ring over it: not shootable, still there,
-    // still coming.
+    // THE BOSS'S TELL, which is the whole fight. Each strike circle is drawn
+    // at exactly the radius the sim will resolve — a warning drawn smaller
+    // than the danger is a lie — as the tentacle's own shadow swelling under
+    // the surface with a foam ring standing on its edge, and a second foam
+    // ring closing onto it as the timer runs, so the beat is readable without
+    // a number. The edge ring heats from sea-glass to red across the cast:
+    // water first, danger exactly when it is one. Dived, the squid keeps one
+    // pale breathing ring and a faint travelling shadow — not shootable,
+    // still there, still coming.
     for (const mob of voyage.mobs) {
       if (mob.kind !== 'squid') continue;
       if (mob.cast) {
         const progress = 1 - mob.cast.left / mob.cast.span;
         for (const target of mob.cast.targets) {
           if (marks >= RING_CAP - 1) break;
-          place(markMesh, marks++, target.x, target.y, SQUID_STRIKE_RADIUS, 1, 0.06, 0.03);
+          shade(target.x, target.y, SQUID_STRIKE_RADIUS * (0.5 + 0.5 * progress), progress);
+          place(markMesh, marks++, target.x, target.y, SQUID_STRIKE_RADIUS,
+            0.62 + 0.38 * progress, 0.9 - 0.78 * progress, 0.86 - 0.8 * progress);
           place(markMesh, marks++, target.x, target.y,
-            SQUID_STRIKE_RADIUS * (1.9 - 0.9 * progress), 1, 0.3, 0.08);
+            SQUID_STRIKE_RADIUS * (1.9 - 0.9 * progress), 0.95, 0.99, 0.97);
         }
       } else if (mob.dive && marks < RING_CAP) {
         const breath = 1 + 0.16 * Math.sin(elapsed * 9);
+        shade(mob.x, mob.y, MOBS.squid.radius * 1.15, 0.25);
         place(markMesh, marks++, mob.x, mob.y, MOBS.squid.radius * 0.9 * breath, 0.5, 0.84, 0.94);
       }
     }
@@ -1752,10 +1907,14 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
     markMesh.visible = marks > 0;
     shockMesh.count = waves;
     shockMesh.visible = waves > 0;
+    shadeMesh.count = shades;
+    shadeMesh.visible = shades > 0;
     markMesh.instanceMatrix.needsUpdate = true;
     shockMesh.instanceMatrix.needsUpdate = true;
+    shadeMesh.instanceMatrix.needsUpdate = true;
     if (markMesh.instanceColor) markMesh.instanceColor.needsUpdate = true;
     if (shockMesh.instanceColor) shockMesh.instanceColor.needsUpdate = true;
+    if (shadeMesh.instanceColor) shadeMesh.instanceColor.needsUpdate = true;
   }
 
   function drawParticles(dt: number): void {
@@ -1893,7 +2052,7 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
 
     let c = 0;
     for (const mob of voyage.mobs) {
-      if (c >= CHEVRON_CAP) break;
+      if (c >= CHEVRON_CAP - 1) break;
       if (mob.state === 'patrol') continue;
       // Only for what the player cannot already see. The projection is the
       // honest test — a margin in world units would be wrong the moment the
@@ -1905,12 +2064,22 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
       // The pulse is in the SIZE rather than the brightness: instancing has no
       // per-instance alpha, and a red that fades by losing colour goes grey.
       const beat = 2.9 + 0.55 * Math.sin(elapsed * 6 + mob.id);
-      pose.position.set(at.x, SEA_Y + water.surfaceAt(at.x, at.y, elapsed).height + 0.24, at.y);
+      const lift = SEA_Y + water.surfaceAt(at.x, at.y, elapsed).height;
+      // Two instances make one mark: a foam bow-wave with a red heart. The
+      // solid red arrowhead alone was a map marker; a chevron of broken water
+      // with the warning burning inside it belongs to the sea it floats on.
+      pose.position.set(at.x, lift + 0.22, at.y);
       pose.rotation.set(0, -bearing, 0);
-      pose.scale.setScalar(beat);
+      pose.scale.setScalar(beat * 1.3);
       pose.updateMatrix();
       chevronMesh.setMatrixAt(c, pose.matrix);
-      chevronMesh.setColorAt(c, tint.setRGB(1, 0.04, 0.03));
+      chevronMesh.setColorAt(c, tint.setRGB(0.93, 0.98, 0.95));
+      c++;
+      pose.position.set(at.x, lift + 0.26, at.y);
+      pose.scale.setScalar(beat * 0.78);
+      pose.updateMatrix();
+      chevronMesh.setMatrixAt(c, pose.matrix);
+      chevronMesh.setColorAt(c, tint.setRGB(1, 0.08, 0.05));
       c++;
     }
     chevronMesh.count = c;
@@ -1940,6 +2109,27 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
   function sail(elapsed: number): void {
     if (!sailing) return;
     let course: number;
+    if (sailing === 'bait') {
+      // Close on the nearest squid and then sit inside its arms — which is
+      // the one manoeuvre a player is taught never to make, and exactly how a
+      // capture catches the tell: the strike circles are live 1.15 seconds in
+      // every 4.35, and a ship that keeps sailing is never standing next to
+      // the cast when the frame is taken.
+      const squid = voyage.mobs.find((m) => m.kind === 'squid');
+      if (!squid) {
+        scripted = { x: 1, y: 0, force: 0.4 };
+        return;
+      }
+      const distance = Math.hypot(squid.x - voyage.x, squid.y - voyage.y);
+      if (distance < 15) {
+        scripted = null;
+        voyage = steer(voyage, { turn: 0, throttle: 0 });
+        return;
+      }
+      const bearing = Math.atan2(squid.y - voyage.y, squid.x - voyage.x);
+      scripted = { x: Math.cos(bearing), y: -Math.sin(bearing), force: 0.9 };
+      return;
+    }
     if (sailing === 'hunt') {
       // Close until the guns can reach, then turn the beam to it and hold —
       // the manoeuvre the whole design is asking a player to find.
@@ -2123,7 +2313,7 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
       // drawn by two materials, and disposing it twice is a bug waiting for a
       // three.js release that starts caring.
       const spent = new Set<THREE.BufferGeometry>();
-      for (const mesh of [markMesh, shockMesh, particleMesh, barBack, barFill, beaconMesh, chevronMesh]) {
+      for (const mesh of [markMesh, shockMesh, shadeMesh, particleMesh, barBack, barFill, beaconMesh, chevronMesh]) {
         if (!spent.has(mesh.geometry)) {
           spent.add(mesh.geometry);
           mesh.geometry.dispose();
@@ -2136,7 +2326,7 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
           (part.material as THREE.Material).dispose();
         }
       }
-      for (const grid of [fanGrid, gaugeGrid, trackGrid]) grid.geometry.dispose();
+      for (const grid of [gaugeGrid, trackGrid]) grid.geometry.dispose();
       for (const child of [...stage.scene.children]) {
         if (preexisting.has(child)) continue;
         stage.scene.remove(child);

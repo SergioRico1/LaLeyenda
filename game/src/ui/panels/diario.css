@@ -1,0 +1,499 @@
+/* ============================================================================
+ * diario.css — el Diario de a Bordo: the quest list, the seven-day chain and
+ * the season, on one screen.
+ *
+ * The chrome family is the one Ajustes → Tienda → Clasificación established:
+ * one cream sheet with the three-layer edge, content in dark inset wells,
+ * Kingshot's density. The RAISED objects here — the day cells of the chain,
+ * the claim buttons, the season plate — each carry §0.2's four layers: ink
+ * contour, hard gloss step, warm top rim, dark bottom lip. The progress bars
+ * are INSET objects (a well in miniature), because a bar that reads as raised
+ * reads as a button, and these are not.
+ * ========================================================================== */
+
+.diario {
+  /* Same overlay altitude as Ajustes / Tienda / Clasificación; the four never
+     stack — each closes before another opens. */
+  --diario-z: 940;
+  --diario-dim: rgba(5, 8, 12, 0.58);
+  /* The quest-progress green, the same family as the timer fill. */
+  --diario-fill-a: #9BE24A;
+  --diario-fill-b: #58A821;
+  /* The corona gold for the crown bar. */
+  --diario-gold-a: #FFD75E;
+  --diario-gold-b: #E9A81F;
+
+  position: absolute;
+  inset: 0;
+  z-index: var(--diario-z);
+  display: flex;
+  justify-content: center;
+  /* Centred, not stretched: the Diario hugs its content — a chain, three
+     quests and a crown line are one screen, and a sheet stretched past them
+     would be cream with nothing on it. The max-height keeps a short phone
+     honest: the body scrolls inside rather than the sheet overflowing. */
+  align-items: center;
+  padding: calc(var(--ui-safe-t) + 34px) 14px calc(var(--ui-safe-b) + 22px);
+}
+.diario__sheet { max-height: 100%; }
+
+.diario__scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--diario-dim);
+  /* The shared overlay grammar: sheet pops, dim fades, one enter everywhere. */
+  opacity: 0;
+  animation: ui-scrim-in 0.2s ease-out forwards;
+}
+html.shot:not(.motion) .diario__scrim { opacity: 1; }
+
+/* --- the sheet — the family's three-layer edge ---------------------------- */
+.diario__sheet {
+  position: relative;
+  z-index: 1;
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: linear-gradient(180deg, #F3F2EB 0%, var(--ui-panel) 24%, #DFDED4 100%);
+  border: var(--ui-frame-w) solid var(--ui-frame);
+  border-radius: var(--ui-r-panel);
+  box-shadow:
+    0 0 0 3px var(--ui-frame-dark),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.55),
+    0 8px 0 rgba(0, 0, 0, 0.32),
+    var(--ui-cast-lg);
+  animation: ui-pop-s 0.2s cubic-bezier(0.2, 1.35, 0.4, 1);
+  transform-origin: 50% 42%;
+}
+
+.diario__head {
+  position: relative;
+  flex: 0 0 auto;
+  padding: 12px 58px 9px;
+  text-align: center;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.14);
+}
+
+.diario__title {
+  margin: 0;
+  color: var(--ui-ink);
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 2px 0 rgba(255, 255, 255, 0.6);
+}
+
+/* The season plate — the same raised charcoal capsule the Clasificación
+   wears, because both panels are naming the same season. */
+.diario__plate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: fit-content;
+  margin: 6px auto 1px;
+  padding: 3px 15px 5px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  border-radius: 999px;
+  background: linear-gradient(180deg,
+    #57524C 0%, #47433F 46%,
+    #38342F 46.01%, #38342F 86%,
+    #232019 86.01%, #232019 100%);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 250, 0.3),
+    0 3px 0 rgba(0, 0, 0, 0.24),
+    0 1px 0 rgba(255, 255, 255, 0.45);
+}
+.diario__plate-season {
+  font-size: 13px;
+  white-space: nowrap;
+  color: #F1EADB;
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
+}
+.diario__plate-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 3px 1px;
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: -1px 0 0 rgba(0, 0, 0, 0.4);
+}
+.diario__plate-dial { width: 15px; height: 15px; }
+.diario__plate-ends {
+  font-size: 12px;
+  white-space: nowrap;
+  color: #B5ACA0;
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
+}
+.diario__plate-clock {
+  font-size: 14.5px;
+  white-space: nowrap;
+  color: var(--ui-gold-text);
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.55);
+}
+
+/* --- the scrolling body --------------------------------------------------- */
+.diario__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 10px 14px 12px;
+}
+
+/* Section captions, cut into the cream like the board's league heads. */
+.diario__caption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 2px 7px;
+}
+.diario__caption:first-child { margin-top: 0; }
+.diario__caption-text {
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  color: #6B6156;
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+.diario__caption::before,
+.diario__caption::after {
+  content: '';
+  flex: 1 1 0;
+  height: 1px;
+  background: rgba(0, 0, 0, 0.14);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+/* --- the seven-day chain -------------------------------------------------- */
+.diario__days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 5px;
+  margin: 0 0 8px;
+}
+
+/* Each day is a small raised object: §0.2's four layers at cell scale —
+   ink border, gloss step (::before), warm rim (inset highlight), dark lip
+   (the last band of the background). */
+.diario__day {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 2px 6px;
+  min-height: 62px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  border-radius: 9px;
+  background: linear-gradient(180deg,
+    #FDFBF3 0%, #EFEDE2 52%,
+    #E2DFD2 52.01%, #E2DFD2 86%,
+    #B9B4A3 86.01%, #B9B4A3 100%);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 250, 0.75),
+    0 3px 0 rgba(0, 0, 0, 0.22);
+}
+.diario__day-num {
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  color: #6B6156;
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+.diario__day-icon {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.18));
+}
+.diario__day-amount {
+  font-size: 12.5px;
+  -webkit-text-stroke-width: 1.6px;
+}
+
+/* Claimed: the cell recedes and wears its drawn check. */
+.diario__day.is-claimed { opacity: 0.86; filter: saturate(0.55); }
+.diario__day.is-claimed .diario__day-icon { opacity: 0.55; }
+.diario__day-check {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+.diario__day-check .diario__check {
+  width: 55%;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.35));
+}
+.diario__ink {
+  stroke: var(--ui-ink);
+  stroke-width: 2px;
+  paint-order: stroke;
+  stroke-linejoin: round;
+}
+
+/* Today: the one gold band in the chain — same statement as the board's
+   pinned row: this cell is YOURS, now. */
+.diario__day.is-today {
+  border-width: var(--ui-ink-w-sm);
+  background: linear-gradient(180deg,
+    #FBE292 0%, #F7D465 46%,
+    #E9B93E 46.01%, #E9B93E 86%,
+    #C08A1C 86.01%, #C08A1C 100%);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 250, 0.65),
+    0 4px 0 rgba(0, 0, 0, 0.28);
+}
+.diario__day.is-today .diario__day-num {
+  color: #3B2C0E;
+  text-shadow: 0 1px 0 rgba(255, 255, 250, 0.5);
+}
+
+/* Day 7 is the featured payoff: taller, warmer, bigger prize art — the chain
+   has to read as a climb toward something, or it is seven equal chores. */
+.diario__day.is-featured {
+  min-height: 68px;
+  margin-top: -6px;
+  background: linear-gradient(180deg,
+    #FFF6DC 0%, #F7ECCB 52%,
+    #EBDDB2 52.01%, #EBDDB2 86%,
+    #C4A96B 86.01%, #C4A96B 100%);
+}
+.diario__day.is-featured .diario__day-icon { width: 32px; height: 32px; }
+.diario__day.is-featured .diario__day-num { color: #7A5C1E; }
+
+/* The chain's claim row */
+.diario__claim-row {
+  display: flex;
+  justify-content: center;
+  margin: 2px 0 4px;
+}
+.diario__claim {
+  min-height: 44px;
+  padding: 0 22px;
+  border-radius: 12px;
+}
+.diario__claim--daily { min-width: 62%; }
+.diario__wait {
+  margin: 2px 0 4px;
+  text-align: center;
+  color: #6B6156;
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+/* --- the quests, in one dark well ----------------------------------------- */
+.diario__well {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: var(--ui-well);
+  box-shadow:
+    inset 0 3px 0 rgba(0, 0, 0, 0.42),
+    inset 0 -2px 0 rgba(255, 255, 255, 0.07),
+    0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.diario__quest {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 2px;
+}
+.diario__quest + .diario__quest { border-top: 1px solid rgba(255, 255, 255, 0.10); }
+.diario__quest.is-claimed { opacity: 0.55; }
+
+.diario__quest-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.diario__quest-text {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.25;
+  color: #F3EFE4;
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.7);
+}
+
+/* The progress bar: an INSET track with a hard-stepped fill, numerals inside —
+   the world timer capsule's grammar, lying down in a list. */
+.diario__bar {
+  position: relative;
+  height: 17px;
+  border-radius: 999px;
+  background: rgba(10, 14, 18, 0.85);
+  box-shadow:
+    inset 0 2px 0 rgba(0, 0, 0, 0.5),
+    0 1px 0 rgba(255, 255, 255, 0.10);
+  overflow: hidden;
+}
+.diario__bar-fill {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc((100% - 4px) * var(--pct, 0));
+  border-radius: 999px;
+  background: linear-gradient(180deg,
+    var(--diario-fill-a) 0%, var(--diario-fill-a) 46%,
+    var(--diario-fill-b) 46.01%, var(--diario-fill-b) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 250, 0.5);
+}
+.diario__bar-count {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 11.5px;
+  letter-spacing: 0.01em;
+  -webkit-text-stroke-width: 1.4px;
+}
+
+.diario__quest-side {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+}
+.diario__quest-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.diario__quest-pay {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.diario__pay-gem { width: 17px; height: 17px; object-fit: contain; }
+.diario__pay-crown { width: 16px; filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.35)); }
+.diario__pay-num {
+  font-size: 13px;
+  -webkit-text-stroke-width: 1.5px;
+}
+.diario__quest .diario__claim {
+  min-height: 38px;
+  padding: 0 16px;
+  border-radius: 10px;
+}
+.diario__quest-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #B9C6A9;
+}
+.diario__quest-done .diario__check {
+  width: 17px;
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.4));
+}
+.diario__quest-done .t-micro {
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
+}
+
+/* --- the corona line ------------------------------------------------------ */
+.diario__crown {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 9px 2px 2px;
+  padding: 7px 10px 8px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  border-radius: 11px;
+  background: linear-gradient(180deg,
+    #FDFBF3 0%, #EFEDE2 50%,
+    #E4E1D4 50.01%, #E4E1D4 88%,
+    #BDB8A7 88.01%, #BDB8A7 100%);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 250, 0.75),
+    0 3px 0 rgba(0, 0, 0, 0.2);
+}
+.diario__crown-mark { width: 26px; filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.25)); }
+.diario__crown-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.diario__crown-label {
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: #6B6156;
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+.diario__bar--crown { height: 14px; }
+.diario__bar--crown .diario__bar-fill {
+  background: linear-gradient(180deg,
+    var(--diario-gold-a) 0%, var(--diario-gold-a) 46%,
+    var(--diario-gold-b) 46.01%, var(--diario-gold-b) 100%);
+}
+.diario__bar--crown .diario__bar-count { font-size: 10.5px; }
+.diario__crown-chest {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.2));
+}
+
+.diario__hint {
+  margin: 8px 4px 0;
+  text-align: center;
+  color: #8A8072;
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+/* --- the red X, breaking the corner (§3.14) ------------------------------- */
+.diario__x {
+  position: absolute;
+  right: 10px;
+  top: 0;
+  translate: 0 -46%;
+  width: 48px;
+  height: 48px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 11px;
+  overflow: visible;
+  z-index: 2;
+  background: linear-gradient(180deg,
+    var(--ui-red-a) 0%, var(--ui-red-b) 92%,
+    var(--ui-red-lip) 92.01%, var(--ui-red-lip) 100%);
+}
+.diario__x::before {
+  content: '';
+  position: absolute;
+  inset: 3px 4px auto 4px;
+  height: 52%;
+  border-radius: 8px 8px 4px 4px;
+  background: linear-gradient(180deg, var(--ui-red-gloss-a), var(--ui-red-gloss-b));
+  pointer-events: none;
+}
+.diario__x .mark--x { width: 46%; }
+.diario__x .mark { position: relative; z-index: 1; }
+
+/* --- iPhone SE and below -------------------------------------------------- */
+@media (max-width: 379px) {
+  .diario__body { padding: 8px 10px 10px; }
+  .diario__day { min-height: 58px; }
+  .diario__day-icon { width: 22px; height: 22px; }
+  .diario__quest-text { font-size: 13.5px; }
+  .diario__plate-ends { display: none; }
+}
+
+/* --- landscape ------------------------------------------------------------ */
+@media (orientation: landscape) {
+  .diario { padding-top: calc(var(--ui-safe-t) + 26px); }
+  .diario__head { padding: 8px 58px 6px; }
+  .diario__days { gap: 4px; }
+}

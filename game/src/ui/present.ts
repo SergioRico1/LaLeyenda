@@ -83,11 +83,13 @@ export function toHudState(state: GameState, now: number): HudState {
       }
     }),
     // ¡Zarpar! stays shut until there is a SHIP — never a dead tap, it names
-    // the key. balance.json hangs `unlocksAction: zarpar` on the Muelle, but
-    // §4.10's exit state wants the Muelle standing at 3:00 *and* Zarpar still
-    // closed ("one closed door with the key said out loud"), and the Astillero
-    // is the building whose level rows actually carry a `ship`. A dock with no
-    // boat is a dock; the door it opens is the shipyard's.
+    // the key. The test is the level rows themselves: some standing support
+    // building whose reached row carries a `ship`. Since round 12 that row is
+    // the MUELLE's own (balance.json ties the starter skiff to the 300-madera
+    // dock — the first sail is a first-session beat, not a hall-3 campaign),
+    // and the Astillero's upper rows carry the deep hulls. One mechanism,
+    // shared with `hasShip` in sim/tutorial.ts and sim/shipyard.ts, so the
+    // tile, the tutorial and the fleet can never disagree about the door.
     sailLocked: !state.buildings.some(
       (b) => buildingSpec(b.type).kind === 'support' && b.level > 0 && levelSpec(b.type, b.level).ship
     ),

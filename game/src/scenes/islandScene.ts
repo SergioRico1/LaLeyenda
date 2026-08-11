@@ -15,12 +15,17 @@ import { instantiate, preload } from '../render/assets';
 import { Rng } from '../core/rng';
 import { createGame, type Game } from '../core/game';
 import {
-  BALANCE, buildingSpec, claimDaily, claimFreeChest, claimQuest, clearObstacle, collect, collectAll,
-  finishNow, levelSpec, obstacleAt, obstacleTier, openChest, place, placeRefusal, plotHalf,
-  questComplete, spotRefusalNow, startChest, startUpgrade, townHallLevel,
-  type GameState, type Refusal,
+  BALANCE, buildingSpec, chestTrayHint, claimDaily, claimFreeChest, claimQuest, clearNowCost,
+  clearObstacle, collect, collectAll, finishClearNow, finishNow, levelSpec, markLandingSeen,
+  obstacleAt, obstacleTier, openChest, place, placeRefusal, plotHalf,
+  spotRefusalNow, startChest, startUpgrade, storeCap, storeTypeFor, townHallLevel,
+  type GameState, type Refusal, type ResourceId as SimResourceId,
 } from '../sim';
-import { dur } from '../ui/format';
+import { durText, n } from '../ui/format';
+import { el, iconImg, pressable } from '../ui/components/dom';
+import { createSheet } from '../ui/panels/sheet';
+import { createTimerBar } from '../ui/components/timerBar';
+import { createDiarioPanel, type DiarioPanel } from '../ui/panels/diario';
 import { createHud, type Hud, type ResourceId } from '../ui/hud';
 import { bakeIcons, bakeModelIcons, type IconSet } from '../ui/icons';
 import {
@@ -1439,6 +1444,41 @@ export async function createIslandScene(
       if (!building || building.work) { awaiting.delete(buildingId); continue; }
       anchors.push({ buildingId, lift, item: { id: `done-${buildingId}`, kind: 'done' } });
     }
+
+    /*
+     * A CLEAR JOB WEARS THE SAME CAPSULE A CONSTRUCTION DOES — round 11's
+     * playtest, finding 3. Sending a carpenter to a fifteen-minute peñasco
+     * showed "no timer capsule, no world item, no way to inspect or rush — it
+     * reads as a soft-lock". The sim has carried the timer on the obstacle
+     * since round eight; nothing ever drew it, because `toWorldItems` walks
+     * buildings and an obstacle is not one. Merged here, the way §3.11's ✓
+     * bubbles are, so present.ts stays a pure function of the building list.
+     *
+     * The anchor key is the NEGATIVE obstacle id: building ids and obstacle
+     * ids are separate 1-based sequences, so the two would collide in
+     * `anchorFor` without the sign. The item id `clear-<id>` is what the tap
+     * hands back to route('Terminar Ya', …) to open the job's own sheet.
+     */
+    for (const o of game.state().obstacles) {
+      const key = -o.id;
+      if (!o.work) { anchorFor.delete(key); continue; }
+      if (!anchorFor.has(key)) {
+        const at = cellToWorld(shape, o.x, o.z);
+        anchorFor.set(key, new THREE.Vector3(at.x, at.y, at.z));
+      }
+      anchors.push({
+        buildingId: key,
+        // Lower than a building's bar: a palm is a fraction of a roof's height.
+        lift: o.tier === 'large' ? 2.1 : 1.5,
+        item: {
+          id: `clear-${o.id}`,
+          kind: 'timer',
+          remainingMs: Math.max(0, o.work.endsAt - game.now()),
+          totalMs: Math.max(1, o.work.endsAt - o.work.startedAt),
+        },
+      });
+    }
+
     hud.setState(toHudState(game.state(), game.now()));
     hud.setWorldItems(anchors.map((a) => a.item));
   }
@@ -1532,6 +1572,22 @@ export async function createIslandScene(
           // Held with the XP: the badge pops when the ✓ is claimed, so the two
           // halves of the same reward do not arrive a minute apart.
           break;
+        case 'obstacle-cleared': {
+          // Round 11's finding 3, pay side: a finished clear fell through to
+          // the default case and happened in total silence — the carpenter
+          // came home, a palm vanished, and nothing said what it paid. Dust on
+          // the cell it opened, and the payout named.
+          anchorFor.delete(-event.obstacleId);   // the capsule's anchor retires with the job
+          const at = lastAt.get(-event.obstacleId) ?? projectCell(event.x, event.z);
+          if (at) { celebrate.flash(at.x, at.y, 150); celebrate.dust(at.x, at.y + 20, 200); }
+          sfx('coin');
+          hud?.say(
+            `Terreno despejado: +${n(event.madera)} madera` +
+            (event.gems > 0 ? ` · +${n(event.gems)} gemas` : '')
+          );
+          touched = true;
+          break;
+        }
         case 'chest-ready':
           sfx('pop');
           hud?.say(COPY['toast.chestReady']);
@@ -1629,6 +1685,169 @@ export async function createIslandScene(
     if (bar) uiRoot.append(bar.el);
   }
 
+  /* --- the clear job's own sheet — round 11's playtest, finding 3 ----------
+   *
+   * The capsule over a clearing palm is a route, exactly as §3.11's timer bar
+   * is a route into §3.16's sheet: tap it (or the obstacle itself) and this
+   * opens — the job named, the countdown running, the payout promised, and
+   * §4.4's gold "Terminar Ya" with the gem price on screen BEFORE any gem is
+   * spent. Same chrome as the upgrade sheet (same classes, same cost row on
+   * the CTA), because to the player it is the same object: a carpenter, a
+   * timer, and a way out.
+   */
+  const WILD_TITLE: Record<string, string> = {
+    palmera: 'Palmera', roca: 'Roca', pecio: 'Pecio', penasco: 'Peñasco',
+  };
+  const clearSheet = uiRoot ? createSheet({ art: [iconSet.carpintero, iconSet.madera] }) : null;
+  const clearBar = createTimerBar();
+  const clearCta = el('button', 'btn btn--gold sheet__cta') as HTMLButtonElement;
+  const clearWhy = el('p', 't sheet__why');
+  /** The obstacle id on the sheet, or null while it is shut. */
+  let clearFor: number | null = null;
+  let clearSetAt = 0;          // scene seconds when the countdown was last synced
+  let clearRemaining = 0;
+  let clearTotal = 1;
+
+  if (clearSheet) {
+    clearCta.type = 'button';
+    clearSheet.footer.append(clearWhy, clearCta);
+    clearSheet.onClosed(() => { clearFor = null; });
+    uiRoot!.append(clearSheet.el);
+    pressable(clearCta, () => {
+      if (clearFor === null) return;
+      const id = clearFor;
+      const result = game.dispatch((s, now) => finishClearNow(s, id, now));
+      if (!result.ok) { refused(result.refusal); renderClearSheet(); return; }
+      clearSheet.close();
+      refreshWilderness();
+      celebrateEvents(result.events);
+      syncHud();
+    });
+  }
+
+  function openClearSheet(obstacleId: number): void {
+    if (!clearSheet) return;
+    if (placing) endPlacement();
+    sheet?.close();
+    clearFor = obstacleId;
+    renderClearSheet();
+    if (clearFor !== null) clearSheet.open();
+  }
+
+  /** Redraws the sheet from the sim; closes it when the job it was about is
+   *  done — a panel must never keep selling a rush on a finished timer. */
+  function renderClearSheet(): void {
+    if (!clearSheet || clearFor === null) return;
+    const state = game.state();
+    const now = game.now();
+    const target = state.obstacles.find((o) => o.id === clearFor);
+    if (!target?.work) { clearSheet.close(); return; }
+
+    clearSheet.setTitle(WILD_TITLE[target.kind] ?? 'Maleza');
+    clearRemaining = Math.max(0, target.work.endsAt - now);
+    clearTotal = Math.max(1, target.work.endsAt - target.work.startedAt);
+    clearSetAt = sceneElapsed;
+    clearBar.set(clearRemaining, clearTotal);
+
+    clearSheet.body.replaceChildren(
+      el('div', 'well sheet__detail',
+        el('div', 't sheet__row-label', 'Un carpintero está despejando'),
+        el('div', 'sheet__timer', clearBar.el),
+        el('div', 'gain gain--unlocks',
+          el('span', 't gain__label', 'Al despejar'),
+          el('span', 't gain__to',
+            `+${n(target.pays.madera)} madera` +
+            (target.pays.gems > 0 ? ` · +${n(target.pays.gems)} gemas` : ''))))
+    );
+
+    const cost = clearNowCost(state, clearFor, now) ?? 0;
+    const affordable = state.gems >= cost;
+    clearCta.className = `btn ${affordable ? 'btn--gold' : 'btn--grey2'} sheet__cta`;
+    clearCta.replaceChildren(
+      el('span', 't t-btn', 'Terminar Ya'),
+      el('span', 'sheet__cta-price',
+        iconImg(iconSet.gema, 'sheet__gem'),
+        el('span', 'num', n(cost)))
+    );
+    clearCta.disabled = false;
+    clearWhy.textContent = affordable ? '' : refusalText('not-enough-gems');
+    clearWhy.hidden = affordable;
+  }
+
+  /* --- the Diario de a Bordo — round 11's playtest, finding 5 --------------
+   *
+   * The nav slot used to auto-claim the first finished quest as a bare toast;
+   * the quest list, the daily chain and the season never appeared anywhere.
+   * The panel (src/ui/panels/diario.ts) shows the save's own quests with
+   * progress bars, the seven-day chain, the corona line and the season plate —
+   * and every claim is a tap on a button, never a side effect of opening.
+   */
+  let diarioPanel: DiarioPanel | null = null;
+
+  function openDiario(): void {
+    if (!uiRoot || diarioPanel) return;
+    diarioPanel = createDiarioPanel({
+      state: game.state(),
+      now: game.now(),
+      icons: iconSet,
+      onClaimQuest: (index) => {
+        const result = game.dispatch((s) => claimQuest(s, index));
+        if (result.ok) celebrateEvents(result.events);
+        else refused(result.refusal);
+        diarioPanel?.refresh(game.state(), game.now());
+      },
+      onClaimDaily: () => {
+        const result = game.dispatch((s) => claimDaily(s, game.now()));
+        if (result.ok) celebrateEvents(result.events);
+        else refused(result.refusal);
+        diarioPanel?.refresh(game.state(), game.now());
+      },
+      onClose: () => closeDiario(),
+    });
+    uiRoot.append(diarioPanel.el);
+  }
+
+  function closeDiario(): void {
+    diarioPanel?.dispose();
+    diarioPanel = null;
+  }
+
+  /* --- the arrival toast — round 11's playtest, finding 1 ------------------
+   *
+   * The voyage's landing happens on the way OUT of the sea (main.ts), before
+   * this scene exists — so the report travels in the save and is said HERE,
+   * once, on the boot that follows the voyage: what landed, what spilled, and
+   * why. "A player must never watch loot evaporate in silence."
+   */
+  function announceLanding(): void {
+    const landing = game.state().landing;
+    if (!hud || !landing || landing.seen) return;
+
+    const name = (r: string): string => COPY[`res.${r}` as 'res.oro'] ?? r;
+    const landedLine = Object.entries(landing.landed)
+      .filter(([, v]) => (v ?? 0) > 0)
+      .map(([r, v]) => `+${n(v ?? 0)} ${name(r).toLowerCase()}`)
+      .join(' · ');
+    if (landedLine) hud.say(`Botín a buen puerto: ${landedLine}`);
+
+    const spilled = Object.entries(landing.spilled).filter(([, v]) => (v ?? 0) > 0);
+    if (spilled.length > 0) {
+      const state = game.state();
+      // "Sin almacén para el ron — se perdió": name the missing store when one
+      // store answers the whole loss, otherwise name the goods.
+      const missing = spilled.filter(([r]) => storeCap(state, r as SimResourceId) === 0);
+      const list = spilled.map(([r, v]) => `${name(r).toLowerCase()} ${n(v ?? 0)}`).join(' · ');
+      const line = missing.length === 1
+        ? `Sin ${buildingSpec(storeTypeFor(missing[0][0] as SimResourceId)).label.toLowerCase()} para el ${name(missing[0][0]).toLowerCase()}: ${list} al agua`
+        : missing.length > 1
+          ? `Sin almacenes para ese botín: ${list} al agua`
+          : `Almacén lleno: ${list} al agua`;
+      hud.say(line, { tone: 'refuse' });
+    }
+
+    game.dispatch((s) => markLandingSeen(s));
+  }
+
   /**
    * Where a fresh ghost first lands: the nearest cell to the middle of the
    * player's VIEW where this building could legally stand RIGHT NOW.
@@ -1682,6 +1901,7 @@ export async function createIslandScene(
 
   async function beginPlacement(type: string): Promise<void> {
     const spec = buildingSpec(type);
+    clearSheet?.close();     // a ghost and a clear sheet must not share the thumb
     placing = { type, footprint: spec.footprint };
     // While a ghost is on the grid the finger belongs to it, not to the camera.
     rig.setEnabled(false);
@@ -1758,6 +1978,7 @@ export async function createIslandScene(
     const building = game.state().buildings.find((b) => b.id === buildingId);
     if (!building || !sheet) return;
     if (placing) endPlacement();
+    clearSheet?.close();     // one sheet at a time — same rule the pair keeps in reverse
     sheet.show(toUpgradeView(game.state(), building, game.now(), modelIcons));
   }
 
@@ -1859,12 +2080,18 @@ export async function createIslandScene(
       }
     }
     if (!target) return;
+    // A job already running opens its sheet — the inspect half of finding 3.
+    // It used to dispatch and bounce off the 'busy' refusal, so tapping the
+    // very rock you were waiting on told you it was busy instead of how long.
+    if (target.work) { openClearSheet(target.id); return; }
     const result = game.dispatch((state, now) => clearObstacle(state, target.id, now));
     if (!result.ok) { refused(result.refusal); return; }
     // The same sound a started upgrade makes, because it is the same event: a
     // carpenter has gone out and a timer is running.
     sfx('build');
-    hud?.say(`Un carpintero despeja ${WILD_LABEL[target.kind] ?? 'la maleza'} · ${dur(obstacleTier(target).timeMs)}`);
+    // durText, not dur: a toast is a text node, and dur()'s small-cap unit
+    // markup would print literally in it.
+    hud?.say(`Un carpintero despeja ${WILD_LABEL[target.kind] ?? 'la maleza'} · ${durText(obstacleTier(target).timeMs)}`);
     syncHud();
   }
 
@@ -1913,31 +2140,42 @@ export async function createIslandScene(
 
     switch (what) {
       case 'Cofres': {
-        const ready = state.chests.findIndex((c) => c.state === 'ready');
-        if (ready >= 0) {
-          // §3.22B — the reward moment, not a console line.
-          celebrateEvents(game.dispatch((s) => openChest(s, ready)).events);
-          return;
+        // The tap is resolved by the sim (round 11's finding 2): a day-one
+        // tray used to fall through every case to `Solo un cofre a la vez` —
+        // a refusal about a rule the player had never met, over zero chests.
+        // Now the empty states answer with WHEN chests come.
+        const hint = chestTrayHint(state, now);
+        switch (hint.kind) {
+          case 'open':
+            // §3.22B — the reward moment, not a console line.
+            celebrateEvents(game.dispatch((s) => openChest(s, hint.slot)).events);
+            return;
+          case 'claim-free':
+            game.dispatch((s) => claimFreeChest(s));
+            return;
+          case 'start': {
+            const result = game.dispatch((s) => startChest(s, hint.slot, now));
+            if (!result.ok) refused(result.refusal);
+            return;
+          }
+          case 'unlocking':
+            hud?.say(`Tu cofre se abre en ${durText(hint.remainingMs)}`);
+            return;
+          case 'come-later':
+            hud?.say(`El Muelle te guarda un Cofre Libre en ${durText(hint.inMs)}`);
+            return;
+          case 'build-dock':
+            hud?.say('Aún no tienes cofres: los traen el mar y el Muelle, uno al día');
+            return;
         }
-        if (state.freeChestsBanked > 0) { game.dispatch((s) => claimFreeChest(s)); return; }
-        const waiting = state.chests.findIndex((c) => c.state === 'waiting');
-        if (waiting >= 0) {
-          const result = game.dispatch((s) => startChest(s, waiting, now));
-          if (!result.ok) refused(result.refusal);
-          return;
-        }
-        hud?.say(COPY['chip.oneChest']);
         return;
       }
       case 'Diario de a Bordo': {
-        const quest = state.quests.daily.findIndex(questComplete);
-        if (quest >= 0) {
-          celebrateEvents(game.dispatch((s) => claimQuest(s, quest)).events);
-          return;
-        }
-        const result = game.dispatch((s) => claimDaily(s, now));
-        if (result.ok) celebrateEvents(result.events);
-        else refused(result.refusal);
+        // Round 11's finding 5: this used to CLAIM the first finished quest —
+        // or the daily — as a bare toast, without ever showing the quest list
+        // that exists in the save. The Diario is a panel now; claiming stays
+        // explicit, one tap per reward, inside it.
+        openDiario();
         return;
       }
       case 'Construir': {
@@ -1953,7 +2191,18 @@ export async function createIslandScene(
         // §3.11's timer bar is a route into §3.16's sheet, not an instant
         // purchase: spending gems must always be a decision with the price on
         // screen first. The sheet's gold CTA is where §4.4 actually happens.
-        const running = state.buildings.find((b) => b.work);
+        //
+        // The capsule now says WHICH job it is (`timer-<building>` or
+        // `clear-<obstacle>`), so with a build and a clear running at once the
+        // tap opens the sheet of the timer that was tapped rather than of
+        // whichever job happens to be first in the list.
+        if (detail?.startsWith('clear-')) {
+          openClearSheet(Number(detail.slice('clear-'.length)));
+          return;
+        }
+        const tapped = detail ? buildingIdOf(detail) : null;
+        const running = state.buildings.find((b) => b.id === tapped && b.work)
+          ?? state.buildings.find((b) => b.work);
         if (running) openSheetFor(running.id);
         return;
       }
@@ -2199,6 +2448,37 @@ export async function createIslandScene(
 
   shedVeil();
 
+  // After the veil: the arrival is the first thing a returning sailor hears,
+  // and it must land on a visible island rather than under the assembly ink.
+  announceLanding();
+
+  // The screenshot harness cannot raycast a palm by itself: the wilderness is
+  // instanced geometry with no DOM over it. Shot mode exposes each obstacle's
+  // projected position so an act can tap one — same precedent as __camera.
+  //
+  // GROUND-TRUE, not projectCell: that helper lifts half a cell so a tutorial
+  // ring circles the tree rather than the soil, but a CLICK at the lifted
+  // point rays past the obstacle onto the cell behind it — the first two
+  // captures aimed at a pecio and started a roca. Projecting the cell's own
+  // ground point inverts the tap's raycast exactly.
+  if (shot) {
+    const groundPoint = (x: number, z: number): { x: number; y: number } | null => {
+      const at = cellToWorld(shape, x, z);
+      cellPoint.set(at.x, at.y, at.z).project(stage.camera);
+      if (cellPoint.z >= 1) return null;
+      const rect = stage.renderer.domElement.getBoundingClientRect();
+      return {
+        x: rect.left + (cellPoint.x * 0.5 + 0.5) * rect.width,
+        y: rect.top + (-cellPoint.y * 0.5 + 0.5) * rect.height,
+      };
+    };
+    (window as unknown as { __wild?: () => unknown }).__wild = () =>
+      game.state().obstacles.map((o) => ({
+        id: o.id, tier: o.tier, kind: o.kind, working: o.work !== null,
+        at: groundPoint(o.x, o.z),
+      }));
+  }
+
   return {
     project: projectCell,
     update(dt, elapsed) {
@@ -2268,11 +2548,19 @@ export async function createIslandScene(
         // A sheet left open while a timer finishes must not keep offering an
         // upgrade that already started, or a gem price that has moved.
         refreshSheet();
+        // Same honesty for the clear sheet: the gem price falls as the timer
+        // runs, and the sheet closes itself when the job it was about is done.
+        if (clearFor !== null) renderClearSheet();
         if (placing) refreshPlacement();
       }
 
       ghost.update(elapsed);
       sheet?.tick(elapsed);
+      // The clear sheet's countdown runs between sim ticks, like the world
+      // capsules do, measured from the scene time it was last synced.
+      if (clearSheet?.isOpen && clearFor !== null) {
+        clearBar.set(Math.max(0, clearRemaining - (elapsed - clearSetAt) * 1000), clearTotal);
+      }
 
       if (!hud) return;
       // Re-project every world-anchored element on the next frame (§2.3).
@@ -2311,6 +2599,9 @@ export async function createIslandScene(
       water.dispose();
       ghost.dispose?.();
       hud?.dispose();
+      // The Diario holds a document-level key listener; the DOM sweep below
+      // would strand it.
+      closeDiario();
       // The picker, the sheet, the build bar and the celebration layer all
       // live under #ui and hold no listeners outside their own subtree, so
       // emptying it takes all four. The HUD is the exception — it listens for

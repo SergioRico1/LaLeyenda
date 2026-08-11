@@ -479,6 +479,105 @@ describe('the loop closes', () => {
   });
 });
 
+/**
+ * Finding 6 of round 11's playtest, verbatim: "twin zone-3 tritons melt a
+ * skiff 86%->6% in one exchange with no warning that zones outrank the starter
+ * hull." The fleet table says ring 3 is a wall, not a cliff — 99% of skiffs
+ * still come home, a fifth of the hull poorer — so the creatures stay as they
+ * are and the missing piece is the WARNING: one deterministic sim event per
+ * deeper crossing past the hull's `rated` water, for the sea HUD to draw.
+ */
+describe('the water warns before it outranks the hull', () => {
+  /** A voyage with the spawner silenced, so the only thing under test is the
+   *  geometry of the warning — not whatever patrols the crossed cells. */
+  function quietSea(seed: string, ship = 'skiff') {
+    const v = startVoyage(seed, ship);
+    for (let cx = -20; cx <= 20; cx++) for (let cy = -20; cy <= 20; cy++) v.seen.push(`${cx}:${cy}`);
+    return v;
+  }
+  const warningsIn = (events: SeaEvent[]) =>
+    events.filter((e): e is Extract<SeaEvent, { kind: 'zone-warning' }> => e.kind === 'zone-warning');
+
+  test('crossing into ring 3 on a skiff warns, once, and says both numbers', () => {
+    eq(SHIPS.skiff.rated, 2, 'the skiff is rated for rings 1 and 2');
+    let v = quietSea('aviso');
+    v.x = SEA_CELL * 5; // five cells out is the first ring-3 water
+    const first = stepVoyage(v);
+    const warned = warningsIn(first.events);
+    eq(warned.length, 1, 'the crossing announces itself exactly once');
+    eq(warned[0].ring, 3, 'naming the ring entered');
+    eq(warned[0].rated, 2, 'and the water the hull is actually rated for');
+
+    const second = stepVoyage(first.voyage);
+    eq(warningsIn(second.events).length, 0, 'and it is a crossing event, not a banner per step');
+  });
+
+  test('rated water is silent — the warning is a threshold, not a narrator', () => {
+    let v = quietSea('silencio');
+    const out = sail(v, 9, { throttle: 1 });
+    eq(warningsIn(out.events).length, 0, 'nine seconds out is still rings 1-2: nothing to say');
+  });
+
+  test('bobbing on the boundary is one warning, and retreat is not amnesia', () => {
+    let v = quietSea('frontera');
+    v.x = SEA_CELL * 5;
+    v = stepVoyage(v).voyage;               // warned about ring 3
+    v.x = SEA_CELL * 3;                     // back into ring 2
+    const back = stepVoyage(v);
+    eq(warningsIn(back.events).length, 0, 'coming back in says nothing');
+    v = back.voyage;
+    v.x = SEA_CELL * 5;                     // and out again
+    const again = stepVoyage(v);
+    eq(warningsIn(again.events).length, 0, 'water already warned about is not re-lectured');
+  });
+
+  test('each DEEPER ring warns again, in order', () => {
+    let v = quietSea('hondura');
+    const rings: number[] = [];
+    for (const cells of [5, 8, 12]) {       // ring 3, ring 4, ring 5
+      v.x = SEA_CELL * cells;
+      const out = stepVoyage(v);
+      v = out.voyage;
+      rings.push(...warningsIn(out.events).map((w) => w.ring));
+    }
+    eq(JSON.stringify(rings), JSON.stringify([3, 4, 5]), 'one warning per deeper band, in the order crossed');
+  });
+
+  test('a deeper hull is not nagged in water it is rated for', () => {
+    let frigate = quietSea('fragata', 'frigate');
+    frigate.x = SEA_CELL * 5;               // ring 3: a skiff is warned here
+    eq(warningsIn(stepVoyage(frigate).events).length, 0, 'the frigate is rated 5 — ring 3 is its water');
+    frigate.x = SEA_CELL * 17;              // ring 6 outranks even a frigate
+    const deep = warningsIn(stepVoyage(frigate).events);
+    eq(deep.length, 1, 'but the sea is deeper than every hull somewhere');
+    eq(deep[0].ring, 6, 'and the warning still names where');
+  });
+
+  test('a straight run out is warned at the 2-to-3 crossing, then only deeper', () => {
+    // The playtest's own path: hold the throttle and watch. The first thing
+    // the sim says about danger is the crossing into ring 3 — the exact water
+    // where the twin hammerdeads took the skiff apart unannounced.
+    const run = (seed: string) => {
+      let v = steer(startVoyage(seed), { throttle: 1 });
+      const seen: { ring: number; rated: number }[] = [];
+      for (let i = 0; i < Math.round(35 / SEA_STEP); i++) {
+        const out = stepVoyage(v);
+        v = out.voyage;
+        for (const w of warningsIn(out.events)) seen.push({ ring: w.ring, rated: w.rated });
+        if (v.sunk) break;
+      }
+      return seen;
+    };
+    const seen = run('marcha');
+    ok(seen.length >= 1, 'the run was warned at all');
+    eq(seen[0].ring, 3, 'first at the 2-to-3 crossing');
+    for (let i = 1; i < seen.length; i++) {
+      ok(seen[i].ring > seen[i - 1].ring, 'and after that only ever deeper');
+    }
+    eq(JSON.stringify(run('marcha')), JSON.stringify(seen), 'deterministically — same seed, same warnings');
+  });
+});
+
 describe('the hold reaches the island', () => {
   test('cargo lands in the stores, capped like any other income', () => {
     const start = quiet();

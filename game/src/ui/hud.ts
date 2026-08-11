@@ -58,8 +58,11 @@ export interface ResourceState {
 // 'obras' and 'recoger' both deliberately cue no chrome: the timer bars and the
 // bubbles over the island are already saying it. They exist so that 'none' keeps
 // meaning "the loop is genuinely broken" rather than "the list is short".
+// 'almacen' is 'construir' with a reason: the last voyage spilled cargo the
+// island has no store for (round 11's playtest, finding 1). Same route — the
+// picker — sharper words on the objective line.
 export type HudCue =
-  | 'construir' | 'cofres' | 'diario' | 'pills' | 'zarpar' | 'recoger' | 'obras' | 'none';
+  | 'construir' | 'almacen' | 'cofres' | 'diario' | 'pills' | 'zarpar' | 'recoger' | 'obras' | 'none';
 
 export interface HudState {
   level: number;
@@ -400,7 +403,11 @@ export async function createHud(
       anchor.style.setProperty('--ay', `${-BUBBLE_TIP.y * 100}%`);
       anchor.append(bubble.el);
     } else if (spec.kind === 'timer') {
-      const bar = createTimerBar(() => open('Terminar Ya'));
+      // The tap carries the item's own id: `timer-<buildingId>` opens that
+      // building's sheet, `clear-<obstacleId>` opens the clear job's (round
+      // 11's finding 3). Routing "whichever job happens to be first" was only
+      // ever right while one thing could run at a time.
+      const bar = createTimerBar(() => open('Terminar Ya', spec.id));
       bar.set(spec.remainingMs, spec.totalMs);
       item.bar = bar;
       anchor.append(bar.el);
@@ -778,6 +785,16 @@ export async function createHud(
           count: `${state.builders.free}/${state.builders.total}`,
           go: () => open('Construir'),
         };
+      case 'almacen':
+        // Round 11's playtest, finding 1 — the last voyage spilled cargo the
+        // island cannot hold. The line names the fix; the tap opens the same
+        // picker 'construir' does, where the store's row carries its price.
+        // (Copy lives here, not in copy.ts — that file is shared this round.)
+        return {
+          text: 'El botín del mar necesita un almacén',
+          count: null,
+          go: () => open('Construir'),
+        };
       case 'cofres':
         return {
           text: COPY['obj.chest'],
@@ -908,7 +925,7 @@ export async function createHud(
     // §4.8 is resolved in the sim and handed over in `cue`, so there is exactly
     // one implementation of the priority list rather than two that drift.
     const next = state.cue ?? 'none';
-    isla.setCued(next === 'construir');
+    isla.setCued(next === 'construir' || next === 'almacen');
     cofres.setCued(next === 'cofres');
     diario.setCued(next === 'diario');
     sail.setCued(next === 'zarpar');

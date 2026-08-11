@@ -40,6 +40,48 @@ export function awardChestInPlace(state: GameState, type: string): number {
   return slot;
 }
 
+/**
+ * What a tap on Cofres should DO right now — round 11's playtest, finding 2.
+ *
+ * On a day-one save the tray is four empty slots, and the old route fell
+ * through every case to the toast `Solo un cofre a la vez` — a refusal about a
+ * rule the player had never met, over zero chests. This resolves the tap in
+ * priority order and, when there is genuinely nothing, answers with WHEN
+ * chests come instead of a mis-worded rule: the running unlock's clock, the
+ * Muelle's next Cofre Libre, or the fact that there is no Muelle yet at all.
+ */
+export type ChestTrayHint =
+  | { kind: 'open'; slot: number }
+  | { kind: 'claim-free' }
+  | { kind: 'start'; slot: number }
+  | { kind: 'unlocking'; remainingMs: number }
+  /** Nothing in the tray, but the dock stands: the next Cofre Libre lands in `inMs`. */
+  | { kind: 'come-later'; inMs: number }
+  /** Nothing in the tray and no Muelle: the honest answer is the building. */
+  | { kind: 'build-dock' };
+
+export function chestTrayHint(state: GameState, now: number): ChestTrayHint {
+  const ready = state.chests.findIndex((s) => s.state === 'ready');
+  if (ready >= 0) return { kind: 'open', slot: ready };
+  if (state.freeChestsBanked > 0) return { kind: 'claim-free' };
+
+  const unlocking = state.chests.filter((s) => s.state === 'unlocking' && s.endsAt !== null);
+  const waiting = state.chests.findIndex((s) => s.state === 'waiting');
+  if (waiting >= 0 && unlocking.length < BALANCE.chests.concurrentUnlocks) {
+    return { kind: 'start', slot: waiting };
+  }
+  if (unlocking.length > 0) {
+    return { kind: 'unlocking', remainingMs: Math.max(0, Math.min(...unlocking.map((s) => s.endsAt! - now)) ) };
+  }
+
+  const dock = state.buildings.some(
+    (b) => b.type === BALANCE.chests.freeChest.building && b.level >= 1
+  );
+  return dock
+    ? { kind: 'come-later', inMs: Math.max(0, state.freeChestAt - now) }
+    : { kind: 'build-dock' };
+}
+
 export function startRefusal(state: GameState, slot: number): Refusal | null {
   const cell = state.chests[slot];
   if (!cell || cell.state !== 'waiting') return 'slot-busy';

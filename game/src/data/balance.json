@@ -106,7 +106,8 @@
           "deposito",
           "metal",
           "defensas",
-          "recoger_todo"
+          "recoger_todo",
+          "sloop"
         ]
       },
       {
@@ -118,7 +119,6 @@
         "maxBuildingLevel": 5,
         "unlocks": [
           "mortero",
-          "sloop",
           "amenaza"
         ]
       },
@@ -810,7 +810,20 @@
       "unlocksAction": "zarpar",
       "$doc": "waterfront: the Muelle belongs ON the shoreline, so it is exempt from the buildable-plateau check the other buildings get.",
       "waterfront": true,
-      "$decision": "cost and time — §4.10 fixes the 1m timer at beat 1:15, the cost is ours",
+      "$decision": [
+        "cost and time — §4.10 fixes the 1m timer at beat 1:15, the cost is ours.",
+        "",
+        "`ship: skiff` — round 12, and it is THE change that unwalls the game. Round 11's",
+        "playtest walked the whole cold path and never sailed: the starter hull hung off the",
+        "Astillero's first level, which sits behind hall 2, hall 3 and 5 000 madera — days of",
+        "idle check-ins before the half of the game RETENTION.md's loop closes through. The",
+        "design call: THE STARTER SKIFF SAILS FREE. The skiff is the Muelle's — build a dock",
+        "for 300 madera at hall 1 and there is a boat tied to it, in the first session, which",
+        "is the whole first-mate promise of OPENING.md. Everything that reads ship ownership",
+        "(sailLocked in ui/present.ts, hasShip in sim/tutorial.ts, sim/shipyard.ts) reads it",
+        "off level rows, so this one field is the entire mechanism. The Astillero now gates",
+        "BETTER HULLS, not sailing at all."
+      ],
       "countByTownHall": [
         1,
         1,
@@ -836,7 +849,8 @@
           "cost": {
             "madera": 300
           },
-          "time": "1m"
+          "time": "1m",
+          "ship": "skiff"
         }
       ]
     },
@@ -846,7 +860,19 @@
       "model": "bldg_shipwright",
       "footprint": 5,
       "unlockAtTownHall": 3,
-      "$decision": "the whole ladder — PLAN Fase 4's five classes, Skiff → Sloop → Galleon → Frigate → Marauder. Each level IS the purchase of its `ship` (sim/shipyard.ts reads ownership straight off the building's level, so there is no second ledger to drift), the costs are the long-arc gold sink RETENTION.md's days/weeks clock asks for — 20k → 90k → 220k → 450k oro, each rung at least double the last — and ron and metal ride along so both late resources keep a reason to exist. The invariant test walks these against reachable storage at the hall level that opens each rung.",
+      "$decision": [
+        "the ladder — PLAN Fase 4's deep classes, Sloop → Galleon → Frigate → Marauder.",
+        "Level 1 is THE YARD ITSELF and carries no ship: the skiff is the Muelle's (see its",
+        "row — round 12's unwalling of the first sail), so the Astillero gates better hulls",
+        "rather than sailing. From level 2 up, each level IS the purchase of its `ship`",
+        "(sim/shipyard.ts reads ownership straight off level rows, so there is no second",
+        "ledger to drift), the costs are the long-arc gold sink RETENTION.md's days/weeks",
+        "clock asks for — 20k → 90k → 220k → 450k oro, each rung at least double the last —",
+        "and ron and metal ride along so both late resources keep a reason to exist. The",
+        "invariant test walks these against reachable storage at the hall level that opens",
+        "each rung. Level 1's 5 000 madera is a hall-3 project, not a wall: the sea has been",
+        "open since the 300-madera Muelle."
+      ],
       "countByTownHall": [
         0,
         0,
@@ -872,8 +898,7 @@
           "cost": {
             "madera": 5000
           },
-          "time": "2h",
-          "ship": "skiff"
+          "time": "2h"
         },
         {
           "cost": {
@@ -1473,8 +1498,11 @@
         "play, and drowning means the player chose to stay."
       ],
       "$ladder": [
-        "PLAN.md Fase 4's five classes, priced by the Astillero's own level rows (the",
-        "purchase is the upgrade; sim/shipyard.ts reads ownership off the building). The",
+        "PLAN.md Fase 4's five classes. The skiff is the Muelle's — it comes with the",
+        "300-madera dock, day one, because the sea is the game's second half and a first",
+        "session that never sails never meets the game (round 12). The deeper four are",
+        "priced by the Astillero's level rows (the purchase is the upgrade;",
+        "sim/shipyard.ts reads ownership off level rows wherever they hang). The",
         "shape of the ladder is one trade repeated: every rung buys HULL, GUNS and HOLD",
         "and pays for them in HANDLING — turn, accel and turnDrag all get worse, so a",
         "marauder is a fortress that answers the helm like a loaded barge. Top speed",
@@ -1489,6 +1517,20 @@
         "the first hull whose guns pay the squid's 340 in under ten volleys."
       ],
       "calm": 6,
+      "$rated": [
+        "The deepest ring each hull is a MATCH for — one ring further out, the water",
+        "outranks the ship and sim/sea.ts raises its once-per-crossing 'zone-warning'",
+        "event, which the sea HUD turns into the line round 11's playtest asked for:",
+        "twin ring-3 hammerdeads took a skiff from 86% to 6% with no warning that",
+        "zones outrank the starter hull. Read against the measured fleet table",
+        "(node tools/voyages.mjs): a skiff comes home from rings 1-2 at 100% with the",
+        "hull barely marked, and ring 3 is where a fifth of the hull routinely stays",
+        "behind — so the skiff is rated 2 and the first warning is the 2→3 crossing,",
+        "exactly where the playtest got hurt. Each hull up the ladder is rated one",
+        "ring deeper; the rings tile outward forever, so even a marauder finds water",
+        "that outranks it. A warning, not a wall: the sim only speaks, the player",
+        "still chooses, and that choice is the whole risk curve."
+      ],
       "skiff": {
         "hull": 150,
         "speed": 17,
@@ -1501,7 +1543,8 @@
         "range": 54,
         "radius": 2.4,
         "hold": 900,
-        "repair": 2.2
+        "repair": 2.2,
+        "rated": 2
       },
       "sloop": {
         "hull": 210,
@@ -1515,7 +1558,8 @@
         "range": 57,
         "radius": 2.8,
         "hold": 1400,
-        "repair": 2.7
+        "repair": 2.7,
+        "rated": 3
       },
       "galleon": {
         "hull": 300,
@@ -1529,7 +1573,8 @@
         "range": 61,
         "radius": 3.4,
         "hold": 2200,
-        "repair": 3.3
+        "repair": 3.3,
+        "rated": 4
       },
       "frigate": {
         "hull": 420,
@@ -1543,7 +1588,8 @@
         "range": 65,
         "radius": 4,
         "hold": 3400,
-        "repair": 4
+        "repair": 4,
+        "rated": 5
       },
       "marauder": {
         "hull": 560,
@@ -1557,7 +1603,8 @@
         "range": 70,
         "radius": 4.6,
         "hold": 5200,
-        "repair": 4.8
+        "repair": 4.8,
+        "rated": 6
       }
     },
     "grounding": {

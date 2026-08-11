@@ -159,6 +159,31 @@ export interface QuestState {
   coronas: number;
 }
 
+/**
+ * What the last voyage put ashore — round 11's playtest, finding 1.
+ *
+ * `landCargoInPlace` obeys the store caps, and on an island with no Bodega the
+ * cap for ron is ZERO: the whole hold spilled and nothing anywhere said so —
+ * "the landing manifest said Ron 180 · Metal 99 and the save ledger reads
+ * ron:0, metal:0". The sim already reported the spill in its return value, but
+ * the caller lands the cargo on the way OUT of the sea, before the island
+ * scene exists to say anything. So the report travels in the save: the island
+ * reads it on boot, says out loud what LANDED and what SPILLED and why, and
+ * marks it `seen` so a reload does not repeat it. The report itself stays
+ * until the next landing replaces it, because the next-action resolver keeps
+ * pointing at the missing store for as long as the loss is the live problem.
+ */
+export interface LandingReport {
+  /** What actually reached the stores, by resource. */
+  landed: Partial<Record<ResourceId, number>>;
+  /** What the caps refused — the part that must never vanish in silence. */
+  spilled: Partial<Record<ResourceId, number>>;
+  /** The sim instant the hold was emptied. */
+  at: number;
+  /** True once the island has said it out loud. */
+  seen: boolean;
+}
+
 /** Everything the quests and the Diario count. Plain numbers so it serializes. */
 export interface Stats {
   collects: number;
@@ -220,6 +245,10 @@ export interface GameState {
   daily: DailyState;
   quests: QuestState;
   stats: Stats;
+
+  /** The last voyage's landing, spill and all. Optional so a version-3 save
+   *  needs no migration: absent simply means no voyage has landed yet. */
+  landing?: LandingReport | null;
 
   /** One-shot UI flags (tutorial beats seen, pills revealed…). */
   flags: Record<string, boolean>;

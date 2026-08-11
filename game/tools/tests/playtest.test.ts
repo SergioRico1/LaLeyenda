@@ -1,0 +1,263 @@
+import {
+  BALANCE, MINUTE, chestTrayHint, claimQuest, clearNowCost, clearObstacle, createDemoIsland,
+  finishClearNow, gemSpeedupCost, landCargoInPlace, markLandingSeen, nextAction, previewLanding,
+  spilledStoreNeeded, storeCap,
+  type GameState,
+} from '../../src/sim';
+import { season } from '../../src/sim/rivals';
+import { describe, test, ok, eq, deepEq } from './harness';
+import { T0, TZ, game, quiet } from './fixtures';
+
+/**
+ * playtest.test.ts — round 11's playtest, each finding pinned by a test.
+ *
+ * The playtester walked the whole cold path in a real browser and four things
+ * came back broken: cargo evaporating in silence (finding 1), the chest tap
+ * answering nonsense on day one (2), clear jobs with no visible state (3), and
+ * a Diario that claimed rewards without ever showing the quest list (5). Every
+ * case here is the headless half of one of those — the mechanism the UI now
+ * stands on, asserted where a regression would put the bug back.
+ */
+
+/* --------------------------------------------------------------------------
+ * finding 1 — "landing manifest said Ron 180 · Metal 99 … the save ledger
+ * reads ron:0, metal:0". A player must never watch loot evaporate in silence.
+ * ----------------------------------------------------------------------- */
+
+describe('playtest 1 · the landing report', () => {
+  test('REPRO: a day-one island spills every drop of ron and metal it lands', () => {
+    const state = game();
+    eq(storeCap(state, 'ron'), 0, 'no Bodega: the ron cap is zero');
+    eq(storeCap(state, 'metal'), 0, 'no Depósito: the metal cap is zero');
+
+    const { landed, spilled } = landCargoInPlace(state, { ron: 180, metal: 99, oro: 40 });
+    eq(landed.oro, 40, 'the oro fits in the hall strongroom');
+    eq(landed.ron, undefined, 'not a drop of ron lands');
+    eq(spilled.ron, 180, 'the ron is reported spilled');
+    eq(spilled.metal, 99, 'the metal is reported spilled');
+    eq(state.store.ron, 0, 'the ledger honestly holds none of it');
+  });
+
+  test('the landing is WRITTEN INTO THE SAVE, spill and all, so a later boot can say it', () => {
+    const state = game();
+    landCargoInPlace(state, { ron: 180, metal: 99, oro: 40 });
+
+    ok(state.landing, 'the landing report exists on the state');
+    deepEq(state.landing!.landed, { oro: 40 }, 'what landed is recorded');
+    deepEq(state.landing!.spilled, { ron: 180, metal: 99 }, 'what spilled is recorded');
+    eq(state.landing!.seen, false, 'and nobody has been told yet');
+  });
+
+  test('a clean landing still reports what landed — the arrival toast is always true', () => {
+    const state = quiet();                       // Almacén standing, cap 2 000
+    landCargoInPlace(state, { madera: 120 });
+    deepEq(state.landing!.landed, { madera: 120 }, 'the full hold banked');
+    deepEq(state.landing!.spilled, {}, 'nothing spilled');
+    eq(spilledStoreNeeded(state), null, 'and no store is being asked for');
+  });
+
+  test('an empty hold leaves no report — arriving with nothing is not an event', () => {
+    const state = game();
+    landCargoInPlace(state, {});
+    eq(state.landing ?? null, null, 'no report for an empty hold');
+  });
+
+  test('markLandingSeen stops the repeat without forgetting the loss', () => {
+    const state = game();
+    landCargoInPlace(state, { ron: 180 });
+    const result = markLandingSeen(state);
+    ok(result.ok, 'acknowledging is never refused');
+    eq(result.state.landing!.seen, true, 'seen travels in the save');
+    deepEq(result.state.landing!.spilled, { ron: 180 }, 'the loss itself is kept');
+  });
+
+  test('the resolver points a spill at the missing store once it is buildable', () => {
+    const state = game();
+    state.buildings[0].level = 2;                // Ayuntamiento 2: Bodega reachable
+    landCargoInPlace(state, { ron: 180 });
+    eq(spilledStoreNeeded(state), 'ron', 'the ron store is the named gap');
+    eq(nextAction(state, T0), 'almacen', 'and the resolver says: build it');
+  });
+
+  test('on day one the Bodega is locked behind the hall, so the cue stays construir', () => {
+    const state = game();                        // Ayuntamiento 1
+    landCargoInPlace(state, { ron: 180 });
+    eq(spilledStoreNeeded(state), null, 'a store the hall does not allow is not pointed at');
+    eq(nextAction(state, T0), 'construir', 'the generic build cue still leads the way');
+  });
+
+  test('placing the missing store retires the cue, even while it is still building', () => {
+    const state = game();
+    state.buildings[0].level = 2;
+    landCargoInPlace(state, { ron: 180 });
+    state.buildings.push({
+      id: 99, type: 'bodega', x: 30, z: 30, level: 0, stock: 0,
+      work: { kind: 'build', toLevel: 1, startedAt: T0, endsAt: T0 + MINUTE },
+    });
+    eq(spilledStoreNeeded(state), null, 'a Bodega on the ground answers the spill');
+    eq(nextAction(state, T0), 'construir', 'the cue falls back to the ordinary ladder');
+  });
+
+  test('previewLanding agrees with the landing and touches nothing', () => {
+    const state = game();
+    const before = JSON.stringify(state);
+    const preview = previewLanding(state, { ron: 180, metal: 99, oro: 40 });
+    eq(JSON.stringify(state), before, 'a preview mutates nothing');
+    const real = landCargoInPlace(structuredClone(state), { ron: 180, metal: 99, oro: 40 });
+    deepEq(preview, { landed: real.landed, spilled: real.spilled },
+      'the card the sea could print and the landing that follows are one arithmetic');
+  });
+
+  test('the next landing replaces the report — one voyage, one truth', () => {
+    const state = quiet();
+    landCargoInPlace(state, { ron: 50 });
+    landCargoInPlace(state, { madera: 80 });
+    deepEq(state.landing!.landed, { madera: 80 }, 'the new arrival is the report');
+    deepEq(state.landing!.spilled, {}, 'the old spill does not leak into the new report');
+  });
+});
+
+/* --------------------------------------------------------------------------
+ * finding 2 — the chest tap on a day-one save: "no tray opens, just a
+ * mis-worded toast 'Solo un cofre a la vez' over zero chests."
+ * ----------------------------------------------------------------------- */
+
+describe('playtest 2 · the chest tray answers honestly', () => {
+  test('day one, no Muelle: the answer is the harbour, not "one chest at a time"', () => {
+    const hint = chestTrayHint(game(), T0);
+    eq(hint.kind, 'build-dock', 'zero chests and no dock names the building');
+  });
+
+  test('a standing Muelle promises the Cofre Libre, with the wait named', () => {
+    const state = quiet();                       // the fixture has a Muelle
+    const hint = chestTrayHint(state, T0);
+    eq(hint.kind, 'come-later', 'zero chests but a dock: the next one is coming');
+    if (hint.kind === 'come-later') {
+      eq(hint.inMs, BALANCE.chests.freeChest.everyMs, 'and the toast can say when');
+    }
+  });
+
+  test('a ready chest outranks everything: the tap opens it', () => {
+    const state = quiet();
+    state.chests[1] = { type: 'plata', state: 'ready', endsAt: null, totalMs: 0 };
+    deepEq(chestTrayHint(state, T0), { kind: 'open', slot: 1 }, 'the ready slot is the tap');
+  });
+
+  test('a banked Cofre Libre is claimed before anything is started', () => {
+    const state = quiet();
+    state.freeChestsBanked = 1;
+    state.chests[0] = { type: 'bronce', state: 'waiting', endsAt: null, totalMs: 1 };
+    eq(chestTrayHint(state, T0).kind, 'claim-free', 'the banked chest comes off the dock first');
+  });
+
+  test('a waiting chest with the bench free is started', () => {
+    const state = quiet();
+    state.chests[2] = { type: 'bronce', state: 'waiting', endsAt: null, totalMs: 1 };
+    deepEq(chestTrayHint(state, T0), { kind: 'start', slot: 2 }, 'the waiting chest starts');
+  });
+
+  test('waiting behind an unlocking chest reads the clock, not a refusal', () => {
+    const state = quiet();
+    state.chests[0] = { type: 'oro', state: 'unlocking', endsAt: T0 + 47 * MINUTE, totalMs: 1 };
+    state.chests[1] = { type: 'bronce', state: 'waiting', endsAt: null, totalMs: 1 };
+    const hint = chestTrayHint(state, T0);
+    eq(hint.kind, 'unlocking', 'the truthful answer is the running timer');
+    if (hint.kind === 'unlocking') eq(hint.remainingMs, 47 * MINUTE, 'with its remaining time');
+  });
+});
+
+/* --------------------------------------------------------------------------
+ * finding 3 — clear jobs: "no timer capsule, no world item, no way to inspect
+ * or rush — it reads as a soft-lock." The sim half: rushable at the same
+ * price curve a construction pays.
+ * ----------------------------------------------------------------------- */
+
+describe('playtest 3 · a clear job is inspectable and rushable', () => {
+  const withLargeClear = (): { state: GameState; id: number } => {
+    const state = game();
+    state.gems = 100;
+    const target = state.obstacles.find((o) => o.tier === 'large');
+    ok(target, 'the seeded island holds at least one pecio or peñasco');
+    const result = clearObstacle(state, target!.id, T0);
+    ok(result.ok, 'a carpenter takes the job');
+    return { state: result.state, id: target!.id };
+  };
+
+  test('clearNowCost prices the clear on the SAME curve as a build', () => {
+    const { state, id } = withLargeClear();
+    const later = T0 + 4 * MINUTE;
+    const remaining = BALANCE.obstacles.large.timeMs - 4 * MINUTE;
+    eq(clearNowCost(state, id, later), gemSpeedupCost(remaining), 'one ladder for every timer');
+  });
+
+  test('the golden rule holds: under five minutes a clear costs exactly 1 gem', () => {
+    const state = game();
+    state.gems = 5;
+    const palm = state.obstacles.find((o) => o.tier === 'small')!;
+    const { state: cleared } = clearObstacle(state, palm.id, T0);
+    eq(clearNowCost(cleared, palm.id, T0), 1, 'a 30s palm is inside the golden five minutes');
+  });
+
+  test('finishClearNow pays the gems, fells the obstacle and lands the madera', () => {
+    const { state, id } = withLargeClear();
+    const before = state.obstacles.find((o) => o.id === id)!;
+    const madera0 = state.store.madera;
+    const cost = clearNowCost(state, id, T0)!;
+
+    const result = finishClearNow(state, id, T0);
+    ok(result.ok, 'the rush is accepted');
+    eq(result.gems, cost, 'the price charged is the one quoted');
+    // The clear's own rolled gem payout still lands: rushing buys time, never
+    // eats the reward.
+    eq(result.state.gems, 100 - cost + before.pays.gems, 'the gems left the purse');
+    ok(!result.state.obstacles.some((o) => o.id === id), 'the obstacle is off the island');
+    eq(result.state.store.madera, madera0 + before.pays.madera, 'the payout landed in the store');
+    ok(result.events.some((e) => e.type === 'obstacle-cleared'), 'and the event says so');
+    eq(result.state.stats.obstacles, 1, 'the Despeja-N quest counter ticks');
+  });
+
+  test('refusals: an idle obstacle is not-ready, an empty purse is not-enough-gems', () => {
+    const state = game();
+    const idle = state.obstacles[0];
+    eq(finishClearNow(state, idle.id, T0).refusal, 'not-ready', 'nothing to rush');
+    eq(clearNowCost(state, idle.id, T0), null, 'and no price is quoted for it');
+
+    const { state: started, id } = (() => {
+      const s = game();
+      s.gems = 0;
+      const big = s.obstacles.find((o) => o.tier === 'large')!;
+      return { state: clearObstacle(s, big.id, T0).state, id: big.id };
+    })();
+    eq(finishClearNow(started, id, T0).refusal, 'not-enough-gems', 'the price is named');
+  });
+});
+
+/* --------------------------------------------------------------------------
+ * finding 5 — the Diario auto-claimed rewards as bare toasts. Claiming stays
+ * explicit; the data the panel draws is the save's own.
+ * ----------------------------------------------------------------------- */
+
+describe('playtest 5 · the Diario claims stay explicit', () => {
+  test('the demo island opens the panel on two claimable quests', () => {
+    const state = createDemoIsland('test', T0, TZ);
+    eq(state.quests.daily.length, BALANCE.quests.dailyCount, 'three dailies in the save');
+    eq(state.quests.daily.filter((q) => !q.claimed && q.progress >= q.target).length, 2,
+      'two of them sit claimable');
+  });
+
+  test('claiming is a tap per quest, and a second tap on the same one refuses', () => {
+    const state = createDemoIsland('test', T0, TZ);
+    const first = claimQuest(state, 0);
+    ok(first.ok, 'the first claim lands');
+    eq(first.state.gems, state.gems + BALANCE.quests.reward.gemas, 'gems granted');
+    eq(first.state.quests.coronas, BALANCE.quests.reward.coronas, 'a corona granted');
+    const again = claimQuest(first.state, 0);
+    eq(again.refusal, 'not-ready', 'the same reward cannot be taken twice');
+  });
+
+  test('the season line has a season to print', () => {
+    const s = season(T0);
+    ok(s.endsAt > T0, 'the season is running');
+    ok(s.index >= 0, 'and has an index the plate can name');
+  });
+});

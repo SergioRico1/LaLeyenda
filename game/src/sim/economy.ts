@@ -1,4 +1,7 @@
-import { BALANCE, RESOURCE_IDS, buildingSpec, levelSpec, type Cost, type ResourceId } from './balance';
+import {
+  BALANCE, RESOURCE_IDS, buildingSpec, levelSpec, reachableLevel, storeTypeFor,
+  type Cost, type ResourceId,
+} from './balance';
 import { HOUR } from './duration';
 import type { Building, GameState } from './types';
 
@@ -195,6 +198,13 @@ export function collectInPlace(state: GameState, building: Building): CollectOut
  * that can be exceeded from the dock makes upgrading it pointless. What spills
  * is reported rather than silently dropped, because arriving with a full hold
  * and being told nothing is the version of this that feels like a bug.
+ *
+ * Round 11's playtest proved the return value alone was not a report: the
+ * caller lands the cargo on the way OUT of the sea, before the island scene
+ * exists to say anything, so "Ron 180 · Metal 99" evaporated against a zero
+ * cap with the console as the only witness. The outcome is therefore ALSO
+ * written onto the state (`state.landing`), where the island reads it on boot,
+ * says it out loud, and marks it seen — see LandingReport in types.ts.
  */
 export function landCargoInPlace(
   state: GameState,
@@ -216,7 +226,64 @@ export function landCargoInPlace(
     if (over > 0) spilled[resource] = over;
   }
 
+  // An empty hold is not an event; anything else replaces the previous report
+  // wholesale, so one voyage tells one truth.
+  if (Object.keys(landed).length > 0 || Object.keys(spilled).length > 0) {
+    state.landing = { landed, spilled, at: state.now, seen: false };
+  }
+
   return { landed, spilled };
+}
+
+/**
+ * What landing `cargo` WOULD bank and spill, without landing it.
+ *
+ * ✎ SEAM for the sea's end-of-voyage card (src/ui/seaHud.ts, another round's
+ * file): it currently prints the MANIFEST — `voyage.cargo` under "La carga
+ * pasa a tus almacenes" — which on an island with no Bodega is round 11's
+ * finding 1 told at the dock. One call here, with the island state the sea
+ * already loads, and the card can print what will actually land before the
+ * player taps A la isla. Pure and non-mutating: same arithmetic as
+ * `landCargoInPlace`, run on a throwaway copy of the store.
+ */
+export function previewLanding(
+  state: GameState,
+  cargo: Partial<Record<ResourceId, number>>
+): { landed: Partial<Record<ResourceId, number>>; spilled: Partial<Record<ResourceId, number>> } {
+  const landed: Partial<Record<ResourceId, number>> = {};
+  const spilled: Partial<Record<ResourceId, number>> = {};
+  for (const resource of RESOURCE_IDS) {
+    const held = cargo[resource] ?? 0;
+    if (held <= 0) continue;
+    const moved = Math.min(held, Math.max(0, storeCap(state, resource) - state.store[resource]));
+    if (moved > 0) landed[resource] = moved;
+    if (held - moved > 0) spilled[resource] = held - moved;
+  }
+  return { landed, spilled };
+}
+
+/**
+ * The resource whose recorded spill a store build would answer, or null.
+ *
+ * This is the §4.8 resolver's evidence for the `almacen` cue: the last landing
+ * lost something, the island has NO capacity for it, the store that would hold
+ * it is actually allowed at this Ayuntamiento, and nobody has placed one yet.
+ * A store the hall does not allow is deliberately not pointed at — the road
+ * there is the hall itself, and rule 1's generic construir already walks it.
+ */
+export function spilledStoreNeeded(state: GameState): ResourceId | null {
+  const landing = state.landing;
+  if (!landing) return null;
+  const hall = townHallLevel(state);
+  for (const resource of RESOURCE_IDS) {
+    if ((landing.spilled[resource] ?? 0) <= 0) continue;
+    if (storeCap(state, resource) > 0) continue;
+    const type = storeTypeFor(resource);
+    if (reachableLevel(type, hall) < 1) continue;
+    if (state.buildings.some((b) => b.type === type)) continue;
+    return resource;
+  }
+  return null;
 }
 
 /* --------------------------------------------------------------------------

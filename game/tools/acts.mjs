@@ -20,13 +20,17 @@
  * and these are the invocations that reach the feature:
  *
  *   island (default)  picker · pickerOpen · place · placed · blocked · refused
- *                     · upgrade · pan · pinch · store · leaderboard
- *   island --save demo            working · chest · finished · inaugurate
+ *                     · upgrade · pan · pinch · store · leaderboard · clearing
+ *                     (clearing is a DAY-ONE act on purpose: it needs the
+ *                      wilderness, and the demo island has been cleared;
+ *                      --panel capsule stops before the sheet)
+ *   island --save demo            working · chest · finished · inaugurate · diario
  *                                 (store and leaderboard run here too — the demo
  *                                  island is the one with 256 gems and a
  *                                  mid-table score, so it is what the panel
  *                                  shots use; add --panel confirm / --panel
- *                                  paid / --panel top for the deeper states)
+ *                                  paid / --panel top for the deeper states,
+ *                                  and diario takes --panel claim)
  *   island --tutorial 1           teach
  *   island --t 35 --motion 1      guide   (§3.4's tooltip is suppressed under a
  *                                          deterministic capture on purpose —
@@ -493,6 +497,67 @@ export const ACTS = {
     await (await need(page, '[aria-label="Clasificación"]', 'the rank cell')).click();
     await need(page, '.board__sheet', 'the Clasificación sheet');
     await need(page, '.board__row--you', 'the player\'s own row');
+    await step(page, 2);
+  },
+
+  /**
+   * The Diario de a Bordo (round 11's playtest, finding 5), opened from its
+   * own nav slot. `--save demo` is the island with two claimable quests and an
+   * unclaimed daily, so the shot shows a green Reclamar in both sections.
+   *
+   *   npm run shoot -- island --save demo --mobile --act diario
+   */
+  async diario(page) {
+    await (await need(page, 'button[aria-label="Diario"]', 'the Diario nav slot')).click();
+    await need(page, '.diario__sheet', 'the Diario sheet');
+    await need(page, '.diario__quest', 'the quest list');
+    await need(page, '.diario__day', 'the daily chain');
+    await step(page, 2);
+
+    // --panel claim: tap the first quest's Reclamar, so the claimed state —
+    // the drawn check, the row receding, the badge falling — is reviewable.
+    const knob = await page.evaluate(() => new URLSearchParams(location.search).get('panel'));
+    if (knob !== 'claim') return;
+    await (await need(page, '.diario__quest .diario__claim', 'a claimable quest')).click();
+    await need(page, '.diario__quest.is-claimed', 'the claimed row');
+    await step(page, 2);
+  },
+
+  /**
+   * A clear job made visible (round 11's playtest, finding 3): send a
+   * carpenter to a LARGE obstacle on the day-one island, then open the world
+   * capsule it now wears into the job's own sheet — timer, payout and the gold
+   * Terminar Ya with the gem price on it.
+   *
+   * The wilderness is instanced geometry with no DOM over it, so the island
+   * exposes `window.__wild` under `?shot=1` — each obstacle with its projected
+   * screen position — the same precedent as `__camera`. The act picks a big
+   * one in the middle band of the frame and taps the ground it stands on.
+   *
+   *   npm run shoot -- island --mobile --act clearing
+   *   npm run shoot -- island --mobile --act clearing --panel capsule   (no sheet)
+   */
+  async clearing(page) {
+    const wild = await page.evaluate(() => window.__wild?.() ?? []);
+    const size = page.viewportSize();
+    // Inside the frame, clear of Zone A above and the nav bar below.
+    const fits = (o) => o.at
+      && o.at.x > 30 && o.at.x < size.width - 30
+      && o.at.y > 150 && o.at.y < size.height * 0.72;
+    // A pecio or peñasco if one is on screen: the fifteen-minute job is the
+    // one the finding was about, and its gem price photographs above 1.
+    const target = wild.filter((o) => o.tier === 'large').find(fits) ?? wild.find(fits);
+    if (!target) throw new Error('act: no obstacle with a screen position in the tap band');
+
+    await page.mouse.click(target.at.x, target.at.y);
+    await step(page, 3);
+    const capsule = await need(page, '.world-item .timerbar', 'the clear-job capsule');
+
+    // --panel is forwarded to the page as a query param (see shoot.mjs).
+    const knob = await page.evaluate(() => new URLSearchParams(location.search).get('panel'));
+    if (knob === 'capsule') return;
+    await capsule.click();
+    await need(page, '.sheet.is-open .sheet__cta', 'the clear sheet\'s Terminar Ya');
     await step(page, 2);
   },
 

@@ -9,6 +9,7 @@ import {
   firstClearCoversFirstBuild, tutorialActive, tutorialFinished, tutorialObstacle, tutorialProgress,
   tutorialStep, type TutorialStep, type TutorialStepId,
 } from '../../src/sim/tutorial';
+import { flagship } from '../../src/sim/shipyard';
 import { COPY } from '../../src/ui/copy';
 import { serialize, parseSave, type SaveEnvelope } from '../../src/core/save';
 import { describe, eq, ok, test } from './harness';
@@ -88,6 +89,17 @@ function obey(session: Session, step: TutorialStep): void {
       if (!spot) return;
       const result = place(state, 'aserradero', spot.x, spot.z, now);
       ok(result.ok, `construir: the placement was accepted (${result.refusal ?? 'ok'})`);
+      session.state = result.state;
+      return;
+    }
+    case 'muelle': {
+      // Round 12's beat: the dock whose level row carries the free skiff. Same
+      // route as construir — the picker, then `place` on ground the sim accepts.
+      const spot = firstLegalSpot(state, 'muelle');
+      ok(spot !== null, 'muelle: there is somewhere the dock may stand');
+      if (!spot) return;
+      const result = place(state, 'muelle', spot.x, spot.z, now);
+      ok(result.ok, `muelle: the placement was accepted (${result.refusal ?? 'ok'})`);
       session.state = result.state;
       return;
     }
@@ -221,8 +233,15 @@ describe('the whole tutorial, played through', () => {
     eq(tutorialProgress(session.state, session.now).done, TUTORIAL_BEATS, 'the dots are all filled');
 
     // The island it leaves behind is the one OPENING.md describes: the hall,
-    // the Aserradero the player placed, and a field with a hole in it.
+    // the Aserradero the player placed, a field with a hole in it — and, since
+    // round 12, a dock with a boat tied to it. The zarpar beat is no longer a
+    // promise about hall 3: the tile it points at is genuinely open.
     ok(session.state.buildings.some((b) => b.type === 'aserradero'), 'the Aserradero was built');
+    ok(
+      session.state.buildings.some((b) => b.type === 'muelle' && b.level >= 1),
+      'the Muelle was built, and finished'
+    );
+    eq(flagship(session.state), 'skiff', 'the skiff is at the helm — ¡Zarpar! is unlocked, in session one');
     ok(session.state.stats.obstacles >= 1, 'at least one obstacle was cleared');
     ok(session.state.stats.collects >= 1, 'and something was collected');
     ok(session.state.daily.lastClaimedDay !== null, 'and the daily was taken');
@@ -235,6 +254,23 @@ describe('the whole tutorial, played through', () => {
     const beats: TutorialStepId[] = [];
     for (const id of session.seen) if (beats[beats.length - 1] !== id) beats.push(id);
     console.log(`      cards: ${beats.join(' → ')}`);
+  });
+
+  test('the whole taught opening fits a first session, first sail included', () => {
+    // Round 12's production bar: the walk — first sail reachable AND taken —
+    // inside ten minutes of island time. The island half is bounded at seven
+    // minutes here so a two-to-three-minute first voyage (the fleet table's
+    // ring-1 median is 14s sailing; the sea scene's coach marks and the trip
+    // itself round it to minutes) still fits inside the ten with room.
+    for (const seed of ['la-leyenda', 'tortuga', 'bahia', 'q7', 'pirata']) {
+      const session = play(seed);
+      const taught = session.now - T0;
+      ok(
+        taught <= 7 * MINUTE,
+        `${seed}: taught in ${Math.round(taught / 1000)}s — the sail beat is a session-one beat`
+      );
+      eq(flagship(session.state), 'skiff', `${seed}: and it ends with a boat at the helm`);
+    }
   });
 
   test('it never parks the player in front of a timer with nothing to do', () => {
@@ -326,6 +362,10 @@ describe('it never lies', () => {
           eq(placeRefusal(state, 'aserradero', now), null, 'construir is affordable, allowed, and has a carpenter');
           ok(firstLegalSpot(state, 'aserradero') !== null, 'and there is ground it may stand on');
           return;
+        case 'muelle':
+          eq(placeRefusal(state, 'muelle', now), null, 'the dock is affordable, allowed, and has a carpenter');
+          ok(firstLegalSpot(state, 'muelle') !== null, 'and there is ground it may stand on');
+          return;
         case 'recoger': {
           ok(target.kind === 'building', 'recoger points at a building');
           if (target.kind !== 'building') return;
@@ -342,6 +382,13 @@ describe('it never lies', () => {
           ok(claimable, 'and there is something claimable behind it');
           return;
         }
+        case 'zarpar':
+          // "Toca ¡Zarpar!" may only ever be said over an unlocked tile — the
+          // rows the HUD locks on (`sailLocked`) must already say boat.
+          if (step.text.includes('toca ¡Zarpar!')) {
+            ok(flagship(state) !== null, 'the tap it asks for is genuinely open');
+          }
+          return;
         default:
           return;
       }

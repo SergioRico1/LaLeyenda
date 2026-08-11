@@ -75,6 +75,7 @@ export type TutorialStepId =
   | 'temporizador'
   | 'recoger'
   | 'diario'
+  | 'muelle'
   | 'zarpar'
   /** Not a beat. The card while the island is working and the next beat is not
    *  yet performable — see `tutorialStep`. */
@@ -174,8 +175,25 @@ const townHall = (state: GameState) =>
 /** The building the whole opening is about. */
 const FIRST_PRODUCER = 'aserradero';
 
+/**
+ * The building the whole GAME is about, since round 12: the Muelle's level row
+ * carries the starter skiff (balance.json — the same rows `hasShip` below and
+ * `sailLocked` in ui/present.ts read), so the dock is the door to the sea and
+ * beat 7 walks the player through it in their first session. Named here the
+ * way FIRST_PRODUCER is, rather than imported from sim/shipyard.ts, because
+ * what the beat needs is a picker row and a placement — building-catalogue
+ * facts — and the test asserts the row really does carry a hull.
+ */
+const HARBOUR = 'muelle';
+
 const firstProducer = (state: GameState) =>
   state.buildings.find((b) => b.type === FIRST_PRODUCER) ?? null;
+
+/** A finished Muelle — level ≥ 1, not a plot mid-build. The beat that waits on
+ *  this must not end while the dock is still a job, or the walk would hand the
+ *  player to ¡Zarpar! a minute before the lock actually opens. */
+const harbourStanding = (state: GameState): boolean =>
+  state.buildings.some((b) => b.type === HARBOUR && b.level >= 1);
 
 /**
  * The obstacle the tutorial sends the first carpenter to.
@@ -217,7 +235,9 @@ function fullestProducer(state: GameState) {
 }
 
 /** The same test the HUD greys ¡Zarpar! with (`sailLocked` in ui/present.ts):
- *  a dock is a dock, the door to the sea is the shipyard's. */
+ *  some standing support building whose level row carries a hull. Since round
+ *  12 the Muelle's own row carries the skiff, so the dock the tutorial just
+ *  had the player build is exactly what turns this true. */
 const hasShip = (state: GameState): boolean =>
   state.buildings.some(
     (b) => buildingSpec(b.type).kind === 'support' && b.level > 0 && levelSpec(b.type, b.level).ship
@@ -399,9 +419,33 @@ const BEATS: readonly Beat[] = [
         : 'Pasa por el Diario: tu recompensa de hoy te está esperando.',
   },
 
-  /* 7 — the other half of the game exists. Never "toca aquí" while the tile is
-   *     shut: a locked ¡Zarpar! names its key rather than sailing, so the line
-   *     promises a road instead of a tap. */
+  /* 7 — the door to the sea, built with the player's own hands.
+   *
+   * Round 12, and it is the round's whole finding: the first session used to
+   * END here, on a promise — the skiff hung off an Astillero behind hall 3 and
+   * 5 000 madera, so the actual pirate game sat days away. balance.json now
+   * ties the skiff to the Muelle (300 madera, one minute, hall 1), so this
+   * beat is a purchase the opening itself has already funded: the palms
+   * cleared while the Aserradero built are the dock money. The beat is only
+   * SHOWN while the sim would accept the placement — short of 300 madera the
+   * gap cards hand out palm clears, which is where the madera comes from. */
+  {
+    id: 'muelle',
+    ack: false,
+    done: harbourStanding,
+    aim: (state, now) =>
+      placeRefusal(state, HARBOUR, now) === null
+        ? { kind: 'nav', label: NAV.island, building: HARBOUR }
+        : null,
+    text: () => 'Levanta el Muelle: tu esquife llega amarrado a él, listo para zarpar.',
+  },
+
+  /* 8 — and through it. The tile is genuinely open by this beat — the Muelle
+   *     the player just built is what unlocked it (`hasShip` below, the same
+   *     rows `sailLocked` reads) — so the card asks for the tap that starts
+   *     the actual pirate game, in session one. The fallback line exists for
+   *     islands the walk did not build (imports, fixtures) and promises the
+   *     road rather than the tap. */
   {
     id: 'zarpar',
     ack: true,
@@ -410,7 +454,7 @@ const BEATS: readonly Beat[] = [
     text: (state) =>
       hasShip(state)
         ? 'Ya tienes barco: toca ¡Zarpar! y sal a buscar botín.'
-        : 'Ahí fuera está el mar. Levanta el Muelle y el Astillero y será tuyo.',
+        : 'Ahí fuera está el mar. Levanta el Muelle y será tuyo.',
   },
 ];
 

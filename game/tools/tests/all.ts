@@ -5,6 +5,7 @@ import './offline.test';
 import './build.test';
 import './obstacles.test';
 import './session.test';
+import './playtest.test';
 import './tutorial.test';
 import './retention.test';
 import './save.test';

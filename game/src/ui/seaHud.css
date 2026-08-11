@@ -264,6 +264,105 @@
   100% { transform: translateY(0); opacity: 1; }
 }
 
+/* --- the boss bar ----------------------------------------------------------
+ * El Kraken's name, phase pips and health, top centre where every boss bar in
+ * the genre lives. A raised object, so it carries the full four layers: ink
+ * contour, gloss step across the middle, warm rim inside the top edge, dark
+ * lip and the extrusion drop. The family is the deep wine of a danger that is
+ * not YOUR hull — red is the player's own alarm and the two must not read as
+ * one voice. */
+
+.sea__boss {
+  position: absolute;
+  top: calc(var(--ui-safe-t) + 64px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(56vw, 248px);
+  padding: 6px 12px 9px;
+  border-radius: 13px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.15) 0 50%, rgba(0, 0, 0, 0.2) 50% 100%),
+    linear-gradient(180deg, #57202B, #331016);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 186, 164, 0.42),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.5),
+    var(--ui-drop-sm);
+  animation: sea-alert-in 0.24s ease-out;
+}
+
+.sea__boss[hidden] { display: none; }
+
+/* The alert chip lives on the same latitude; while the kraken has the stage
+   the remedy line steps one row down instead of fighting it. */
+.sea.has-boss .sea__alert { top: calc(var(--ui-safe-t) + 132px); }
+
+.sea__bossHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.sea__bossName {
+  font-size: 15px;
+  line-height: 1;
+  -webkit-text-stroke-width: 1.9px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.75);
+}
+
+/* Phase pips: one per phase, the second lights when the pattern turns. */
+.sea__bossPips {
+  display: flex;
+  gap: 5px;
+}
+
+.sea__bossPip {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #4A2A30;
+  border: 2px solid var(--ui-ink);
+  box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.18);
+}
+
+.sea__bossPip.is-on {
+  background: linear-gradient(180deg, #FFE9A8 0 50%, #F5B92E 50% 100%);
+}
+
+.sea__boss[data-phase='frenzy'] .sea__bossPip.is-on:last-child {
+  background: linear-gradient(180deg, #FF8A70 0 50%, #D4141A 50% 100%);
+}
+
+.sea__bossTrack {
+  position: relative;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--ui-track-well);
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.sea__bossFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background:
+    var(--ui-fill-gloss),
+    linear-gradient(180deg, var(--ui-red-gloss-a) 0 50%, var(--ui-red-a) 50% 100%);
+  transition: width 0.18s ease-out, opacity 0.3s linear;
+}
+
+/* The turn: the fill burns brighter and breathes. */
+.sea__boss[data-phase='frenzy'] .sea__bossFill {
+  animation: sea-pulse 0.7s ease-in-out infinite;
+}
+
+/* Dived, the kraken cannot be shot; the bar says so by standing at ease. */
+.sea__boss[data-dived='1'] .sea__bossFill { opacity: 0.55; }
+
 /* --- the dock card — the shipyard's product, named -------------------------
  * Shown only in home water (the router adds .is-departed the moment the
  * voyage is really on), so the one moment it occupies the screen is the one
@@ -361,6 +460,21 @@
   box-shadow:
     inset 0 3px 0 rgba(255, 190, 180, 0.55),
     inset 0 -4px 0 rgba(64, 6, 6, 0.9),
+    var(--ui-drop);
+}
+
+/* Cold steel for the zone plate: deep water naming itself. A caution rather
+   than an alarm — red stays reserved for a hull actually dying — with the red
+   held to the lip so the register still reads as danger's family. */
+.sea__banner[data-kind='zone'] {
+  color: #EAF4FF;
+  font-size: 15px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0 50%, rgba(0, 0, 0, 0.2) 50% 100%),
+    linear-gradient(180deg, #2C4C68, #14283E);
+  box-shadow:
+    inset 0 3px 0 rgba(196, 228, 255, 0.4),
+    inset 0 -4px 0 rgba(120, 22, 26, 0.85),
     var(--ui-drop);
 }
 
@@ -911,6 +1025,28 @@ html.is-steering .sea__helm {
   border-radius: 999px;
   background: var(--ui-well);
   color: #fff;
+}
+
+/* The loss, said at the dock (round 11's finding 1): what the caps will
+   refuse is printed BEFORE the tap that lands the cargo, in the same chip
+   language as the loot — worn dim and struck through so it reads as GONE
+   rather than as more treasure. The note takes the game's one danger red. */
+.sea__endSpillNote {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ui-red-a);
+  margin: -2px 0 8px;
+}
+
+.sea__endList--spill {
+  margin-bottom: 14px;
+}
+
+.sea__endList--spill .sea__endItem {
+  opacity: 0.62;
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+  text-decoration-color: rgba(255, 255, 255, 0.75);
 }
 
 .sea__endCta {

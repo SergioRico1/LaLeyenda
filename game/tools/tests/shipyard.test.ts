@@ -1,22 +1,24 @@
 import {
-  SHIP_ORDER, SHIPYARD_BUILDING, flagship, nextShip, ownedShips, ownsShip, shipForVoyage,
-  shipSpec, shipyardLevel,
+  HARBOUR_BUILDING, SHIP_ORDER, SHIPYARD_BUILDING, flagship, nextShip, ownedShips, ownsShip,
+  purchaseOf, shipForVoyage, shipSpec, shipyardLevel,
 } from '../../src/sim/shipyard';
-import { MOBS, SHIPS, holdUsed, startVoyage, steer, stepVoyage } from '../../src/sim/sea';
+import { MOBS, SHIPS, SHIP_TYPES, holdUsed, startVoyage, steer, stepVoyage } from '../../src/sim/sea';
 import {
-  buildingSpec, place, startUpgrade, tick, townHallLevel, type GameState,
+  BALANCE, buildingSpec, place, startUpgrade, tick, townHallLevel, type GameState,
 } from '../../src/sim';
 import { describe, eq, ok, test } from './harness';
-import { find, game, rich } from './fixtures';
+import { find, game, quiet, rich } from './fixtures';
 
 /**
  * The shipyard — PLAN.md Fase 4's ladder, proven headlessly.
  *
- * The design under test is one sentence: ownership IS the Astillero's level,
- * the purchase IS the ordinary upgrade, and the next voyage sails the best
- * hull owned. No second ledger, no migration, no way to drift. So the proof
- * has to walk the REAL flow — raise the hall, place the yard, pay the rows,
- * serve the timers — and watch the fleet grow out of it.
+ * The design under test is one sentence: ownership IS a level row — the
+ * Muelle's single level carries the free starter skiff (round 12: the sea is
+ * day one), the Astillero's upper rows carry the deep four — the purchase IS
+ * the ordinary build or upgrade, and the next voyage sails the best hull
+ * owned. No second ledger, no migration, no way to drift. So the proof has to
+ * walk the REAL flow — place the dock, raise the hall, place the yard, pay
+ * the rows, serve the timers — and watch the fleet grow out of it.
  */
 
 /** Runs the clock past a building's current job. */
@@ -67,6 +69,8 @@ describe('the ladder itself', () => {
   test('five classes, in PLAN.md order, and every one of them sails', () => {
     eq(JSON.stringify(SHIP_ORDER), JSON.stringify(['skiff', 'sloop', 'galleon', 'frigate', 'marauder']),
       'Skiff → Sloop → Galleon → Frigate → Marauder');
+    eq(JSON.stringify(SHIP_ORDER), JSON.stringify(SHIP_TYPES),
+      'and it is exactly the sea\'s own order — every hull the sea knows is purchasable');
     for (const ship of SHIP_ORDER) {
       const spec = SHIPS[ship];
       ok(!!spec, `${ship} is in the sea's own table`);
@@ -74,6 +78,34 @@ describe('the ladder itself', () => {
         ok(typeof value === 'number' && value > 0, `${ship}.${key} is a real number`);
       }
     }
+  });
+
+  test('every hull has exactly one purchase row, and the skiff\'s is the Muelle\'s', () => {
+    // Round 12's design call as data: THE STARTER SKIFF SAILS FREE. Its
+    // purchase row is the 300-madera, one-minute dock the tutorial has the
+    // player build in their first session — not the Astillero, which now
+    // gates better hulls rather than sailing at all.
+    const rows = new Map<string, string>();
+    for (const [building, spec] of Object.entries(BALANCE.buildings)) {
+      for (const level of spec.levels) {
+        if (!level.ship) continue;
+        ok(!rows.has(level.ship), `${level.ship} is sold in one place only`);
+        rows.set(level.ship, building);
+      }
+    }
+    eq(rows.size, SHIP_ORDER.length, 'five hulls, five rows');
+    eq(rows.get('skiff'), HARBOUR_BUILDING, 'the skiff comes with the dock');
+    for (const deep of ['sloop', 'galleon', 'frigate', 'marauder']) {
+      eq(rows.get(deep), SHIPYARD_BUILDING, `${deep} is the Astillero's`);
+    }
+
+    const dock = purchaseOf('skiff');
+    eq(dock.level, 1, 'the dock\'s only level');
+    eq(dock.cost.madera, 300, 'at the 300 madera a first session has already cleared');
+    eq(buildingSpec(HARBOUR_BUILDING).unlockAtTownHall, 1, 'open from hall 1 — the sea is day one');
+    // And the yard's own first level is the yard, not a hull: building it
+    // buys the RIGHT to the deep ladder, not a boat the player already owns.
+    ok(!buildingSpec(SHIPYARD_BUILDING).levels[0].ship, 'the Astillero\'s level 1 carries no ship');
   });
 
   test('every rung buys hull, guns and hold', () => {
@@ -100,6 +132,19 @@ describe('the ladder itself', () => {
     }
   });
 
+  test('each hull is rated one ring deeper — the ladder is also the map', () => {
+    // `rated` drives the sea's zone-warning (finding 6): the ring after it is
+    // the first the sim announces as outranking the hull. The skiff's 2 is
+    // measured, not chosen — the fleet table has rings 1-2 at 100% survival
+    // with the hull barely marked, and ring 3 is where a fifth of it stays.
+    eq(shipSpec('skiff').rated, 2, 'the skiff is a rings-1-and-2 boat; ring 3 is the playtest\'s ambush');
+    for (let i = 1; i < SHIP_ORDER.length; i++) {
+      const below = shipSpec(SHIP_ORDER[i - 1]);
+      const above = shipSpec(SHIP_ORDER[i]);
+      eq(above.rated, below.rated + 1, `${SHIP_ORDER[i]} is rated exactly one ring past ${SHIP_ORDER[i - 1]}`);
+    }
+  });
+
   test('nothing in the sea catches any of them in a straight line', () => {
     const fastest = Math.max(...Object.values(MOBS).map((m) => m.speed));
     for (const ship of SHIP_ORDER) {
@@ -115,35 +160,70 @@ describe('the ladder itself', () => {
     ok(volleys('skiff', MOBS.squid.hp) >= 20, 'a skiff is still hopelessly outgunned by the boss');
   });
 
-  test('the prices are the long-arc sink: each rung at least doubles the gold', () => {
-    const rows = buildingSpec(SHIPYARD_BUILDING).levels;
-    eq(rows.length, SHIP_ORDER.length, 'one price row per hull');
-    for (let i = 2; i < rows.length; i++) {
-      const below = rows[i - 1].cost.oro ?? 0;
-      const above = rows[i].cost.oro ?? 0;
-      ok(above >= below * 2, `rung ${i + 1} (${above}) is at least double rung ${i} (${below})`);
+  test('the prices are the long-arc sink: each paid rung at least doubles the gold', () => {
+    // The free skiff does not soften the arc: the PAID ladder — the
+    // Astillero's ship rows — still climbs 20k → 90k → 220k → 450k oro,
+    // which is RETENTION.md's days/weeks clock untouched by round 12.
+    const rungs = SHIP_ORDER
+      .map((ship) => purchaseOf(ship))
+      .filter((row) => row.building === SHIPYARD_BUILDING);
+    eq(rungs.length, SHIP_ORDER.length - 1, 'every hull but the free skiff is the yard\'s');
+    for (let i = 1; i < rungs.length; i++) {
+      const below = rungs[i - 1].cost.oro ?? 0;
+      const above = rungs[i].cost.oro ?? 0;
+      ok(above >= below * 2, `paid rung ${i + 1} (${above}) is at least double rung ${i} (${below})`);
     }
-    ok((rows[rows.length - 1].cost.oro ?? 0) >= 450_000, 'and the marauder is a real campaign');
+    ok((rungs[rungs.length - 1].cost.oro ?? 0) >= 450_000, 'and the marauder is a real campaign');
   });
 });
 
-describe('ownership is the shipyard, and nothing else', () => {
-  test('a day-one island owns no hull at all', () => {
+describe('ownership is a level row, and nothing else', () => {
+  test('a day-one island owns no hull, and what it is offered is the dock', () => {
     const fresh = game('day-one');
     eq(shipyardLevel(fresh), 0, 'no yard standing');
     eq(ownedShips(fresh).length, 0, 'no fleet');
-    eq(flagship(fresh), null, 'no flagship');
+    eq(flagship(fresh), null, 'no flagship — ¡Zarpar! stays locked off these same rows');
     eq(shipForVoyage(fresh), 'skiff', 'but a voyage forced anyway falls back to the skiff');
     const first = nextShip(fresh);
     ok(first !== null && first.ship === 'skiff' && first.level === 1, 'the first purchase on offer is the skiff');
-    eq(first?.hallNeeded, 3, 'and it names the hall that opens the yard');
+    eq(first?.building, HARBOUR_BUILDING, 'and it is the dock that sells it');
+    eq(first?.hallNeeded, 1, 'open from hall 1 — the sea is a first-session door, not a campaign');
+    eq(first?.cost.madera, 300, 'at a price the opening itself funds');
+  });
+
+  test('the dock alone puts the skiff at the helm — round 12\'s whole finding', () => {
+    // A day-one hall-1 island, the Muelle placed through the real flow: pay
+    // 300 madera, spend a carpenter, serve the one-minute timer. No hall 2,
+    // no hall 3, no Astillero anywhere — and the ¡Zarpar! rows say boat.
+    let s = quiet('dock-alone');
+    s.buildings = s.buildings.filter((b) => b.type !== HARBOUR_BUILDING);
+    eq(flagship(s), null, 'without the dock: no boat');
+    s.store.madera = 300;
+
+    const placed = place(s, HARBOUR_BUILDING, 16, 16, s.now);
+    ok(placed.ok, `the dock goes down (${placed.refusal ?? 'ok'})`);
+    s = placed.state;
+    eq(townHallLevel(s), 1, 'still a hall-1 island');
+    eq(s.store.madera, 0, 'the 300 was really charged');
+    eq(flagship(s), null, 'mid-build is not owned: the timer is part of the price');
+
+    s = serve(s, find(s, HARBOUR_BUILDING).id);
+    eq(JSON.stringify(ownedShips(s)), JSON.stringify(['skiff']), 'served, the skiff is owned');
+    eq(flagship(s), 'skiff', 'and at the helm');
+    eq(shipForVoyage(s), 'skiff', 'so the first voyage sails it');
+    eq(nextShip(s)?.ship, 'sloop', 'and the ladder on offer starts at the sloop');
+    eq(nextShip(s)?.building, SHIPYARD_BUILDING, 'which is the Astillero\'s to sell');
+    eq(nextShip(s)?.hallNeeded, 4, 'with its hall said out loud');
   });
 
   test('the whole ladder, bought through the real flow, rung by rung', () => {
+    // `withYard` builds on the quiet fixture, whose Muelle already owns the
+    // skiff — so a yard at level N (level 1 is the yard itself, ships start
+    // on row 2) still owns exactly N hulls, newest at the helm.
     for (const level of [1, 3, 5]) {
       const s = withYard(level);
       eq(shipyardLevel(s), level, `the yard stands at ${level}`);
-      eq(ownedShips(s).length, level, 'one hull per rung paid');
+      eq(ownedShips(s).length, level, 'skiff plus one hull per paid rung');
       eq(flagship(s), SHIP_ORDER[level - 1], 'the flagship is the newest hull');
       eq(shipForVoyage(s), SHIP_ORDER[level - 1], 'and it is what the next voyage sails');
       ok(ownsShip(s, SHIP_ORDER[0]), 'buying up never loses the skiff');
