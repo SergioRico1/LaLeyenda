@@ -216,6 +216,47 @@ export const ACTS = {
     }
     await need(page, '.tut__card', 'the tutorial card');
     await step(page, 2);
+
+    // AND THE OPENING BEAT MAY NOT STEAL A TAP, which is an assertion rather
+    // than a capture and belongs here because this is the one act that boots
+    // the layer this beat is drawn by.
+    //
+    // Round 13 gave the taught obstacle a 72px assist disc so that any tap
+    // inside the contramaestre's spotlight clears the thing inside it. The
+    // opening beat points at the GROUND, so it draws the wide island band and
+    // no circle at all — and the assist was armed through it anyway, because
+    // the walk already owes its clear on frame one. The round-13 gate measured
+    // it over five seeds: 62 of 563 taps landing dead on ANOTHER obstacle came
+    // back as the taught one, peñascos included, which trades a fifteen-minute
+    // carpenter for a thirty-second one on a tap the player aimed.
+    //
+    // islandScene's `spotlightUp` now reads `tut--wide` as "no circle". This is
+    // what stops that sliding back: while the band is up, the tap resolver must
+    // answer with whatever is under the finger, and this act runs on exactly
+    // the beat where the band is up.
+    const stolen = await page.evaluate(() => {
+      const layer = document.querySelector('.tut');
+      if (!layer || !layer.classList.contains('tut--wide')) return null;   // not the band beat
+      const taught = window.__taught?.() ?? null;
+      if (taught === null || !window.__wildAt) return [];
+      const bad = [];
+      for (const o of window.__wild?.() ?? []) {
+        if (!o.drawn || o.id === taught) continue;
+        // Inside the frame, clear of Zone A above and the nav bar below — the
+        // same tap band `clearing` aims in.
+        if (o.drawn.x < 8 || o.drawn.x > innerWidth - 8) continue;
+        if (o.drawn.y < 120 || o.drawn.y > innerHeight * 0.78) continue;
+        const got = window.__wildAt(o.drawn.x, o.drawn.y);
+        if (got && got.id !== o.id) bad.push(`${o.kind}#${o.id}→${got.kind}#${got.id}`);
+      }
+      return bad;
+    });
+    if (stolen && stolen.length) {
+      throw new Error(
+        `act: teach — the wide opening beat is stealing deliberate taps ` +
+        `(${stolen.length}): ${stolen.slice(0, 5).join(', ')}`
+      );
+    }
   },
 
   /* --- the island -------------------------------------------------------- */
