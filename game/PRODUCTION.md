@@ -15,13 +15,17 @@ Status: `[x]` done and verified · `[~]` partly there, gap named · `[ ]` not st
 ## 0 · Gates that must stay green
 
 - [x] `npx tsc --noEmit` clean (strict, `noUnusedLocals`)
-- [x] `npm test` — the pure-sim suite, 261 cases
+- [x] `npm test` — the pure-sim suite, 294 cases (round 12 added 33: the
+      landing report, the chest tray's honest answers, rushable clear jobs,
+      the Diario's explicit claims, the dock-owned skiff, the zone warning)
 - [x] `npm run test:roundtrip` — island → sea → island driven as a player
 - [x] `npm run build` produces a bundle
 - [x] `npm run shoot -- island --mobile --act <each act>` — every scripted
       interaction still reaches its feature
 - [x] `npm run audit:layers` — every component it can find passes all four
       layers, `.pick-row__go` included (step 503.6, the round-11 rim fix).
+      Round 12's gate: 9/9 measured again, same roster as round 11 — builder
+      chip, badge, chest slot and timer capsule not on the day-one boot.
       Round 11's gate: 9/9 measured; builder chip, chest slot and timer capsule
       are not on the day-one boot (as before), and `.badge` fell out of the
       measured set because `.first()` lands on a hidden slot badge while the
@@ -59,6 +63,11 @@ restarted mid-round and killed the workflow with two builders unstarted.
       seven beats on the real clock in a real browser: the palm cleared, the
       Aserradero placed, its two minutes waited out, the bubble collected, the
       Diario claimed, the zarpar promise acknowledged. Zero console errors.
+      Round 12 made it EIGHT beats and changed the ending: a `muelle` beat has
+      the player build the 300-madera dock whose level row carries the free
+      skiff, so the zarpar beat now points at a door that is genuinely open —
+      the first sail is a session-one beat, not a hall-3 promise. The suite
+      plays five seeds through and holds the island half under seven minutes.
 - [x] **Settings.** Sonido, vibración, Guardar/Exportar/Importar, the red
       Empezar-de-nuevo row, and the CC0/MIT attributions. The export walked:
       a real .json downloads, and after a reload Continuar resumes the same
@@ -71,8 +80,12 @@ restarted mid-round and killed the workflow with two builders unstarted.
 - [x] Build: picker → ghost → green/red cells → confirm
 - [x] Economy: four resources, two caps, timers, builder limit, offline catch-up
 - [x] Session hooks: bubbles, ¡Lleno!, daily chain, quests, chests
-- [ ] **Island creation.** Every player currently gets the same seeded island.
-      The seed should be the captain's, rolled or chosen at creation.
+- [x] **Island creation.** The seed is the captain's, rolled at creation
+      (`isla-<random>` in main.ts since round 5 — this line was stale) and
+      kept by save, export and reload; `?seed=` pins it for captures, which is
+      why every capture shows the same island while every new player gets
+      their own. Verified live by round 12's gate: the walked island's field
+      differs from the `la-leyenda` capture island, and survives the reload.
 - [ ] Moving a building after it is placed — PLAN.md Fase 1 promises it
 
 ## 3 · Open sea — PLAN.md Fase 2
@@ -89,10 +102,18 @@ restarted mid-round and killed the workflow with two builders unstarted.
 - [x] Automatic broadsides; the player plays positioning
 - [x] Cargo lands in the island economy, capped, overflow reported
 - [x] Cannon, hit, kill, loot and sinking audible; smoke, flash, hurt veil
-- [ ] **The Giant Squid boss.** Spawned and tethered, but it has no fight of its
-      own — no phases, no tell, no reward moment.
-- [ ] Harvesting and boarding beats. A site is taken by sailing over it, which
-      is the placeholder, not the design.
+- [x] **The Giant Squid boss.** Round 10 gave it the fight (a telegraphed
+      strike with a dodge window the stick can steer out of, a dive, two
+      phases, the chest of the deep through the same loot path as everything
+      else — all sim events, all in the suite) and round 12 gave it the
+      presentation: "El Kraken" boss bar with phase pips and health, and the
+      zone plate warning a hull below its water. Photographed by this gate at
+      the lair (`shots/r12_boss.png`).
+- [~] Harvesting and boarding beats. Wrecks are boarded now — the party rows
+      over for `sea.boarding` seconds and the loot only lands if the ship
+      holds station, with the wait named on the HUD. Islets and harvest sites
+      are still taken by touch, which for a fruit stop reads fine and for a
+      quarry is still the placeholder.
 - [x] Balance, measured rather than judged. `node tools/voyages.mjs` plays
       fleets of seeded voyages with two models of player and prints survival,
       time to sink, cargo landed and hull on arrival; the headline numbers are
@@ -106,7 +127,16 @@ restarted mid-round and killed the workflow with two builders unstarted.
       with the save cleared, both endings (arrival and sinking). Two things that
       only a playthrough could find are fixed — the compass said EN CASA two and
       a half units before the hold would bank, and taking the first island you
-      saw could end the voyage two seconds after leaving.
+      saw could end the voyage two seconds after leaving. Round 12's gate walked
+      the whole COLD path in a driven real browser: title → captain → all eight
+      taught beats on the real clock (4.6 min) → ¡Zarpar! in session one → a
+      site taken (hold 146) → Volver. The dock card previewed the landing (Oro
+      12 · Madera 96, "Sin almacén donde guardarlo": Ron 38), the ledger took
+      exactly those numbers (ron stayed 0 with the spill RECORDED in the save's
+      landing report, seen=true — which only flips after the island says it),
+      the export's ledger matched the live one, and Continuar resumed the same
+      island. Zero console errors. The sinking ending is still voyages.mjs's
+      only — nobody has drowned on purpose in a browser.
       *Weak:* home is a point on empty water. It has a light over it now, but
       the last thirty units of an approach are still steered on a needle.
 
@@ -119,16 +149,21 @@ restarted mid-round and killed the workflow with two builders unstarted.
 
 ## 5 · Meta, economy and the store
 
-- [ ] **Shipyard progression.** Skiff → Sloop → Galleon → Frigate → Marauder.
-      All four hulls are already in `public/assets/models/`; nothing uses them.
-- [ ] **Gem store.** RETENTION.md §9's gems with a real purchase surface.
-      **A real release needs StoreKit.** Built here as a local ledger with the
-      shelf, the prices and the confirmation flow real, and the payment call
-      stubbed behind one named seam.
-- [ ] **Leaderboard.** **This contradicts PLAN.md's offline scope** — a real one
-      needs a server. Built here over seeded rival captains so the surface, the
-      ranking and the season reset are real and playable, with the fetch behind
-      one named seam a backend can replace.
+- [x] **Shipyard progression.** Skiff → Sloop → Galleon → Frigate → Marauder,
+      landed in round 10 and re-hung in round 12: ownership IS a level row —
+      the Muelle's single level carries the free skiff (the sea is day one),
+      the Astillero's rows 2-5 sell the deep four at 20k → 90k → 220k → 450k
+      oro — and the next voyage sails the best hull owned. The suite buys the
+      whole ladder through the real flow, and `rated` ties each hull to the
+      ring the zone warning defends.
+- [x] **Gem store.** RETENTION.md §9's gems with a real purchase surface,
+      landed in round 10. **A real release still needs StoreKit.** Built as a
+      local ledger with the shelf, prices and confirmation flow real, and the
+      payment call stubbed behind one named seam (`creditPack`).
+- [x] **Leaderboard.** **This contradicts PLAN.md's offline scope** — a real
+      one needs a server. Landed in round 10 over seeded rival captains:
+      surface, ranking, leagues and the four-week season are real and
+      playable, with the data behind one named seam a backend can replace.
 - [ ] Achievements as trophies standing on the island (PLAN.md Fase 4)
 - [ ] Seasons (RETENTION.md §8)
 
@@ -179,10 +214,10 @@ Each judged on rendered pixels against `reference/clash/` and
       blown by the fourth building a player places. Not a regression — HEAD
       measured 132 and 1277 — and not fixable in the island renderer. The lever
       is `tools/optimize.mjs` and the model loader.
-- [x] Initial download < 10 MB — round 11's gate gzipped every file in `dist/`
-      (JS, CSS, all 60+ models): **3.16 MB** over the wire even if a player
-      fetched every byte of the game; the JS+CSS a boot actually needs is
-      0.36 MB
+- [x] Initial download < 10 MB — round 12's gate gzipped every file in `dist/`
+      (JS, CSS, all 60+ models): **3.05 MB** over the wire even if a player
+      fetched every byte of the game (3.16 in round 11); the JS+CSS+HTML a
+      boot actually needs is 0.32 MB
 - [ ] 60 fps on a mid-range phone — needs a real device; SwiftShader cannot
       answer it
 - [ ] PWA installable, offline boot verified on a device

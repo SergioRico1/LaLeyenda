@@ -12,9 +12,11 @@
  * shipping with nothing watching it.
  *
  * It runs the game the way a player does: no shot mode, no test hooks, real
- * taps on real buttons. `?save=demo` because the beat-sheet island a new player
- * boots into has no Astillero, so ¡Zarpar! is correctly locked there and there
- * is no honest route to sea from a cold start.
+ * taps on real buttons. `?save=demo` for speed and stability: the demo island
+ * has a boat already owned, so the trip starts at the first tap. (Since round
+ * 12 a cold start reaches the sea too — the tutorial's Muelle carries the
+ * starter skiff — but that route takes minutes of real timers, and the gate's
+ * walk covers it; this harness only guards the scene handoff.)
  *
  * Four things have to hold, and the third is the one a screenshot would miss:
  *

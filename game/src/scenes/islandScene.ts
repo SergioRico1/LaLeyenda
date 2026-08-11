@@ -37,7 +37,7 @@ import type { SimEvent } from '../sim';
 import { createBuildPicker } from '../ui/panels/buildPicker';
 import { createUpgradeSheet } from '../ui/panels/upgradeSheet';
 import { createBuildBar } from '../ui/panels/buildBar';
-import { COPY, refusalText, sailLockedLine, type RefusalKey } from '../ui/copy';
+import { COPY, refusalText, type RefusalKey } from '../ui/copy';
 
 /** The home island: the builder scene, seen from the Clash-of-Clans style camera.
  *
@@ -2227,10 +2227,11 @@ export async function createIslandScene(
        * changes nothing and says nothing is the one thing the spec forbids
        * twice, and `console.log` is not an answer on a phone. */
       case 'Construye el Muelle':
-        hud?.say(
-          sailLockedLine(townHallLevel(state), buildingSpec('astillero').unlockAtTownHall),
-          { tone: 'refuse' }
-        );
+        // One true next step at every hall level since round 12: the 300-madera
+        // dock carries the skiff, so the refusal names the Muelle — the gate's
+        // walk caught the old line still selling the Astillero, which is the
+        // exact wall this round tore down.
+        hud?.say(COPY['toast.sailLocked'], { tone: 'refuse' });
         return;
       case 'Zarpar':
         // The shipyard has given the player a boat, so this is the one route

@@ -67,11 +67,13 @@ export const COPY = {
   'toast.builderGone': 'Se acabó el carpintero de guardia',
   'toast.levelUp': '¡Nivel',
   'toast.soon': 'Muy pronto',
-  /* The base line for a locked ¡Zarpar! — true once the Ayuntamiento allows
-   * the Astillero. Below that hall level the walked audit (R11 #7) caught it
-   * naming a building the picker refuses with a different reason, so the call
-   * site goes through `sailLockedLine` below, which names the REAL next step. */
-  'toast.sailLocked': 'Construye el Astillero y zarpamos',
+  /* The line for a locked ¡Zarpar!. Since round 12 the key is the MUELLE —
+   * balance.json ties the starter skiff to the 300-madera dock at hall 1, so
+   * there is exactly one true next step at every hall level and this line
+   * names it. (It said "Construye el Astillero" until the gate's walk caught
+   * it still selling round 11's wall: the Astillero now gates better hulls,
+   * never sailing itself.) */
+  'toast.sailLocked': 'Levanta el Muelle y zarpamos',
   'panel.builders': 'Carpinteros',
   'panel.ranks': 'Rangos de Capitán',
   'panel.log': 'Diario de a Bordo',
@@ -163,23 +165,14 @@ export function refusalText(key: RefusalKey, townHall?: number): string {
   return key === 'town-hall-too-low' && townHall ? `${base} ${townHall}` : base;
 }
 
-/**
- * The locked ¡Zarpar! line — audit R11 #7.
- *
- * Walked cold, the refusal said "Construye el Astillero" while the picker
- * refused that very row with "Requiere Ayuntamiento 3": two answers to one
- * tap, and the first one was a door two doors away. This resolves it by
- * naming the step the player can actually take TODAY.
- *
- * Both figures come from the caller (islandScene has the state and the
- * balance in hand — see VOICE.md patch 3), so if the Astillero's gate ever
- * moves from Ayuntamiento 3 the line moves with it instead of lying.
+/*
+ * The locked ¡Zarpar! line once lived here as a helper — audit R11 #7 caught
+ * the toast and the picker giving two answers to one tap, and round 11's
+ * `sailLockedLine` resolved it by naming the hall or the yard. Round 12 moved
+ * the skiff onto the hall-1 Muelle, which collapsed the helper: there is one
+ * true next step at every hall level now, and `toast.sailLocked` above says
+ * it.
  */
-export function sailLockedLine(townHall: number, astilleroAt: number): string {
-  return townHall < astilleroAt
-    ? `El mar pide un Astillero: sube el Ayuntamiento a ${astilleroAt}`
-    : COPY['toast.sailLocked'];
-}
 
 /**
  * §3.16's unlock row on the Ayuntamiento sheet — audit R11 #8.

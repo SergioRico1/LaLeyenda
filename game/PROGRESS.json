@@ -483,6 +483,55 @@
         "The sea fight as a shippable frame: readable monster, boss bar, arcs drawn as water not debug.",
         "A warning affordance when a zone outranks the hull — twin tritons melt a skiff with no tell."
       ]
+    },
+    {
+      "round": 12,
+      "title": "Record round 12 by its gate's numbers: the sea in session one, and every toast tells the ledger's truth",
+      "a": "shots/r12_island_day1.png",
+      "b": "shots/r12_boss.png",
+      "key": {
+        "a": "ours — day one",
+        "b": "ours — the kraken's lair"
+      },
+      "better": null,
+      "weWon": false,
+      "gapSize": "not blind-judged",
+      "biggestFlaw": "Judged by its gate's measurements rather than a blind critic. The numbers: tsc clean, 294 cases (33 new pinning every round-11 finding), 7/7 roundtrip, audit:layers 9/9, the voyages curve unchanged (ring 1 100% / ring 3 99% / ring 5 48%), 3.05 MB gzipped. Both round-11 bugs were reproduced live against the pre-round code first — day-one ron/metal caps are 0, the whole manifest spilled with the ledger reading ron:0 metal:0 and NO landing report in the save, and the chest tap fell through to 'Solo un cofre a la vez' over four empty slots. The gate's walk then played the cold path a real browser: eight beats in 4.6 minutes, ¡Zarpar! in session one, a site taken, and the exact round-11 scenario replayed HONESTLY — the dock card said 'Oro 12 · Madera 96, Sin almacén donde guardarlo: Ron 38', the ledger took exactly that, and the save carried the spill report marked seen. The walk also caught one seam the builders left: the locked-¡Zarpar! toast still said 'Construye el Astillero y zarpamos' — round 11's wall resurrected in copy — now 'Levanta el Muelle y zarpamos'.",
+      "differences": [
+        "The tutorial is eight beats and ends through an open door: a muelle beat builds the 300-madera dock whose level row carries the free skiff, and the zarpar card says 'Ya tienes barco'.",
+        "Landing is a recorded truth: state.landing carries landed/spilled/seen, the sea's end card prints previewLanding (never the manifest), the island toast names the missing store, and the resolver's almacen cue points at building it.",
+        "The chest tap answers honestly in every empty state: 'Aún no tienes cofres' before the dock, 'El Muelle te guarda un Cofre Libre en 3h 51m' after it.",
+        "Large clears wear the construction capsule and open a sheet with the payout and Terminar Ya on the one gem ladder.",
+        "The Diario is a panel: the save's own quests with bars and explicit Reclamar, the 7-day chain, the season plate.",
+        "The water is rebuilt at 1:1 against the reference — graded depth, caustic web in the near field, aqua shelf foam — and the fight frame carries a visible monster with a health bar, El Kraken's boss bar with phase pips, and the zone plate 'Aguas de zona 3 — tu casco es de zona 2'."
+      ],
+      "note": "The gate's walk: 19/24 driven checks passed with zero console errors; the five misses are all harness capture limits, each covered elsewhere — the pecio tap-scan could not locate a large obstacle on the rolled island (the acts frame r12_clearing.png photographs the capsule + sheet on the fixed island, and playtest.test.ts holds the sim half), the arrival toasts were read after their DOM expired (the save's landing report with seen=true proves both lines were said), and the leaderboard probe used a button selector the trophy pill does not carry (the panel itself is photographed working). PRODUCTION.md corrected where it had gone stale: island seeds are the captain's own since round 5, the squid has fought since round 10, shipyard/store/leaderboard landed in round 10, wrecks board.",
+      "pieces": [
+        {
+          "piece": "sim fixes: landing report + chest tray + clear jobs + Diario panel",
+          "verdict": "delivered",
+          "biggestGap": "The landing toast names one missing store cleanly; a spill across several resources gets the plural catch-all line rather than a route per store."
+        },
+        {
+          "piece": "first sail: the skiff on the Muelle's level row, zone warning per crossing",
+          "verdict": "delivered",
+          "biggestGap": "The warning names the numbers but not the remedy — a new player must infer that deeper hulls come from the Astillero."
+        },
+        {
+          "piece": "water signature + fight frame + boss bar",
+          "verdict": "delivered",
+          "biggestGap": "The near-field caustic web reads finer than the reference's chunky voxel chips, and a calm approach frame carries no broadside arc at all — the arcs only show once guns are loaded."
+        }
+      ],
+      "nextRound": [
+        "The blind judge has not seen round 12: the water, the fight frame and the boss bar are gate-verified only — run tools/blind.mjs against the new sea.",
+        "Draw calls: the buildings are still the whole overrun (about 110 calls each; demo 1112). The lever is tools/optimize.mjs and the model loader.",
+        "The captain still never appears in the world — not on the island, not at the helm.",
+        "Harvest sites are still taken by touch; only wrecks board.",
+        "Home approach: the last thirty units are still steered on a needle.",
+        "Nobody has sunk on purpose in a browser: the drowning ending is voyages.mjs's only.",
+        "Moving a placed building (PLAN Fase 1) and the defence phase (Fase 3) remain untouched."
+      ]
     }
   ]
 }
