@@ -171,23 +171,31 @@ const rnd = (n) => crypto.randomInt(0, n + 1);
 const win = { dx: rnd(JITTER), dy: rnd(JITTER) };
 const level = 7 + rnd(2);
 
-const norm = (src, dest) =>
+const norm = (src) =>
   sharp(src)
     .resize(W + JITTER, H + JITTER, { fit: 'cover', position: 'centre' })
     .extract({ left: win.dx, top: win.dy, width: W, height: H })
     .composite(BRANDING.map(patch))
     .png({ compressionLevel: level, effort: 7 })
-    .toFile(dest);
+    .toBuffer();
 
+// Both candidates are rendered to MEMORY first and the files are created in an
+// order the swap roll decides. A sixth judge caught the two files a second
+// apart in mtime; utimesSync equalised that, and then a SEVENTH judge read the
+// statx BIRTH time, which utimes cannot rewrite — ours was normed first, so
+// the first-born file was ours regardless of swap. No timestamp fix survives a
+// fixed processing order; only not having one does. The processing order is
+// still fixed (ours renders first), but both files are BORN in coin-flip
+// order, milliseconds apart, after all rendering is done.
 const A = path.join(outDir, 'a.png');
 const B = path.join(outDir, 'b.png');
-await norm(ours, swap ? B : A);
-await norm(path.join(ROOT, piece.reference), swap ? A : B);
-
-// Identical mtimes on both candidates. Ours is normed first, and a sixth judge
-// noticed the two files a second apart — the earlier one is ours regardless of
-// swap. Order of writing is an implementation detail; the clock must not
-// publish it.
+const oursBuf = await norm(ours);
+const refBuf = await norm(path.join(ROOT, piece.reference));
+const writes = swap
+  ? [[B, oursBuf], [A, refBuf]]
+  : [[A, oursBuf], [B, refBuf]];
+if (crypto.randomInt(0, 2) === 1) writes.reverse();
+for (const [dest, buf] of writes) fs.writeFileSync(dest, buf);
 const stamp = new Date();
 fs.utimesSync(A, stamp, stamp);
 fs.utimesSync(B, stamp, stamp);
