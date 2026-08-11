@@ -181,7 +181,7 @@ const rnd = (n) => crypto.randomInt(0, n + 1);
 const win = { dx: rnd(JITTER), dy: rnd(JITTER) };
 const level = 7 + rnd(2);
 
-const norm = (src) =>
+const norm = (src, lvl = level) =>
   sharp(src)
     .resize(W + JITTER, H + JITTER, { fit: 'cover', position: 'centre' })
     .extract({ left: win.dx, top: win.dy, width: W, height: H })
@@ -196,7 +196,7 @@ const norm = (src) =>
     // against the reference was this harness damaging its own evidence. It hit
     // both sides equally so it never resolved the mapping; it just made
     // thirteen rounds of fine-texture verdicts softer than they read.
-    .png({ compressionLevel: level, palette: false })
+    .png({ compressionLevel: lvl, palette: false })
     .toBuffer();
 
 // Both candidates are rendered to MEMORY first and the files are created in an
@@ -209,8 +209,45 @@ const norm = (src) =>
 // order, milliseconds apart, after all rendering is done.
 const A = path.join(outDir, 'a.png');
 const B = path.join(outDir, 'b.png');
-const oursBuf = await norm(ours);
-const refBuf = await norm(path.join(ROOT, piece.reference));
+/**
+ * How many bytes of IDAT a PNG carries, and in how many chunks.
+ *
+ * This is the ninth leak's real body. Padding the CONTAINER to one byte length
+ * equalises `ls -l` and leaves the compressed image size fully legible one
+ * layer down: sum the IDAT chunk lengths, or just count them, and the original
+ * sizes come straight back. A judge measured it — "smaller IDAT total == ours"
+ * was 17 of 17 correct across every round on disk, including the two where the
+ * container padding was live. And because equal totals force the smaller
+ * original to take the bigger pad, the pad length itself re-encoded the
+ * difference, with the larger file always landing a zero-byte payload.
+ */
+const idatTotal = (buf) => {
+  let i = 8, total = 0;
+  while (i < buf.length) {
+    const len = buf.readUInt32BE(i);
+    if (buf.toString('latin1', i + 4, i + 8) === 'IDAT') total += len;
+    i += 12 + len;
+  }
+  return total;
+};
+
+// So the payloads themselves are brought together before anything is padded:
+// each candidate is encoded at every compression level, and the pair whose IDAT
+// totals sit closest is the pair that gets written. Compression level is a free
+// variable here — it was already being jittered per run for its own sake — and
+// spending it on making the two streams comparable costs nothing but encodes.
+const LEVELS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+const oursAt = await Promise.all(LEVELS.map((l) => norm(ours, l)));
+const refAt = await Promise.all(LEVELS.map((l) => norm(path.join(ROOT, piece.reference), l)));
+let best = { gap: Infinity, o: oursAt[0], r: refAt[0] };
+for (const o of oursAt) {
+  for (const r of refAt) {
+    const gap = Math.abs(idatTotal(o) - idatTotal(r));
+    if (gap < best.gap) best = { gap, o, r };
+  }
+}
+const oursBuf = best.o;
+const refBuf = best.r;
 const writes = swap
   ? [[B, oursBuf], [A, refBuf]]
   : [[A, oursBuf], [B, refBuf]];
@@ -241,7 +278,7 @@ const padTo = (buf, total) => {
   // IEND is the last 12 bytes; the pad goes immediately before it.
   return Buffer.concat([buf.subarray(0, buf.length - 12), chunk, buf.subarray(buf.length - 12)]);
 };
-const target = Math.max(oursBuf.length, refBuf.length) + 12;
+const target = Math.max(oursBuf.length, refBuf.length) + 64 + crypto.randomInt(0, 4096);
 writes[0][1] = padTo(writes[0][1], target);
 writes[1][1] = padTo(writes[1][1], target);
 
