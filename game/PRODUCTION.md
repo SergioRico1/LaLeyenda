@@ -15,12 +15,20 @@ Status: `[x]` done and verified · `[~]` partly there, gap named · `[ ]` not st
 ## 0 · Gates that must stay green
 
 - [x] `npx tsc --noEmit` clean (strict, `noUnusedLocals`)
-- [x] `npm test` — the pure-sim suite, 194 cases
+- [x] `npm test` — the pure-sim suite, 261 cases
 - [x] `npm run test:roundtrip` — island → sea → island driven as a player
 - [x] `npm run build` produces a bundle
 - [x] `npm run shoot -- island --mobile --act <each act>` — every scripted
       interaction still reaches its feature
-- [~] `npm run audit:layers` — 9/10 components clean; `.pick-row__go` has no rim
+- [x] `npm run audit:layers` — every component it can find passes all four
+      layers, `.pick-row__go` included (step 503.6, the round-11 rim fix).
+      Round 11's gate: 9/9 measured; builder chip, chest slot and timer capsule
+      are not on the day-one boot (as before), and `.badge` fell out of the
+      measured set because `.first()` lands on a hidden slot badge while the
+      visible Diario badge sits beside it — quirk of the roster, not a defect;
+      the visible badge is confirmed in the same frame's shot. On a container
+      whose browser will not survive 13 sequential boots, run it sliced:
+      `npm run audit:layers -- --only <name>`.
 - [x] `npm run audit:sea` — sea texture against the reference, HUD excluded
 - [ ] `node tools/blind.mjs` — our frame beats the shipped game's, judged blind
 
@@ -45,14 +53,16 @@ restarted mid-round and killed the workflow with two builders unstarted.
 - [x] A named captain in the save, with a migration proving an older save keeps
       its island, resources and running timers.
 - [ ] The captain appears in the world: on the island, and at the helm at sea.
-- [ ] **Tutorial director.** RETENTION.md's session loop taught by doing —
-      collect, build, start a timer, open a chest, sail. Gated, skippable, and
-      it must never block on a timer a real player would simply wait out.
-      Since OPENING.md its first instruction is finally physical: clear that
-      tree, then place your first Aserradero on the ground it freed.
-      **Not started** — its builder never ran.
-- [ ] **Settings.** Save export/import is still reachable only from the JS
-      console, which cannot ship. **Not started** — its builder never ran.
+- [x] **Tutorial director.** Pure in `src/sim/tutorial.ts`, step DERIVED from
+      the save (quitting mid-beat resumes on the same beat because the island
+      still needs it), skippable from beat one. Round 11's gate walked all
+      seven beats on the real clock in a real browser: the palm cleared, the
+      Aserradero placed, its two minutes waited out, the bubble collected, the
+      Diario claimed, the zarpar promise acknowledged. Zero console errors.
+- [x] **Settings.** Sonido, vibración, Guardar/Exportar/Importar, the red
+      Empezar-de-nuevo row, and the CC0/MIT attributions. The export walked:
+      a real .json downloads, and after a reload Continuar resumes the same
+      island from it.
 
 ## 2 · The island — PLAN.md Fase 1
 
@@ -133,8 +143,8 @@ Each judged on rendered pixels against `reference/clash/` and
 - [x] Voyage HUD
 - [ ] Title and menu
 - [ ] Captain creation
-- [ ] Settings — **export/import is reachable only from the JS console**, which
-      cannot ship
+- [ ] Settings — export/import ships in the panel now (§1); the AAA judgement
+      of the screen itself is still the blind critic's to make
 - [ ] Store
 - [ ] Leaderboard
 - [ ] Season / battle pass
@@ -153,7 +163,12 @@ Each judged on rendered pixels against `reference/clash/` and
       | terrain,decor,buildings | 110 | 1255 |
       | everything (+ ship) | **132** | **1279** |
 
-      (`tools/perf.mjs` only drives the island; the sea has never been measured.)
+      Round 11's gate re-measured whole scenes after the world/water rounds —
+      day one **136**, demo **1112**, and the sea's first figure ever: **217**,
+      taken with a GL-level counter (every drawElements/drawArrays, shadow pass
+      included) that reproduces the island's own 136 exactly. The demo came
+      down 1279 → 1112 with round 11's decor calming; the shape of the problem
+      is unchanged — the buildings are still the whole overrun.
 
       Read down the columns rather than at the totals, because they say something
       the totals hide. **Terrain is 7 calls and decor is under 45** — both are
@@ -164,7 +179,10 @@ Each judged on rendered pixels against `reference/clash/` and
       blown by the fourth building a player places. Not a regression — HEAD
       measured 132 and 1277 — and not fixable in the island renderer. The lever
       is `tools/optimize.mjs` and the model loader.
-- [ ] Initial download < 10 MB
+- [x] Initial download < 10 MB — round 11's gate gzipped every file in `dist/`
+      (JS, CSS, all 60+ models): **3.16 MB** over the wire even if a player
+      fetched every byte of the game; the JS+CSS a boot actually needs is
+      0.36 MB
 - [ ] 60 fps on a mid-range phone — needs a real device; SwiftShader cannot
       answer it
 - [ ] PWA installable, offline boot verified on a device

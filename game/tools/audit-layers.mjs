@@ -235,11 +235,18 @@ if (only && ROSTER.length === 0) {
   process.exit(1);
 }
 
+const t0 = Date.now();
+const lap = (what) => process.stderr.write(`  [${((Date.now() - t0) / 1000).toFixed(0)}s] ${what}\n`);
+
 for (const component of ROSTER) {
+  lap(`${component.name}: page`);
   const page = await browser.newPage({ viewport: { width: 430, height: 932 }, deviceScaleFactor: 2 });
   try {
+    lap(`${component.name}: goto`);
     await page.goto(`http://localhost:${port}/?scene=island&shot=1&w=430&h=932&t=2.0`, { waitUntil: 'load', timeout: 60000 });
-    await page.waitForFunction(() => window.__ready === true || window.__error, { timeout: 120000 });
+    lap(`${component.name}: waiting __ready`);
+    await page.waitForFunction(() => window.__ready === true || window.__error, { timeout: 240000 });
+    lap(`${component.name}: ready`);
     if (component.act && ACTS[component.act]) await ACTS[component.act](page);
 
     const box = await page.locator(component.selector).first().boundingBox().catch(() => null);
