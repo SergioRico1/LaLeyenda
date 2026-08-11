@@ -195,11 +195,14 @@ export interface SeaHud {
    */
   banner(kind: SeaBanner): void;
   /**
-   * The sim says the ship has crossed into water its hull is not rated for
-   * ('zone-warning', once per crossing). A brief plate names both numbers —
-   * the zone's and the hull's — because round 11's playtest lost most of a
-   * skiff to ring-3 tritons with nothing on screen saying zones outrank the
-   * starter boat. The scene raises the event; this screen owns the Spanish.
+   * The sim says the water its hull is not rated for is HERE, or one cell
+   * ahead on the current heading ('zone-warning', once per ring). A plate
+   * names both numbers — the zone's and the hull's — because round 11's
+   * playtest lost most of a skiff to ring-3 tritons with nothing on screen
+   * saying zones outrank the starter boat. The scene raises the event; this
+   * screen owns the Spanish, and the tense: the sim's look-ahead (round 13)
+   * means the plate usually lands while the ship is still in rated water, so
+   * the line has to say *por delante* rather than pretend it has arrived.
    */
   warnZone(ring: number, rated: number): void;
   /**
@@ -377,8 +380,14 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
   /**
    * One mechanism for everything the sea shouts: the fixed lines (banner) and
    * the composed zone warning share the element, the pop and the capture rule.
+   *
+   * `holdMs` is per line, because they are not the same kind of thing. The
+   * boss's phase turn and the chest of the deep are announcements: they name
+   * something that has already happened, and 3.4s is plenty. The zone plate is
+   * a DECISION — turn back, or take the hit — and a decision needs long enough
+   * to be made. It gets the whole cell of water the sim's look-ahead bought.
    */
-  function shout(text: string, kind: string): void {
+  function shout(text: string, kind: string, holdMs = 3400): void {
     setText(bannerOut, text);
     setData(bannerOut, 'kind', kind);
     bannerOut.hidden = false;
@@ -391,8 +400,71 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
     // SIM synchronously but this timer runs on the wall clock, so the one
     // frame a critic can inspect had already dropped the line by the time it
     // was taken. A frozen frame keeps its banner.
-    if (!CAPTURE) bannerTimer = setTimeout(() => { bannerOut.hidden = true; }, 3400);
+    if (!CAPTURE) bannerTimer = setTimeout(() => { bannerOut.hidden = true; }, holdMs);
   }
+
+  /* --- the outranked zone, held on the chip -------------------------------
+   *
+   * A plate is a moment and the danger is a CONDITION: round 13's blind
+   * playtest crossed into zone 3 in a skiff and read the plate as scenery,
+   * because three seconds later the screen looked exactly like it had at zone
+   * 1. So the zone chip itself now carries the state — red while the water
+   * outranks the hull, plain the moment the ship is back inside its rating —
+   * and the plate goes back to being the thing that gets the player to LOOK at
+   * the chip.
+   *
+   * Painted from here rather than from seaHud.css because the stylesheet is
+   * not this round's file; inline wins over the class rules either way, which
+   * matters for the one rule it has to beat: `[data-focus='hull']` dims the
+   * ring cell to 44% exactly when the hull is going, which is exactly when the
+   * water that is doing it must not fade out.
+   */
+  const ringCell = root.querySelector('.sea__cell--ring') as HTMLElement;
+  let zonePainted: boolean | null = null;
+  let zonePulse: Animation | null = null;
+
+  function paintZone(outranked: boolean): void {
+    if (zonePainted === outranked) return;
+    zonePainted = outranked;
+    setData(ringCell, 'zone', outranked ? 'over' : 'ok');
+    const style = ringCell.style;
+    if (!outranked) {
+      zonePulse?.cancel();
+      zonePulse = null;
+      for (const property of ['color', 'opacity', 'border-radius', 'background', 'box-shadow', 'margin']) {
+        style.removeProperty(property);
+      }
+      return;
+    }
+    // The alarm register the hull and the kraken's frenzy already share, so
+    // the sea has one colour for "this is what is killing you" (§ the frenzy
+    // banner in seaHud.css).
+    style.color = '#FFD9D6';
+    style.opacity = '1';
+    style.borderRadius = '10px';
+    style.margin = '-1px 0';
+    style.background =
+      'linear-gradient(180deg, rgba(255,255,255,.20) 0 50%, rgba(0,0,0,.16) 50% 100%),'
+      + 'linear-gradient(180deg, #C0261C, #8E1410)';
+    style.boxShadow =
+      'inset 0 2px 0 rgba(255,190,180,.55), inset 0 -3px 0 rgba(64,6,6,.9), 0 1px 0 rgba(0,0,0,.35)';
+    // A slow breath, so it keeps asking without ever becoming a strobe. Web
+    // Animations rather than a keyframe, for the same reason as above — and
+    // never under a capture, which has to stay byte-identical.
+    if (!CAPTURE && typeof ringCell.animate === 'function') {
+      zonePulse = ringCell.animate(
+        [{ filter: 'brightness(1)' }, { filter: 'brightness(1.22)' }, { filter: 'brightness(1)' }],
+        { duration: 1400, iterations: Infinity, easing: 'ease-in-out' }
+      );
+    }
+  }
+
+  /** The ring the chip is painting, so `warnZone` knows whether the water it
+   *  is naming is under the ship or one cell ahead of it. -1 until the first
+   *  frame: the scene drains its events BEFORE it updates the HUD, so a voyage
+   *  that starts in outranked water (a capture dropped at a lair) would warn
+   *  with nothing painted yet, and must not be told the water is ahead of it. */
+  let shownRing = -1;
 
   // --- the first-voyage coach mark ----------------------------------------
   // `?coach=1` / `?coach=0` forces it either way. The screenshot harness gets a
@@ -489,9 +561,11 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
       const holdHeavy = holdFraction >= HOLD_HEAVY;
       setText(holdLabel, holdFull ? '¡Llena!' : 'Bodega');
 
-      setText(ringOut, String(
-        ringOf(Math.round(voyage.x / SEA_CELL), Math.round(voyage.y / SEA_CELL))
-      ));
+      shownRing = ringOf(Math.round(voyage.x / SEA_CELL), Math.round(voyage.y / SEA_CELL));
+      setText(ringOut, String(shownRing));
+      // The condition, not the moment: red for as long as the water is deeper
+      // than the hull is rated for, and only while there is still a ship.
+      paintZone(shownRing > spec.rated && !voyage.sunk);
 
       // --- the boss bar ------------------------------------------------------
       // Up while a kraken is met — inside its tether's reach, or already hurt —
@@ -584,7 +658,23 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
 
     warnZone(ring, rated) {
       if (zoneMuted) return;
-      shout(`Aguas de zona ${ring} — tu casco es de zona ${rated}`, 'zone');
+      // The sim warns one cell before the boundary (sim/sea.ts, round 13), so
+      // most of the time this plate is about water the ship has not reached.
+      // Saying "aguas de zona 3" while the chip still reads 2 is the small
+      // kind of lying this project keeps refusing to do — and the tense is
+      // also the whole usefulness of the warning, because *por delante* is an
+      // instruction and *aguas de* is a caption.
+      const ahead = shownRing >= 0 && ring > shownRing;
+      shout(
+        ahead
+          ? `Zona ${ring} por delante — tu casco es de zona ${rated}`
+          : `Aguas de zona ${ring} — tu casco es de zona ${rated}`,
+        'zone',
+        // Long enough to turn the ship with. At full throttle a skiff needs
+        // about 3.2s to cross the cell the look-ahead bought, and the plate
+        // has to outlast the decision rather than the crossing.
+        5200
+      );
     },
 
     finish(voyage, reason, preview) {
@@ -645,6 +735,10 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
     dispose() {
       if (coachTimer !== null) clearTimeout(coachTimer);
       if (bannerTimer !== null) clearTimeout(bannerTimer);
+      // An infinite animation keeps its element alive and keeps the compositor
+      // ticking for a HUD nobody is looking at.
+      zonePulse?.cancel();
+      zonePulse = null;
       window.removeEventListener(HELM_STEER, onSteer);
       root.remove();
     },

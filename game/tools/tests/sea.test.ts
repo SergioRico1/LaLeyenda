@@ -553,9 +553,88 @@ describe('the water warns before it outranks the hull', () => {
     eq(deep[0].ring, 6, 'and the warning still names where');
   });
 
-  test('a straight run out is warned at the 2-to-3 crossing, then only deeper', () => {
+  /* --- round 13: the warning has to arrive BEFORE the water ---------------
+   *
+   * Round 12 shipped the event at the boundary crossing and the blind
+   * playtest still reported no warning at all: "one held drag took the skiff
+   * to ZONA 3 within ~2 min; hull went 100->15% before I saw any zone plate."
+   * Measured over eight seeds at three headings, full throttle, the old rule
+   * put the plate between 0.3 and 13 seconds ahead of the first hit taken in
+   * outranked water — and 0.3s four times in twenty-four. The sim now asks
+   * about the cell one step ahead on the current heading as well as the one
+   * underneath, which is a whole cell of water: 55 units, ~3.2s at a skiff's
+   * speed. These two tests are what stops it sliding back.
+   */
+
+  /** Steps a live voyage (mobs and all) and reports the three instants that
+   *  matter: the warning, the crossing, and the first hit taken in water the
+   *  hull is not rated for. -1 for "never happened". */
+  function runOutbound(seed: string, heading: number, seconds = 90) {
+    const rated = SHIPS.skiff.rated;
+    let v = steer({ ...startVoyage(seed, 'skiff'), heading }, { throttle: 1 });
+    const ringNow = () => ringOf(Math.round(v.x / SEA_CELL), Math.round(v.y / SEA_CELL));
+    let warn = -1, warnedAt = -1, crossed = -1, hit = -1;
+    for (let i = 0; i < Math.round(seconds / SEA_STEP); i++) {
+      const out = stepVoyage(v);
+      v = out.voyage;
+      const here = ringNow();
+      if (crossed < 0 && here > rated) crossed = i;
+      for (const e of out.events) {
+        if (e.kind === 'zone-warning' && warn < 0) { warn = i; warnedAt = here; }
+        if (e.kind === 'hit' && e.target === 'ship' && hit < 0 && here > rated) hit = i;
+      }
+      if (v.sunk) break;
+    }
+    return { warn, warnedAt, crossed, hit, rated };
+  }
+
+  test('full throttle from spawn: the warning precedes the first outranked hit', () => {
+    // The playtest's own input — hold the drag and go — with the sea live, so
+    // what is being measured is the real race between the plate and the teeth.
+    let worst = Infinity;
+    for (const seed of ['la-leyenda', 'isla-a', 'isla-b', 'isla-c', 'isla-d', 'isla-e']) {
+      for (const heading of [0, 0.6, 1.1]) {
+        const { warn, hit } = runOutbound(seed, heading);
+        ok(warn >= 0, `${seed}@${heading}: the run was warned at all`);
+        if (hit < 0) continue;              // nothing bit on this run
+        ok(warn < hit, `${seed}@${heading}: warned at step ${warn}, first outranked hit at ${hit}`);
+        worst = Math.min(worst, (hit - warn) * SEA_STEP);
+      }
+    }
+    // The number the round is actually about. At the boundary this measured
+    // 0.3s; a player cannot turn a ship in 0.3s, so the plate was decoration.
+    ok(worst >= 2, `the tightest margin over the fleet is ${worst.toFixed(1)}s of warning`);
+  });
+
+  test('the plate lands while the ship is still in water it is rated for', () => {
+    for (const seed of ['la-leyenda', 'isla-c', 'isla-g']) {
+      for (const heading of [0, 0.6, 1.1]) {
+        const { warn, warnedAt, crossed, rated } = runOutbound(seed, heading);
+        ok(warn >= 0, `${seed}@${heading}: warned`);
+        ok(warnedAt <= rated, `${seed}@${heading}: warned from ring ${warnedAt}, still inside the rating`);
+        ok(warn < crossed, `${seed}@${heading}: warned at ${warn}, crossed at ${crossed}`);
+      }
+    }
+  });
+
+  test('a look-ahead does not warn about water behind or beside the heading', () => {
+    // Pointed back at home from the near edge of ring 2, one cell ahead is
+    // shallower, not deeper — the ship is leaving, and a warning here would
+    // be the narrator this file keeps refusing to be.
+    const v = quietSea('rumbo');
+    v.x = SEA_CELL * 4;                     // ring 2, one cell short of ring 3
+    v.heading = Math.PI;                    // hard about, heading home
+    eq(warningsIn(stepVoyage(v).events).length, 0, 'sailing in says nothing');
+
+    const out = { ...v, heading: 0 };       // same water, pointed at the deep
+    const warned = warningsIn(stepVoyage(out).events);
+    eq(warned.length, 1, 'the same cell, pointed outward, warns');
+    eq(warned[0].ring, 3, 'about the ring one cell ahead');
+  });
+
+  test('a straight run out is warned before the 2-to-3 crossing, then only deeper', () => {
     // The playtest's own path: hold the throttle and watch. The first thing
-    // the sim says about danger is the crossing into ring 3 — the exact water
+    // the sim says about danger is the approach to ring 3 — the exact water
     // where the twin hammerdeads took the skiff apart unannounced.
     const run = (seed: string) => {
       let v = steer(startVoyage(seed), { throttle: 1 });

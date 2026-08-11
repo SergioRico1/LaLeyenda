@@ -468,6 +468,74 @@ describe('it never lies', () => {
     }
   });
 
+  /**
+   * Round 13's blind playtest, verbatim: "beat says 'despeja esa roca' but the
+   * started job clears the palm."
+   *
+   * The director already carries the obstacle's ID in its target, and the
+   * sentence already builds its noun from that same obstacle — but nothing
+   * asserted the pair, so the day the two are computed from different obstacles
+   * the only symptom is a card that lies about what the carpenter is doing.
+   * The scene reads the aim out of this same target (islandScene's
+   * `taughtObstacle`), which is what makes the copy and the tap agree by
+   * construction; this is the half of that agreement a test can hold.
+   */
+  test('every card that points at an obstacle names THAT obstacle, across seeds', () => {
+    // Written out here rather than imported from the director, for the same
+    // reason NAV is: a table the test shares with the code under test cannot
+    // disagree with it, and disagreeing is the whole job.
+    const NOUN: Record<string, string> = {
+      palmera: 'palmera', roca: 'roca', pecio: 'pecio', penasco: 'peñasco',
+    };
+    const taught = new Set<string>();
+    let cards = 0;
+
+    for (const seed of ['la-leyenda', 'tortuga', 'bahia', 'q7', 'zz', 'mm', 'hola', 'pirata']) {
+      play(seed, (state, now, step) => {
+        if (step.target.kind !== 'obstacle') return;
+        const aim = step.target;
+        const real = state.obstacles.find((o) => o.id === aim.obstacleId);
+        ok(real !== undefined, `${seed}/${step.id}: the id points at an obstacle that exists`);
+        if (!real) return;
+        cards++;
+        taught.add(real.kind);
+
+        // The arrow and the sentence are about the same object...
+        eq(aim.x, real.x, `${seed}/${step.id}: the ring is on the obstacle's own cell (x)`);
+        eq(aim.z, real.z, `${seed}/${step.id}: the ring is on the obstacle's own cell (z)`);
+        eq(aim.label, NOUN[real.kind], `${seed}/${step.id}: the label is that obstacle's noun`);
+
+        // ...and the SENTENCE says that noun, and no other. "esa roca" over a
+        // palm is the exact failure, so a wrong noun anywhere in the line fails
+        // here rather than in somebody's hands.
+        ok(
+          step.text.includes(NOUN[real.kind]),
+          `${seed}/${step.id}: "${step.text}" names the ${NOUN[real.kind]}`
+        );
+        for (const [kind, noun] of Object.entries(NOUN)) {
+          if (kind === real.kind) continue;
+          ok(!step.text.includes(noun), `${seed}/${step.id}: "${step.text}" names no ${noun}`);
+        }
+
+        // And the tap it is asking for would actually be accepted — the same
+        // refusal the island runs when the finger lands.
+        eq(
+          clearRefusal(state, aim.obstacleId, buildersFree(state, now)),
+          null,
+          `${seed}/${step.id}: the sim would accept the tap the card is asking for`
+        );
+      });
+    }
+
+    ok(cards >= 8, `every seed pointed at wilderness at least once (${cards} cards)`);
+    // Both small kinds really do come up over these seeds, so the noun check
+    // above is not quietly only ever testing the word "palmera".
+    eq(
+      [...taught].sort().join(','), 'palmera,roca',
+      `both small kinds were taught over these seeds (saw ${[...taught].join(', ')})`
+    );
+  });
+
   test('the destinations it names are the ones the HUD actually labels', () => {
     // The arrow finds its target by accessible name, so a renamed nav slot must
     // fail here rather than leave the arrow pointing at nothing.

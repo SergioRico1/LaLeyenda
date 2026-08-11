@@ -15,16 +15,19 @@ import { instantiate, preload } from '../render/assets';
 import { Rng } from '../core/rng';
 import { createGame, type Game } from '../core/game';
 import {
-  BALANCE, buildingSpec, chestTrayHint, claimDaily, claimFreeChest, claimQuest, clearNowCost,
-  clearObstacle, collect, collectAll, finishClearNow, finishNow, levelSpec, markLandingSeen,
-  obstacleAt, obstacleTier, openChest, place, placeRefusal, plotHalf,
-  spotRefusalNow, startChest, startUpgrade, storeCap, storeTypeFor, townHallLevel,
-  type GameState, type Refusal, type ResourceId as SimResourceId,
+  BALANCE, buildingSpec, chestSpec, chestTrayHint, claimDaily, claimFreeChest, claimQuest,
+  clearNowCost, clearObstacle, collect, collectAll, finishClearNow, finishNow, levelSpec,
+  markLandingSeen, obstacleAt, obstacleTier, openChest, place, placeRefusal, plotHalf,
+  skipChest, skipCost, spotRefusalNow, startChest, startUpgrade, storeCap, storeTypeFor,
+  townHallLevel,
+  type GameState, type Obstacle, type Refusal, type ResourceId as SimResourceId,
 } from '../sim';
+import { tutorialActive, tutorialObstacle, tutorialStep } from '../sim/tutorial';
 import { durText, n } from '../ui/format';
-import { el, iconImg, pressable } from '../ui/components/dom';
+import { el, iconImg, pressable, punch } from '../ui/components/dom';
 import { createSheet } from '../ui/panels/sheet';
 import { createTimerBar } from '../ui/components/timerBar';
+import { createTray } from '../ui/components/tray';
 import { createDiarioPanel, type DiarioPanel } from '../ui/panels/diario';
 import { createHud, type Hud, type ResourceId } from '../ui/hud';
 import { bakeIcons, bakeModelIcons, type IconSet } from '../ui/icons';
@@ -1774,6 +1777,249 @@ export async function createIslandScene(
     clearWhy.hidden = affordable;
   }
 
+  /* --- the Cofres tray — round 13's dead tap ------------------------------
+   *
+   * The blind playtest, verbatim: "tapped 3x on day one: no panel, no toast,
+   * no empty state." The resolver was already right — `chestTrayHint` has
+   * answered open / claim-free / start / unlocking / come-later / build-dock
+   * honestly since round 11 — and the route was already calling it. What it
+   * did with the answer was a TOAST: a line of text at the bottom of the
+   * screen, four seconds, with a tutorial dim over it. A destination on the
+   * nav bar that answers with a toast is a destination that did not open.
+   *
+   * So the tray is a place now. Every kind of answer lands in the same sheet —
+   * the four slots as objects, the state in a sentence, and one CTA that DOES
+   * the thing the resolver named — because a player who taps Cofres wants to
+   * see the tray whether or not there is anything in it. On a day-one island
+   * that is four empty wells, where chests come from, and a button that starts
+   * the Muelle.
+   *
+   * WHAT IT MAY SAY. The old toast promised "los traen el mar y el Muelle, uno
+   * al día" and both halves were false: nothing in the voyage path awards a
+   * chest, and the dock's Cofre Libre is every 4h stacking to two. The three
+   * real sources are read out of balance.json below rather than remembered.
+   */
+  const CHEST = BALANCE.chests;
+  const FREE_CHEST = chestSpec(CHEST.freeChest.type);
+  /** Which days of the seven-day chain actually carry a chest (balance.json). */
+  const CHEST_DAYS = BALANCE.daily.days.filter((d) => d.chest).map((d) => d.day);
+
+  /**
+   * A ROUND duration, for the sentences that describe a rule rather than count
+   * down a clock. `durText` always prints two units because a running timer has
+   * to keep its width, and "cada 4h 0m" is a cadence pretending to be a
+   * countdown. Only the trailing zero goes, so 1h 30m stays 1h 30m.
+   */
+  const everyText = (ms: number): string => durText(ms).replace(/ 0[hms]$/, '');
+
+  const traySheet = uiRoot ? createSheet({ title: 'Cofres', art: [iconSet.cofres, iconSet.gema] }) : null;
+  const trayCta = el('button', 'btn btn--green sheet__cta') as HTMLButtonElement;
+  const trayWhy = el('p', 't sheet__why');
+  const trayBar = createTimerBar();
+  let trayGo: (() => void) | null = null;
+  let traySetAt = 0;
+  let trayRemaining = 0;
+  let trayTotal = 1;
+
+  const tray = createTray(
+    { chest: iconSet.cofres, lock: iconSet.candado },
+    (slot) => tapTraySlot(slot)
+  );
+  // tray.css collapses the tray into the Cofres nav slot in portrait
+  // (`display:none`, absolutely positioned above the safe area) because at
+  // 390pt four 62px slots do not fit the bottom bar. INSIDE THIS SHEET the
+  // tray is not furniture competing for the bottom edge — it is the whole
+  // destination — so it stands up. Written here rather than in tray.css
+  // because that stylesheet belongs to the component, not to this panel.
+  Object.assign(tray.el.style, {
+    display: 'flex', position: 'static', transform: 'none',
+    left: 'auto', bottom: 'auto', justifyContent: 'center', padding: '2px 0 6px',
+  });
+
+  if (traySheet) {
+    trayCta.type = 'button';
+    traySheet.footer.append(trayWhy, trayCta);
+    uiRoot!.append(traySheet.el);
+    pressable(trayCta, () => { trayGo?.(); });
+  }
+
+  function openTray(): void {
+    if (!traySheet) return;
+    if (placing) endPlacement();
+    sheet?.close();
+    clearSheet?.close();
+    renderTray();
+    traySheet.open();
+  }
+
+  /**
+   * A slot tapped inside the sheet.
+   *
+   * A ready chest opens and a waiting one starts, because those are the two
+   * slots with something to do. A slot that is already unlocking POINTS at the
+   * CTA rather than doing nothing — that is where its countdown and its gem
+   * price are, and this whole round is about taps that answer. (An empty well
+   * cannot be tapped at all: tray.css gives pointer events only to live slots.)
+   */
+  function tapTraySlot(slot: number): void {
+    const cell = game.state().chests[slot];
+    if (!cell) return;
+    if (cell.state === 'ready') { traySheet?.close(); openTraySlot(slot); return; }
+    if (cell.state === 'waiting') {
+      const result = game.dispatch((s, now) => startChest(s, slot, now));
+      if (!result.ok) refused(result.refusal);
+      else sfx('build');
+      renderTray();
+      syncHud();
+      return;
+    }
+    if (cell.state === 'unlocking') { punch(trayCta); sfx('pop'); }
+  }
+
+  function openTraySlot(slot: number): void {
+    celebrateEvents(game.dispatch((s) => openChest(s, slot)).events);
+    syncHud();
+  }
+
+  /**
+   * The sheet, redrawn from the sim. One `chestTrayHint` call decides the
+   * sentence, the CTA and what the CTA does — there is no second priority list
+   * here to drift from the resolver's.
+   */
+  function renderTray(): void {
+    if (!traySheet) return;
+    const state = game.state();
+    const now = game.now();
+    const hint = chestTrayHint(state, now);
+    const hasDock = state.buildings.some(
+      (b) => b.type === CHEST.freeChest.building && b.level >= 1
+    );
+
+    tray.set(toHudState(state, now).chestSlots);
+
+    const rows: HTMLElement[] = [];
+    /** The state of the tray, in one sentence, above everything else. */
+    const say = (text: string): void => {
+      rows.push(el('div', 't sheet__row-label', text));
+    };
+    /** A source of chests: where it comes from, and what it pays. */
+    const source = (label: string, when: string): void => {
+      rows.push(el('div', 'gain gain--unlocks',
+        el('span', 't gain__label', label),
+        el('span', 't gain__to', when)));
+    };
+
+    // Reset what each branch may or may not set, so a state never inherits the
+    // last one's footnote or leaves a stopped countdown on screen.
+    trayWhy.textContent = '';
+    trayWhy.hidden = true;
+    trayBar.el.hidden = true;
+
+    switch (hint.kind) {
+      case 'open': {
+        const slot = hint.slot;
+        say('Tienes un cofre listo para abrir.');
+        trayCta.className = 'btn btn--green sheet__cta';
+        trayCta.replaceChildren(el('span', 't t-btn', '¡Abrir!'));
+        trayGo = () => { traySheet.close(); openTraySlot(slot); };
+        break;
+      }
+      case 'claim-free':
+        say('El Muelle te guarda un Cofre Libre.');
+        source(FREE_CHEST.label, `se abre en ${everyText(FREE_CHEST.timeMs)}`);
+        trayCta.className = 'btn btn--green sheet__cta';
+        trayCta.replaceChildren(el('span', 't t-btn', 'Recoger del Muelle'));
+        trayGo = () => {
+          const result = game.dispatch((s) => claimFreeChest(s));
+          if (!result.ok) refused(result.refusal);
+          else sfx('pop');
+          renderTray();
+          syncHud();
+        };
+        break;
+      case 'start': {
+        const slot = hint.slot;
+        const spec = chestSpec(state.chests[slot].type ?? CHEST.freeChest.type);
+        say('Un cofre espera en la bandeja. Ponlo a abrir y sigue con la isla.');
+        source(spec.label, everyText(spec.timeMs));
+        trayWhy.textContent = 'Solo se abre un cofre a la vez.';
+        trayWhy.hidden = false;
+        trayCta.className = 'btn btn--green sheet__cta';
+        trayCta.replaceChildren(el('span', 't t-btn', 'Empezar a abrir'));
+        trayGo = () => { tapTraySlot(slot); };
+        break;
+      }
+      case 'unlocking': {
+        // The resolver reports the shortest remaining time; with
+        // `concurrentUnlocks` at 1 there is exactly one slot behind it.
+        const slot = state.chests.findIndex((s) => s.state === 'unlocking');
+        if (slot < 0) break;
+        say('Se está abriendo. El tiempo corre aunque cierres el juego.');
+        trayRemaining = hint.remainingMs;
+        trayTotal = Math.max(1, state.chests[slot]?.totalMs ?? hint.remainingMs);
+        traySetAt = sceneElapsed;
+        trayBar.set(trayRemaining, trayTotal);
+        trayBar.el.hidden = false;
+        rows.push(el('div', 'sheet__timer', trayBar.el));
+        // §4.4's golden rule, in the one panel where the timer lives: the last
+        // five minutes cost exactly one gem, and the price is on screen BEFORE
+        // any gem moves — the same bargain the upgrade and clear sheets offer.
+        const cost = skipCost(state, slot, now) ?? 0;
+        const affordable = state.gems >= cost;
+        trayCta.className = `btn ${affordable ? 'btn--gold' : 'btn--grey2'} sheet__cta`;
+        trayCta.replaceChildren(
+          el('span', 't t-btn', 'Terminar Ya'),
+          el('span', 'sheet__cta-price',
+            iconImg(iconSet.gema, 'sheet__gem'),
+            el('span', 'num', n(cost)))
+        );
+        trayWhy.textContent = affordable ? '' : refusalText('not-enough-gems');
+        trayWhy.hidden = affordable;
+        trayGo = () => {
+          const result = game.dispatch((s, at) => skipChest(s, slot, at));
+          if (!result.ok) { refused(result.refusal); return; }
+          celebrateEvents(result.events);
+          renderTray();
+          syncHud();
+        };
+        break;
+      }
+      case 'come-later':
+        say('Bandeja vacía — de momento.');
+        source(`Muelle · ${FREE_CHEST.label}`, `en ${durText(hint.inMs)}`);
+        source('Diario · recompensa diaria', `días ${CHEST_DAYS.join(' y ')}`);
+        source('Diario · misiones', `${CHEST.crownChest.at} coronas`);
+        trayCta.className = 'btn btn--green sheet__cta';
+        trayCta.replaceChildren(el('span', 't t-btn', 'Ir al Diario'));
+        trayGo = () => { traySheet.close(); openDiario(); };
+        break;
+      case 'build-dock':
+        say('Todavía no te llega ningún cofre: te falta el Muelle.');
+        source(
+          `Muelle · ${FREE_CHEST.label}`,
+          `cada ${everyText(CHEST.freeChest.everyMs)}, hasta ${CHEST.freeChest.stack}`
+        );
+        source('Diario · recompensa diaria', `días ${CHEST_DAYS.join(' y ')}`);
+        source('Diario · misiones', `${CHEST.crownChest.at} coronas`);
+        trayCta.className = 'btn btn--green sheet__cta';
+        trayCta.replaceChildren(el('span', 't t-btn', 'Construir el Muelle'));
+        trayGo = () => { traySheet.close(); route('Construir'); };
+        break;
+    }
+
+    // Said last so it reads as a footnote to whatever is going on, and only
+    // where it is news: an island with the dock already up knows this, the
+    // build-dock state is already saying it, and a branch with its own note
+    // (the one-at-a-time rule, a gem price it cannot afford) keeps that one —
+    // the footnote is the least urgent thing this line can carry.
+    if (!hasDock && hint.kind !== 'build-dock' && trayWhy.hidden) {
+      trayWhy.textContent = 'El Muelle es el que reparte cofres gratis.';
+      trayWhy.hidden = false;
+    }
+
+    traySheet.body.replaceChildren(tray.el, el('div', 'well sheet__detail', ...rows));
+  }
+
   /* --- the Diario de a Bordo — round 11's playtest, finding 5 --------------
    *
    * The nav slot used to auto-claim the first finished quest as a bare toast;
@@ -1999,18 +2245,27 @@ export async function createIslandScene(
   let down: { x: number; y: number } | null = null;
 
   function toNdc(event: PointerEvent): void {
-    const rect = stage.renderer.domElement.getBoundingClientRect();
-    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    aimNdc(event.clientX, event.clientY);
   }
 
-  /** The grid cell under the pointer, or null if it missed the island. */
-  function cellUnder(event: PointerEvent): { x: number; z: number } | null {
-    toNdc(event);
+  function aimNdc(clientX: number, clientY: number): void {
+    const rect = stage.renderer.domElement.getBoundingClientRect();
+    pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+  }
+
+  /** The grid cell under a screen point, or null if it missed the island. */
+  function cellAt(clientX: number, clientY: number): { x: number; z: number } | null {
+    aimNdc(clientX, clientY);
     raycaster.setFromCamera(pointer, stage.camera);
     const hit = raycaster.intersectObject(terrain, true)[0];
     if (!hit) return null;
     return worldToCell(shape, hit.point.x, hit.point.z);
+  }
+
+  /** The grid cell under the pointer, or null if it missed the island. */
+  function cellUnder(event: PointerEvent): { x: number; z: number } | null {
+    return cellAt(event.clientX, event.clientY);
   }
 
   function buildingUnder(event: PointerEvent): number | null {
@@ -2040,45 +2295,241 @@ export async function createIslandScene(
    * no control for is the one failure the director is written to make
    * impossible, so it is wired here rather than left for a later round.
    *
-   * The tap is the same one that opens a building: a real tap, not a drag, that
-   * hit no model. `cellUnder` raycasts the GROUND, and the nearest obstacle
-   * within `TAP_REACH` of the cell it lands on is the one that gets the
-   * carpenter — the slack is not generosity, it is the geometry:
+   * ─── ROUND 13: THE TAP IS RESOLVED ON THE GLASS, NOT ON THE GRID ─────────
+   *
+   * It used to raycast the GROUND and then sweep world space for the nearest
+   * obstacle within 1.2 cells of the cell the ray landed on. The blind
+   * playtest measured what that costs: "all three clear steps needed 3-16
+   * probe taps inside the highlighted area", and "beat says 'despeja esa roca'
+   * but the started job clears the palm". Both are the same bug, and it is a
+   * unit error — the player aims in PIXELS at a thing they can see, and the
+   * old rule answered in CELLS around a point the ray had already been
+   * deflected to:
    *
    *   · a palm is drawn up to 0.46 of a cell off its own centre, and a finger
    *     goes for the trunk it can see rather than for the soil under it;
    *   · the trunk stands about a unit tall on a camera pitched 33.5 degrees, so
    *     a ray through the visible tree meets the ground the better part of a
-   *     cell BEYOND the cell the tree is standing on.
+   *     cell BEYOND the cell the tree is standing on — which is how a tap on a
+   *     pecio starts a roca.
    *
-   * 1.2 cells is about 25 screen pixels at this framing — a fingertip, and the
-   * number is a compromise measured in both directions. Wider and a tap on open
-   * ground three cells from anything starts a job: a clear costs no resources
-   * but it does commit a carpenter, for thirty seconds on a palm and FIFTEEN
-   * MINUTES on a wreck, and a mis-tap that locks a builder for a quarter of an
-   * hour is the kind of thing a player never forgives. Narrower and the aim
-   * error above is not covered. It stays a one-tap commit rather than Clash's
-   * two-step confirm bubble, which is a real difference and is why the toast
-   * below exists: whatever a tap started, it says so.
+   * So the primary question is now asked where the player asked it. Every
+   * obstacle is projected to the same screen point the tutorial's ring is drawn
+   * on (`projectCell`), and the tap takes the nearest one inside a FINGER of
+   * that point. The hit target is therefore at least 44px across whatever the
+   * model's mesh happens to be — a palm, a boulder and a half-sunk wreck all
+   * get the same finger — and it is centred on what is DRAWN.
+   *
+   * `AIM_REACH` is the second half of the same fix, and it is sized off the
+   * circle the player can actually see. While the contramaestre is pointing at
+   * an obstacle, that obstacle's target grows to the radius of the spotlight
+   * drawn round it, so ANY tap inside the highlighted circle clears the
+   * highlighted thing — which is what the card promised and what the playtest
+   * did not get. The reach is normalised before the nearest is chosen, so a
+   * different obstacle the finger actually landed on still wins its own ring:
+   * the assist widens the taught target, it never steals a deliberate tap.
+   *
+   * Measured, on a 430pt phone, 37 taps swept across the highlighted circle on
+   * four seeds: the old rule started the right job 18% of the time and NOTHING
+   * AT ALL a third of the time, which is the playtest's "3-16 probe taps" to
+   * three significant figures. Both halves together take it to every tap.
+   *
+   * The exact cell under the ray stays as the fallback, for a finger that lands
+   * on an obstacle's own SOIL rather than on the thing standing in it. What is
+   * gone is the 1.2-cell sweep: a clear costs no resources but it commits a
+   * carpenter, for thirty seconds on a palm and FIFTEEN MINUTES on a wreck, and
+   * a mis-tap that locks a builder for a quarter of an hour is the thing a
+   * player never forgives. It stays a one-tap commit rather than Clash's
+   * two-step confirm bubble, which is why the toast below exists: whatever a
+   * tap started, it says so.
    */
-  const TAP_REACH = 1.2;
+  /** Half a finger, in CSS pixels: 44px across at 430w. */
+  const FINGER = 22;
+  /**
+   * The tutorial's spotlight radius, in CSS pixels — and it is NOT 46.
+   *
+   * src/ui/tutorial.ts builds an obstacle's spot as a 92px box round the
+   * projected cell (`r = 46`), and then `place()` draws the hole as a circle
+   * big enough to hold that box's DIAGONAL plus 14px of padding. What the
+   * player sees is therefore hypot(92, 92) + 14 = 144px across: a 72px radius,
+   * over a palm drawn about 25px wide, on a field whose cells project about
+   * 25px apart. That gap between what is circled and what is hittable is the
+   * whole of the finding — the highlight says "anywhere in here" and only the
+   * middle of it worked.
+   */
+  const AIM_REACH = 72;
+
+  /**
+   * The obstacle the contramaestre has a spotlight on, straight from the
+   * director. Null whenever no circle is being drawn on the wilderness.
+   *
+   * Two questions, one answer. The BEAT ON SCREEN is asked first — its target
+   * carries the obstacle's own ID, so while a ring is up the assist is
+   * unambiguously about the thing inside it. Failing that, the walk is asked
+   * whether it still owes its clear: if nothing has been cleared and no
+   * carpenter is out on one, the wilderness card is either about to be shown
+   * or is being shown by a layer this scene cannot see, and `tutorialObstacle`
+   * — the function BOTH the `despejar` beat and the `mientras` gap card aim
+   * with — names the same palm either way.
+   *
+   * That second branch is not belt-and-braces, it is the case that actually
+   * happens: with no live game to write flags into (`src/ui/tutorial.ts`'s
+   * SEAM 1 — a capture, an import) the layer keeps its acknowledgements in
+   * localStorage, so the card can be a beat ahead of the state this scene
+   * reads. Aiming through one function either way is what makes the copy and
+   * the job agree by construction: "esa roca" IS the rock the carpenter walks
+   * to, because the card and the tap ask one question.
+   *
+   * Once the first clear is behind the player this returns null and the tap is
+   * a plain finger again. The assist belongs to the lesson, not to the game.
+   */
+  function taughtObstacle(): number | null {
+    const state = game.state();
+    if (!tutorialActive(state) || !spotlightUp()) return null;
+    const step = tutorialStep(state, game.now());
+    if (step?.target.kind === 'obstacle') return step.target.obstacleId;
+    // `despejar.done()`, inverted: nothing cleared and nobody out clearing.
+    const owed = state.stats.obstacles === 0 && !state.obstacles.some((o) => o.work);
+    return owed ? tutorialObstacle(state)?.id ?? null : null;
+  }
+
+  /**
+   * Is a spotlight actually being drawn on the island right now?
+   *
+   * ✎ SEAM. The assist above is a promise about a CIRCLE ON SCREEN — "what is
+   * highlighted is what you get" — so it has to be off whenever there is no
+   * circle. The scene cannot ask the tutorial layer directly: the layer is the
+   * router's (src/main.ts mounts it over an island it outlives), and a scene
+   * may not reach up into the router. What it can do is look at what is drawn,
+   * which is the same thing the player is looking at.
+   *
+   * `.tut` is the layer's own root, and it says three different things that
+   * all mean NO CIRCLE. It hides itself while the director is silent. It wears
+   * `tut--soft` when it could not find its target and fell back to a holeless
+   * dim. And it wears `tut--wide` when the beat is about the GROUND rather than
+   * about an object — `locate()` returns a wide spot only from `islandBand()`,
+   * and `place()` then draws a 26px-cornered frame round the island's whole
+   * share of the screen instead of a circle round anything. src/ui/tutorial.ts
+   * reaches the other way across the same seam — it finds
+   * `.world-item .timerbar` and `.sheet.is-open .pick-row` — and this is the
+   * return leg of it.
+   *
+   * THE WIDE CASE IS THE ONE THIS GATE CAUGHT, and it is worth the sentence,
+   * because it is round thirteen's own finding coming back one beat early. The
+   * opening beat — *"Esta isla es tuya, capitán"* — points at the ground, so it
+   * gets the band: 414x507 at the phone framing, no circle on any object. The
+   * assist was armed through it anyway, because `taughtObstacle`'s second
+   * branch correctly answers "the walk still owes its clear" from the very
+   * first frame. So a 72px disc sat on the palm the NEXT beat would name, over
+   * a screen that was pointing at everything.
+   *
+   * Measured on five seeds, tapping dead centre of every OTHER obstacle drawn
+   * in the tap band: 62 of 563 deliberate taps — better than one in ten — were
+   * answered with the taught palm instead of the thing under the finger. On
+   * `la-leyenda` a tap on the peñasco came back as a palm, which is the
+   * fifteen-minute job traded for the thirty-second one, and it is exactly the
+   * sentence this round exists to kill: *"beat says 'despeja esa roca' but the
+   * started job clears the palm."* The assist is a promise about a circle; a
+   * band is not a circle.
+   *
+   * It also keeps the assist out of every capture that is not ABOUT the
+   * tutorial: a shot without `--tutorial 1` has no layer, so an act aiming at
+   * a particular wreck gets that wreck.
+   */
+  function spotlightUp(): boolean {
+    const layer = document.querySelector('.tut') as HTMLElement | null;
+    return !!layer
+      && layer.style.visibility !== 'hidden'
+      && !layer.classList.contains('tut--soft')
+      && !layer.classList.contains('tut--wide');
+  }
+
+  /**
+   * Which obstacle a tap at this screen point means, or null for none.
+   *
+   * THE SPOTLIGHT WINS ITS OWN CIRCLE, outright. Everything else is decided by
+   * which drawn obstacle the finger is nearest, inside a finger's reach.
+   *
+   * The two-tier rule is the measurement talking. Ranking the taught obstacle
+   * against its neighbours by a normalised distance sounds fairer and loses:
+   * the field projects about 25px between cells, so most of a 144px circle is
+   * within a finger of SOME other tree, and a swept ring still started the
+   * wrong job a third of the time. There is no arrangement of one radius that
+   * makes "any tap inside the highlight does what the card says" true on a
+   * dense field — the highlight has to be a target rather than a hint. Outside
+   * it nothing changes, and the circle is 144px of a 430x932 screen, so a
+   * player who wants a different palm has the whole island to tap it on.
+   */
+  function wildAt(clientX: number, clientY: number): Obstacle | null {
+    const state = game.state();
+
+    /**
+     * How far the finger is from the thing as DRAWN.
+     *
+     * Not from a point — from the segment between the soil the obstacle stands
+     * on and the crown the ring is centred on, which is the object's own
+     * standing height on the glass. Measured off a point instead, a tap on the
+     * base of a wreck came out nearer the CROWN OF THE PALM BEHIND IT than to
+     * the wreck's own crown, because the two are about a cell apart on screen
+     * and the lift is about a cell tall — and the harness caught it: round 12's
+     * clearing capture opened a pecio, the first pass of this rule opened the
+     * roca standing behind it. A capsule round the drawn body cannot make that
+     * mistake; it is the silhouette the finger was aiming at.
+     */
+    const bodyReach = (o: Obstacle): number => {
+      const base = projectLifted(o.x, o.z, 0);
+      const crown = projectLifted(o.x, o.z, CROWN);
+      if (!base || !crown) return Infinity;
+      const vx = crown.x - base.x;
+      const vy = crown.y - base.y;
+      const len2 = vx * vx + vy * vy;
+      const t = len2 > 0
+        ? Math.max(0, Math.min(1, ((clientX - base.x) * vx + (clientY - base.y) * vy) / len2))
+        : 0;
+      return Math.hypot(clientX - (base.x + vx * t), clientY - (base.y + vy * t));
+    };
+
+    // The spotlight is a disc round the RING'S OWN CENTRE, because that is the
+    // circle the player can see and the promise being kept.
+    const taught = taughtObstacle();
+    const lit = taught === null ? undefined : state.obstacles.find((o) => o.id === taught);
+    if (lit) {
+      const at = projectCell(lit.x, lit.z);
+      if (at && Math.hypot(at.x - clientX, at.y - clientY) <= AIM_REACH) return lit;
+    }
+
+    let best: Obstacle | null = null;
+    let nearest = FINGER;
+    for (const o of state.obstacles) {
+      const d = bodyReach(o);
+      if (d > nearest) continue;
+      nearest = d;
+      best = o;
+    }
+    return best;
+  }
 
   /** What the toast calls each kind — es-ES, this screen's own copy. */
   const WILD_LABEL: Record<string, string> = {
     palmera: 'la palmera', roca: 'la roca', pecio: 'el pecio', penasco: 'el peñasco',
   };
+  /**
+   * The whole resolution, from a screen point to the obstacle a tap means.
+   *
+   * The glass first, the grid second: a ray through a drawn tree lands on the
+   * ground BEHIND it, so asking the cell first is asking about the wrong one.
+   * The cell is still asked, for a finger that lands on an obstacle's own soil
+   * rather than on the thing standing in it.
+   */
+  function wildFor(clientX: number, clientY: number): Obstacle | null {
+    const screen = wildAt(clientX, clientY);
+    if (screen) return screen;
+    const cell = cellAt(clientX, clientY);
+    return cell ? obstacleAt(game.state(), cell.x, cell.z) : null;
+  }
+
   function tapWilderness(event: PointerEvent): void {
-    const cell = cellUnder(event);
-    if (!cell) return;
-    const state = game.state();
-    let target = obstacleAt(state, cell.x, cell.z);
-    if (!target) {
-      let nearest = TAP_REACH;
-      for (const o of state.obstacles) {
-        const d = Math.hypot(o.x - cell.x, o.z - cell.z);
-        if (d <= nearest) { nearest = d; target = o; }
-      }
-    }
+    const target = wildFor(event.clientX, event.clientY);
     if (!target) return;
     // A job already running opens its sheet — the inspect half of finding 3.
     // It used to dispatch and bounce off the 'busy' refusal, so tapping the
@@ -2140,34 +2591,20 @@ export async function createIslandScene(
 
     switch (what) {
       case 'Cofres': {
-        // The tap is resolved by the sim (round 11's finding 2): a day-one
-        // tray used to fall through every case to `Solo un cofre a la vez` —
-        // a refusal about a rule the player had never met, over zero chests.
-        // Now the empty states answer with WHEN chests come.
+        // Round 13's finding: the resolver was right and the ANSWER never
+        // appeared — every branch was a toast under the tutorial's dim, which
+        // is why the playtest tapped this three times and recorded "no panel,
+        // no toast, no empty state". The destination is a destination now.
+        //
+        // The one exception is a chest that is READY, and it is the exception
+        // Clash Royale itself makes: the collapsed tray on the bar IS the
+        // tray, so tapping it with something claimable in it opens the thing
+        // rather than a page about the thing. §3.22B's reward moment is a
+        // louder, more complete answer than any sheet could be, and the slots
+        // inside the sheet do the same when it is opened for another reason.
         const hint = chestTrayHint(state, now);
-        switch (hint.kind) {
-          case 'open':
-            // §3.22B — the reward moment, not a console line.
-            celebrateEvents(game.dispatch((s) => openChest(s, hint.slot)).events);
-            return;
-          case 'claim-free':
-            game.dispatch((s) => claimFreeChest(s));
-            return;
-          case 'start': {
-            const result = game.dispatch((s) => startChest(s, hint.slot, now));
-            if (!result.ok) refused(result.refusal);
-            return;
-          }
-          case 'unlocking':
-            hud?.say(`Tu cofre se abre en ${durText(hint.remainingMs)}`);
-            return;
-          case 'come-later':
-            hud?.say(`El Muelle te guarda un Cofre Libre en ${durText(hint.inMs)}`);
-            return;
-          case 'build-dock':
-            hud?.say('Aún no tienes cofres: los traen el mar y el Muelle, uno al día');
-            return;
-        }
+        if (hint.kind === 'open') { openTraySlot(hint.slot); return; }
+        openTray();
         return;
       }
       case 'Diario de a Bordo': {
@@ -2435,10 +2872,11 @@ export async function createIslandScene(
    * a ring centred on the soil sits under the thing it is meant to circle.
    */
   const cellPoint = new THREE.Vector3();
-  function projectCell(x: number, z: number): { x: number; y: number } | null {
+  /** `lift` is in world units above the cell's own ground. */
+  function projectLifted(x: number, z: number, lift: number): { x: number; y: number } | null {
     if (x < 0 || z < 0 || x >= shape.size || z >= shape.size) return null;
     const at = cellToWorld(shape, x, z);
-    cellPoint.set(at.x, at.y + STEP * 0.9, at.z).project(stage.camera);
+    cellPoint.set(at.x, at.y + lift, at.z).project(stage.camera);
     if (cellPoint.z >= 1) return null;
     const rect = stage.renderer.domElement.getBoundingClientRect();
     return {
@@ -2446,6 +2884,9 @@ export async function createIslandScene(
       y: rect.top + (-cellPoint.y * 0.5 + 0.5) * rect.height,
     };
   }
+  const CROWN = STEP * 0.9;
+  const projectCell = (x: number, z: number): { x: number; y: number } | null =>
+    projectLifted(x, z, CROWN);
 
   shedVeil();
 
@@ -2463,22 +2904,54 @@ export async function createIslandScene(
   // captures aimed at a pecio and started a roca. Projecting the cell's own
   // ground point inverts the tap's raycast exactly.
   if (shot) {
-    const groundPoint = (x: number, z: number): { x: number; y: number } | null => {
-      const at = cellToWorld(shape, x, z);
-      cellPoint.set(at.x, at.y, at.z).project(stage.camera);
-      if (cellPoint.z >= 1) return null;
-      const rect = stage.renderer.domElement.getBoundingClientRect();
-      return {
-        x: rect.left + (cellPoint.x * 0.5 + 0.5) * rect.width,
-        y: rect.top + (-cellPoint.y * 0.5 + 0.5) * rect.height,
-      };
-    };
+    const groundPoint = (x: number, z: number) => projectLifted(x, z, 0);
     (window as unknown as { __wild?: () => unknown }).__wild = () =>
       game.state().obstacles.map((o) => ({
         id: o.id, tier: o.tier, kind: o.kind, working: o.work !== null,
+        x: o.x, z: o.z,
         at: groundPoint(o.x, o.z),
+        // Where the thing is DRAWN, which is where round 13 resolves the tap
+        // and where the tutorial's ring is centred. A probe that wants to know
+        // whether the highlighted area is tappable needs this one, not the soil.
+        drawn: projectCell(o.x, o.z),
       }));
+
+    /** The grid cell under a screen point — the first half of what the tap
+     *  used to be resolved by, kept so a probe can reproduce the old rule
+     *  without the old rule having to live in the shipped file. */
+    (window as unknown as { __cellAt?: (x: number, y: number) => unknown }).__cellAt =
+      (x, y) => cellAt(x, y);
+
+    /**
+     * What a tap at this screen point WOULD start, without starting it.
+     *
+     * The hitbox is the round-13 finding ("3-16 probe taps inside the
+     * highlighted area"), and a hitbox cannot be measured one boot at a time:
+     * a real tap commits a carpenter and ends the beat, so a hundred sample
+     * points would be a hundred browsers. This asks the same resolver the tap
+     * asks and answers with the obstacle's id, so a whole ring can be swept in
+     * one frame. Diagnostic only, shot mode only — the same standing as
+     * `__wild` and `__camera`.
+     */
+    (window as unknown as { __wildAt?: (x: number, y: number) => unknown }).__wildAt = (x, y) => {
+      const hit = wildFor(x, y);
+      return hit ? { id: hit.id, kind: hit.kind, tier: hit.tier } : null;
+    };
+    (window as unknown as { __taught?: () => number | null }).__taught = () => taughtObstacle();
   }
+
+  /**
+   * `?tray=1` boots with the Cofres sheet already open.
+   *
+   * The same trick `?screen=store` plays for the store (src/main.ts): a panel
+   * that only exists after a tap is a panel no critic can review, and the
+   * round-13 finding is precisely about what a player sees when they tap this
+   * one. It changes which panel is open and nothing else — no state is written
+   * and no save is touched. A day-one boot photographs the empty tray:
+   *
+   *   npm run shoot -- island --mobile --tray 1 --out shots/r13_tray.png
+   */
+  if (params.get('tray') === '1') openTray();
 
   return {
     project: projectCell,
@@ -2552,6 +3025,10 @@ export async function createIslandScene(
         // Same honesty for the clear sheet: the gem price falls as the timer
         // runs, and the sheet closes itself when the job it was about is done.
         if (clearFor !== null) renderClearSheet();
+        // And for the tray: a chest that becomes ready while its own panel is
+        // open must turn the CTA into "¡Abrir!" rather than go on counting
+        // down to a moment that has already passed.
+        if (traySheet?.isOpen) renderTray();
         if (placing) refreshPlacement();
       }
 
@@ -2561,6 +3038,9 @@ export async function createIslandScene(
       // capsules do, measured from the scene time it was last synced.
       if (clearSheet?.isOpen && clearFor !== null) {
         clearBar.set(Math.max(0, clearRemaining - (elapsed - clearSetAt) * 1000), clearTotal);
+      }
+      if (traySheet?.isOpen && !trayBar.el.hidden) {
+        trayBar.set(Math.max(0, trayRemaining - (elapsed - traySetAt) * 1000), trayTotal);
       }
 
       if (!hud) return;

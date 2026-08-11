@@ -1,7 +1,7 @@
 import {
   BALANCE, MINUTE, chestTrayHint, claimQuest, clearNowCost, clearObstacle, createDemoIsland,
   finishClearNow, gemSpeedupCost, landCargoInPlace, markLandingSeen, nextAction, previewLanding,
-  spilledStoreNeeded, storeCap,
+  spilledStoreNeeded, storeCap, tick,
   type GameState,
 } from '../../src/sim';
 import { season } from '../../src/sim/rivals';
@@ -163,6 +163,54 @@ describe('playtest 2 · the chest tray answers honestly', () => {
     const hint = chestTrayHint(state, T0);
     eq(hint.kind, 'unlocking', 'the truthful answer is the running timer');
     if (hint.kind === 'unlocking') eq(hint.remainingMs, 47 * MINUTE, 'with its remaining time');
+  });
+
+  /* --- round 13: the tap now OPENS the tray, and the tray makes claims -----
+   *
+   * The resolver was right and the answer never appeared — every branch was a
+   * toast, and the playtest recorded "tapped 3x on day one: no panel, no
+   * toast, no empty state". The tray is a sheet now, and a sheet has room to
+   * say where chests come from, which is a promise the game has to keep. The
+   * line it replaced did not: "los traen el mar y el Muelle, uno al día" was
+   * wrong about the sea and wrong about the cadence. These pin the sources the
+   * empty state actually names.
+   */
+  test('the empty tray promises the Muelle, and the Muelle delivers on that clock', () => {
+    const state = quiet();                       // the fixture has a Muelle
+    eq(chestTrayHint(state, T0).kind, 'come-later', 'the dock stands, so one is coming');
+    const later = tick(state, T0 + BALANCE.chests.freeChest.everyMs).state;
+    eq(later.freeChestsBanked, 1, 'and it arrives exactly when the sheet said');
+    eq(chestTrayHint(later, later.now).kind, 'claim-free', 'with the tray offering to take it');
+  });
+
+  test('the sea does not post chests — the empty state must not say it does', () => {
+    // The old toast sent a chestless player out to sea for chests. Nothing in
+    // the landing path awards one, so the tray names the Muelle and the Diario
+    // and nothing else; this is what stops that line coming back.
+    const state = game();
+    eq(chestTrayHint(state, T0).kind, 'build-dock', 'day one, no dock: the answer is the dock');
+    const before = JSON.stringify(state.chests);
+    landCargoInPlace(state, { oro: 400, madera: 400, ron: 120, metal: 90 });
+    eq(JSON.stringify(state.chests), before, 'a whole hold landed and the tray is untouched');
+    eq(state.freeChestsBanked, 0, 'and nothing was banked at a dock that does not exist');
+    eq(chestTrayHint(state, T0).kind, 'build-dock', 'so the honest answer has not changed');
+  });
+
+  test('the Diario really is the other source the empty state names', () => {
+    // The sheet prints the days of the chain that carry a chest and the corona
+    // price of the Cofre de la Corona. Both come out of balance.json, and both
+    // have to exist or the empty state is selling a door with nothing behind it.
+    const days = BALANCE.daily.days.filter((d) => d.chest).map((d) => d.day);
+    ok(days.length > 0, `the seven-day chain carries chests (days ${days.join(', ')})`);
+    ok(BALANCE.chests.crownChest.at > 0, 'and the corona chest has a price to name');
+    ok(
+      BALANCE.chests.types[BALANCE.chests.crownChest.type] !== undefined,
+      'which is a chest type that exists'
+    );
+    eq(
+      BALANCE.chests.freeChest.building, 'muelle',
+      'and the building the empty state sends the player to build is the one that pays'
+    );
   });
 });
 

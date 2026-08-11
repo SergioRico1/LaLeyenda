@@ -1224,8 +1224,33 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
   // WARNING. Purely positional, so the same voyage replays the same events;
   // `warnedRing` above is why it is one event per crossing rather than a
   // banner per step, and why only a DEEPER crossing speaks again.
+  //
+  // ROUND 13 MOVED IT ONE CELL EARLIER, because a warning at the crossing
+  // measured as no warning at all. The blind playtest: "one held drag took the
+  // skiff to ZONA 3 within ~2 min; hull went 100->15% before I saw any zone
+  // plate." Reproduced over eight seeds and three headings at full throttle,
+  // the old rule fired at the boundary and the first outranked hit landed
+  // between 0.3 and 13 seconds later — a third of a second, four times out of
+  // twenty-four. That is a plate a player reads with the hull already going.
+  //
+  // The fix is geometric, not cosmetic: a ring is a square shell of cells, so
+  // ask about the cell ONE STEP AHEAD ON THE CURRENT HEADING as well as the
+  // one underneath. The deeper of the two is what the voyage is warned about,
+  // which buys a whole cell of water — 55 units, about 3.2 seconds at a
+  // skiff's 17 a second — between the plate and the water it is about.
+  //
+  // Two properties survive the move. It is still purely positional, so the
+  // same voyage replays the same events; and it still cannot skip a ring,
+  // because a single cell step changes a Chebyshev distance by at most one, so
+  // `warnedRing` latches every shell exactly once whether it was announced
+  // from the near side or entered head-on.
   if (!v.sunk) {
-    const ring = ringOf(Math.round(v.x / SEA_CELL), Math.round(v.y / SEA_CELL));
+    const here = ringOf(Math.round(v.x / SEA_CELL), Math.round(v.y / SEA_CELL));
+    const ahead = ringOf(
+      Math.round((v.x + Math.cos(v.heading) * SEA_CELL) / SEA_CELL),
+      Math.round((v.y + Math.sin(v.heading) * SEA_CELL) / SEA_CELL)
+    );
+    const ring = Math.max(here, ahead);
     if (ring > spec.rated && ring > v.warnedRing) {
       v.warnedRing = ring;
       events.push({ kind: 'zone-warning', ring, rated: spec.rated });
