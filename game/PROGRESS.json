@@ -439,6 +439,50 @@
         "Store shelf escalates puñado → bolsa → cofre → arcón as drawn art; leaderboard wears league badges and a season plate."
       ],
       "pieces": []
+    },
+    {
+      "round": 11,
+      "title": "The last pass: one team at last — and the water is the signature flaw",
+      "a": "shots/blind/island-r12/a.png",
+      "b": "shots/blind/island-r12/b.png",
+      "key": {
+        "a": "see key.json",
+        "b": "see key.json"
+      },
+      "better": "B",
+      "weWon": false,
+      "gapSize": "obvious",
+      "biggestFlaw": "The water. B's sea is a graded depth field — submerged sand shelf haloing every landmass, coherent caustic sparkle, soft aqua surf — while A rings its island in hard white popcorn chips over flat navy with tiled speckle. The same flat speckle field is on every one of our nine screens (title, both islands, calm sea, fight), so the single weakest system is also the most exposed one in the whole set.",
+      "differences": [
+        "Water: B has a shallow-water shelf gradient with visible submerged sand and coherent sparkle; A is flat deep navy with repeating white speckle tiles and a confetti foam ring at the coast.",
+        "Flora: B's palms are curved, multi-frond canopies with grounded shadow pools; A repeats one asterisk-shaped palm silhouette with no canopy mass, and its ground scatter is uniform red/dark confetti rather than authored gardening.",
+        "Focal hierarchy: B stages landmarks — skull-sail ship at anchor, wheel-crested hall, glowing forge, tiki totems, quest board — so the eye has a path; A spreads a dozen same-weight roofs and only the brazier glow leads anywhere.",
+        "Ground craft: B's plateau edges are clean bevelled cake-layers with sand rim highlights and flower-clumped turf; A's turf patches end in sawtooth mask edges and its risers read muddier.",
+        "Density (the one axis A wins): A reads as a played, working town — more buildings, docks, farm plots, terraces — where B is a staged vignette with large empty sand aprons."
+      ],
+      "note": "oneTeam: TRUE — 'every panel is drawn by one hand... the set would survive Clash side-by-sides.' The Supercell verdict: 'a well-drilled small team wearing Supercell's UI grammar, not Supercell' — and what breaks the spell is named: the water's popcorn chips over flat navy on every world screen (it 'lost us the blind on its own'), the sea-fight frame's raw debug arcs, and the flora. The playtest went deeper: pathCompleted FALSE — the chest step is a dead tap on day one, cargo VANISHES (ron/metal toast but the ledger reads zero, verified twice via export), large-obstacle clear jobs are invisible, and the first session never contains the actual pirate game: the sea — 'the good game' — sits behind days of grind or ~7 euros. fun: thin. secondsToFirstSteer: 2. The sixth judge also broke the blind three ways; the third — pixel-matching against the in-repo reference — ends the arms race, and the honest limit is now written at the top of the tool.",
+      "pieces": [
+        {
+          "piece": "audit",
+          "verdict": "delivered",
+          "biggestGap": "The chrome is one hand; the SEAMS are not — every transition a hard cut, the tutorial's first build points at CANCEL, and the Diario is a nav destination that opens nothing."
+        },
+        {
+          "piece": "world+water+firstrun+chrome+voice",
+          "verdict": "shipped",
+          "biggestGap": "Turf calmed, underwater ledge, title's pier, captain swatches relit, .pick-row__go rim (audit:layers passes), one panel enter, one voice, one mix."
+        }
+      ],
+      "nextRound": [
+        "CARGO VANISHES: ron/metal land as toasts but the save ledger reads zero — the sea's rewards do not exist. Verified twice via export.",
+        "The chest step is a dead tap on a day-one save, with a mis-worded toast over zero chests.",
+        "FIRST SAIL IN SESSION ONE: the sea is the good game and it sits behind hall 3 + a 5,000-wood Astillero. The starter skiff must sail free.",
+        "Large-obstacle clear jobs are invisible — no timer capsule, no world item, reads as a soft-lock.",
+        "The Diario opens a real panel showing the quest list that already exists in the save.",
+        "The water's island ring: popcorn chips over flat navy, on all nine screens. The judge: it lost the blind on its own.",
+        "The sea fight as a shippable frame: readable monster, boss bar, arcs drawn as water not debug.",
+        "A warning affordance when a zone outranks the hull — twin tritons melt a skiff with no tell."
+      ]
     }
   ]
 }
