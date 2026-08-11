@@ -352,7 +352,21 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
 
   const uiRoot = document.getElementById('ui');
   let ended: 'home' | 'sunk' | 'left' | null = null;
-  const hud: SeaHud | null = uiRoot
+  // `?hud=0` drops the overlay entirely, so the water can be judged on its own
+  // pixels — the same knob islandScene has honoured since round 8, and this
+  // scene did not.
+  //
+  // It matters beyond tidiness. tools/blind.mjs shoots its `sea` piece with
+  // `--hud 0` and has done for rounds; the flag reached this file as a query
+  // param and nothing read it, so every blind sea comparison put OUR frame,
+  // chrome and all, against a shipped still that has none — a frame a judge can
+  // identify as ours on content alone, with no metadata needed. That is the
+  // same failure blind.mjs's own comment records costing nine rounds when
+  // `--save demo` was silently dropped, and it is why unknown flags are a hard
+  // error there now. A flag that is READ by one scene and ignored by another is
+  // the version that error cannot catch.
+  const hudEnabled = params.get('hud') !== '0';
+  const hud: SeaHud | null = uiRoot && hudEnabled
     ? createSeaHud(uiRoot, { onLeave: () => end('left') })
     : null;
 

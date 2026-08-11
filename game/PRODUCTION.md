@@ -15,13 +15,21 @@ Status: `[x]` done and verified · `[~]` partly there, gap named · `[ ]` not st
 ## 0 · Gates that must stay green
 
 - [x] `npx tsc --noEmit` clean (strict, `noUnusedLocals`)
-- [x] `npm test` — the pure-sim suite, 294 cases (round 12 added 33: the
-      landing report, the chest tray's honest answers, rushable clear jobs,
-      the Diario's explicit claims, the dock-owned skiff, the zone warning)
+- [x] `npm test` — the pure-sim suite, 301 cases (round 13 added 7: the three
+      sources the empty chest tray names and the one it must not, the zone
+      warning's new look-ahead over a live fleet, and the pairing of a
+      tutorial card's noun with the obstacle its ring is on. Round 12 added
+      33: the landing report, the chest tray's honest answers, rushable clear
+      jobs, the Diario's explicit claims, the dock-owned skiff, the zone
+      warning)
 - [x] `npm run test:roundtrip` — island → sea → island driven as a player
 - [x] `npm run build` produces a bundle
 - [x] `npm run shoot -- island --mobile --act <each act>` — every scripted
-      interaction still reaches its feature
+      interaction still reaches its feature. `teach` also ASSERTS now: on the
+      opening beat, which draws the wide island band and circles nothing, the
+      tap resolver must answer with whatever is under the finger. Round 13's
+      gate measured 62 of 563 deliberate taps being answered with the palm the
+      NEXT beat names, and the act fails on any of them.
 - [x] `npm run audit:layers` — every component it can find passes all four
       layers, `.pick-row__go` included (step 503.6, the round-11 rim fix).
       Round 12's gate: 9/9 measured again, same roster as round 11 — builder
@@ -33,8 +41,61 @@ Status: `[x]` done and verified · `[~]` partly there, gap named · `[ ]` not st
       the visible badge is confirmed in the same frame's shot. On a container
       whose browser will not survive 13 sequential boots, run it sliced:
       `npm run audit:layers -- --only <name>`.
-- [x] `npm run audit:sea` — sea texture against the reference, HUD excluded
-- [ ] `node tools/blind.mjs` — our frame beats the shipped game's, judged blind
+      **Slice it with a plain file redirect, never through a pipe.** The tool
+      prints its table and then does not exit — it leaves the browser and the
+      dev server up — so a slice has to be run under `timeout`, and `timeout`
+      kills the node process while its vite CHILD still holds the write end of
+      the pipe. `grep` therefore never sees EOF and never flushes, and a slice
+      that passed reports nothing at all. Round 13's gate lost four components
+      to that before spotting it: `node tools/audit-layers.mjs --only <name>
+      > out.log 2>&1` is the form that keeps the result.
+      Round 13's gate measured four and confirmed four absences on the day-one
+      boot: primary CTA ✓✓✓✓ (step ratio 477.6), nav slot ✓✓✓✓ (282), resource
+      pill ✓✓✓✓ (348.1), sheet CTA ✓✓✓✓ (503.6), and builder chip / badge /
+      chest slot / timer capsule correctly "not on screen" — the same roster
+      round 12 recorded. *Not re-measured this round, on a container that gave
+      each slice about four minutes:* readout cell, objective row, picker row
+      CTA, close button, confirm button. None is touched by the round's diff.
+      The round added no new component either — the Cofres tray is built from
+      `.sheet__cta` (measured above), `.sheet__x` and `.slot`, all already rows
+      in this roster.
+- [x] `npm run audit:sea` — sea texture against the reference, HUD excluded.
+      `?hud=0` was ISLAND-ONLY until round 13: the sea scene took the same
+      query param and never read it, so `tools/blind.mjs`'s `sea` piece — which
+      passes `--hud 0` — had been putting our frame, chrome and all, against a
+      shipped still that has none. Identifiable as ours on content alone, no
+      metadata needed; the same family of fault as the `--save demo` flag that
+      harness silently dropped for nine rounds, and the one its unknown-flag
+      error cannot catch, because the flag WAS known — by the other scene.
+      Fixed in `seaScene.ts`; `shots/r13g_fight_nohud.png` is the first sea
+      capture that actually honours it.
+- [ ] `node tools/blind.mjs` — our frame beats the shipped game's, judged blind.
+      Round 13's gate measured the two things the round-12 judge named, on the
+      blind's OWN framing (`island --save demo --hud 0 --w 1280 --h 720`,
+      `shots/r13g_blind_island.png`), against `reference/island_hero.png`:
+
+      **Terraces.** Counted as a judge counts them — down a screen column, how
+      many times a lawn ends at a wall and another lawn starts below it, with
+      candidates linked across columns so a shrub stem (2-4 columns) cannot
+      pose as a riser (tens). Ours: 124 columns cross a wall, 206 walls, 48.4%
+      of those columns cross two or more and 17.7% cross three. The reference:
+      185 columns, 264 walls, 39.5% and 3.2%. The judge's *"A is a single flat
+      plateau"* is no longer true of the pixels — our eyelines are DEEPER than
+      the reference's. What still differs is where they sit: our walls are
+      185/21/0 by third of the island far→near, the reference's are 58/206/0.
+      Both keep the near third a flat plaza on purpose; the reference terraces
+      the middle of its frame, where the eye lands, and we terrace the top.
+      That is the next composition question, and it is a question about
+      placement rather than about relief.
+
+      **The deep.** Splitting the water into quartiles by the blueness of the
+      NEIGHBOURHOOD each pixel sits in — so a white chip is scored against the
+      water it is on, not against its own colourlessness — the share above
+      L=200, deepest quartile to shallowest, runs 2.9% / 7.1% / 11.7% / 7.3%
+      for ours against 6.3% / 7.2% / 7.2% / 12.1% for the reference. Our deep
+      carries less than half the reference's white and our glitter peaks on the
+      shelf. *"The lower third dissolves into noise"* is answered, with a
+      little room left on the other side.
 
 ---
 
@@ -68,6 +129,15 @@ restarted mid-round and killed the workflow with two builders unstarted.
       skiff, so the zarpar beat now points at a door that is genuinely open —
       the first sail is a session-one beat, not a hall-3 promise. The suite
       plays five seeds through and holds the island half under seven minutes.
+      Round 13 made the taught tap LAND. The blind playtest needed 3-16 probe
+      taps inside a highlighted circle and twice got a job it had not asked
+      for; the tap is now resolved on the glass rather than on the grid, and
+      the taught obstacle owns its whole spotlight. Measured by this gate at
+      the phone framing: 203 of 203 sample points inside the drawn 72px circle
+      start the taught job, the ring sits 0.0px off the obstacle it is about,
+      and the first real tap commits it. The suite holds the other half — every
+      card that points at an obstacle names THAT obstacle's noun and no other,
+      across eight seeds.
 - [x] **Settings.** Sonido, vibración, Guardar/Exportar/Importar, the red
       Empezar-de-nuevo row, and the CC0/MIT attributions. The export walked:
       a real .json downloads, and after a reload Continuar resumes the same
@@ -79,7 +149,16 @@ restarted mid-round and killed the workflow with two builders unstarted.
 - [x] Camera: one finger pans, two pinch, clamped
 - [x] Build: picker → ghost → green/red cells → confirm
 - [x] Economy: four resources, two caps, timers, builder limit, offline catch-up
-- [x] Session hooks: bubbles, ¡Lleno!, daily chain, quests, chests
+- [x] Session hooks: bubbles, ¡Lleno!, daily chain, quests, chests. Cofres is
+      a DESTINATION as of round 13, not a toast: the nav slot opens a tray
+      sheet in every state — four slots as objects, the state in a sentence,
+      and one CTA that does the thing `chestTrayHint` named. Walked by this
+      gate on three islands (day one, day one under the tutorial's dim, and
+      the demo's running unlock): the FIRST tap answers every time, and the
+      day-one empty state names the three sources that actually pay — the
+      Muelle's Cofre de Bronce every 4h to a stack of two, the daily chain's
+      days 4 and 7, and the Cofre de la Corona at 10 coronas. `?tray=1` boots
+      with it open so a critic can review it.
 - [x] **Island creation.** The seed is the captain's, rolled at creation
       (`isla-<random>` in main.ts since round 5 — this line was stale) and
       kept by save, export and reload; `?seed=` pins it for captures, which is
@@ -109,6 +188,18 @@ restarted mid-round and killed the workflow with two builders unstarted.
       presentation: "El Kraken" boss bar with phase pips and health, and the
       zone plate warning a hull below its water. Photographed by this gate at
       the lair (`shots/r12_boss.png`).
+- [x] **The zone warning arrives before the water.** Round 12 fired it at the
+      crossing and the playtest still reported no warning at all — "hull went
+      100->15% before I saw any zone plate". Round 13 asks about the cell one
+      step ahead on the current heading as well as the one underneath, which
+      buys a whole cell, and the ZONA chip now carries the condition in red for
+      as long as the hull is outranked rather than flashing a plate and going
+      quiet. Measured over eight seeds at three headings, on the margin between
+      the plate and the first hit taken in outranked water: round 12 gave a
+      minimum of 0.3s with 11 of 24 runs under two seconds; round 13 gives a
+      minimum of 3.6s and a median of 6.1s, none under two. Walked live at full
+      throttle from spawn (`shots/r13g_zone_live.png`): plate at 11.7s, the
+      ring-3 crossing at 15.0s, first damage at 16.6s, hull whole throughout.
 - [~] Harvesting and boarding beats. Wrecks are boarded now — the party rows
       over for `sea.boarding` seconds and the loot only lands if the ship
       holds station, with the wait named on the HUD. Islets and harvest sites
