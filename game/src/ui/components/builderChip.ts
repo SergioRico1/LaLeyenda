@@ -11,7 +11,7 @@ import { alignInk } from '../icons';
  * capsule's cell carries the tilt, the warm face and the escalation.
  *
  * What this object still has that the cell does not is the `+` and the blue
- * info `i`, which belong to the Constructores panel — a screen about builders,
+ * info `i`, which belong to the Carpinteros panel — a screen about builders,
  * where a control for buying one is in the right place. Kept for it rather than
  * deleted, because §3.4 specifies this object and the panel is the slice that
  * will want it.
@@ -29,7 +29,7 @@ export function createBuilderChip(opts: {
 }): BuilderChip {
   const root = el('div', 'cap builder-chip');
   root.setAttribute('role', 'button');
-  root.setAttribute('aria-label', 'Constructores');
+  root.setAttribute('aria-label', 'Carpinteros');
 
   const num = el('span', 'num builder-chip__num');
   const info = el('button', 'builder-chip__info t t-glyph', 'i');
@@ -43,7 +43,7 @@ export function createBuilderChip(opts: {
   if (opts.onPlus) {
     const plus = el('button', 'plus tap', el('span', 't t-glyph', '+'));
     plus.type = 'button';
-    plus.setAttribute('aria-label', 'Más constructores');
+    plus.setAttribute('aria-label', 'Más carpinteros');
     plus.addEventListener('click', (e) => { e.stopPropagation(); opts.onPlus!(); });
     root.append(plus);
   }

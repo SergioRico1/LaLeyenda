@@ -30,6 +30,11 @@ export const COPY = {
   'cta.collectAll': 'Recoger Todo',
   'cta.finishNow': 'Terminar\nYa',
   'cta.returnHome': 'Volver a la Isla',
+  /* Dismisses a reward card the player is staying right where they are for —
+   * the chest reveal happens ON the island, so its button may not claim a
+   * journey. Matches the store's own post-purchase 'Seguir': one word for
+   * "carry on" everywhere a card is put down. */
+  'cta.continue': 'Seguir',
   'cta.start': 'Empezar',
   'chip.full': '¡Lleno!',
   'chip.noBuilders': 'Sin carpinteros',

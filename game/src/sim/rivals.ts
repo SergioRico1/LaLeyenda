@@ -1,5 +1,5 @@
 import { Rng } from '../core/rng';
-import { NAME_MAX, rollName } from './captain';
+import { NAME_MAX, nameAgrees, rollName } from './captain';
 import { townHallLevel } from './economy';
 import { DAY } from './duration';
 import type { GameState } from './types';
@@ -161,15 +161,13 @@ export interface Standings {
  *     is exactly how it was found;
  *   · its article disagrees with its given name ("Diego la Sirena"). A player
  *     typing their own name may do as they please; a table of 49 names WE
- *     wrote gets its Spanish right.
+ *     wrote gets its Spanish right. Round 11's gate moved that rule INTO
+ *     rollName itself — the captain's own field was still dealing "Tobías la
+ *     Corsaria" — so the checks below are now the roster's belt and braces
+ *     over a roller that already refuses those draws, kept because this
+ *     roster must stay right even if the roller loosens.
  */
-const FEMININE = new Set(['Inés', 'Malva', 'Lucía', 'Chispa', 'Marina', 'Salomé', 'Rocío', 'Perla']);
-
-function agrees(name: string): boolean {
-  const [given, article] = name.split(' ');
-  if (article !== 'el' && article !== 'la') return true;   // no article, no clash
-  return (article === 'la') === FEMININE.has(given);
-}
+const agrees = nameAgrees;
 
 function rosterNames(seed: string): string[] {
   const rng = new Rng(seed).fork('rivales');

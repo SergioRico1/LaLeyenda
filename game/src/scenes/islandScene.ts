@@ -32,7 +32,7 @@ import type { SimEvent } from '../sim';
 import { createBuildPicker } from '../ui/panels/buildPicker';
 import { createUpgradeSheet } from '../ui/panels/upgradeSheet';
 import { createBuildBar } from '../ui/panels/buildBar';
-import { COPY, refusalText, type RefusalKey } from '../ui/copy';
+import { COPY, refusalText, sailLockedLine, type RefusalKey } from '../ui/copy';
 
 /** The home island: the builder scene, seen from the Clash-of-Clans style camera.
  *
@@ -1575,7 +1575,7 @@ export async function createIslandScene(
       title: COPY['banner.victory'],
       label: COPY['label.gotIt'],
       items,
-      cta: COPY['cta.returnHome'],
+      cta: COPY['cta.continue'],
     });
   }
 
@@ -1978,7 +1978,10 @@ export async function createIslandScene(
        * changes nothing and says nothing is the one thing the spec forbids
        * twice, and `console.log` is not an answer on a phone. */
       case 'Construye el Muelle':
-        hud?.say(COPY['toast.sailLocked'], { tone: 'refuse' });
+        hud?.say(
+          sailLockedLine(townHallLevel(state), buildingSpec('astillero').unlockAtTownHall),
+          { tone: 'refuse' }
+        );
         return;
       case 'Zarpar':
         // The shipyard has given the player a boat, so this is the one route

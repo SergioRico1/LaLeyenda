@@ -29,6 +29,14 @@
 //
 //   npm run audit:layers            audit, print the table, fail on regressions
 //   npm run audit:layers -- --all   include components not yet expected to pass
+//   npm run audit:layers -- --only <substring>
+//       run the subset whose names match, e.g. --only "picker row". The
+//       measurement is identical; this exists because a 13-page run in one
+//       chromium outlives what a SwiftShader container will tolerate — the
+//       browser dies mid-run and playwright hangs on the dead transport
+//       instead of erroring, which ate three whole runs of round 11's gate.
+//       Slices keep every browser short-lived. The missing-selector tripwire
+//       below still runs per invocation, proportional to what was asked for.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -217,7 +225,17 @@ const browser = await chromium.launch({
 const { ACTS } = await import('./acts.mjs');
 const results = [];
 
-for (const component of COMPONENTS) {
+const onlyAt = process.argv.indexOf('--only');
+const only = onlyAt >= 0 ? (process.argv[onlyAt + 1] ?? '') : null;
+const ROSTER = only
+  ? COMPONENTS.filter((c) => c.name.includes(only))
+  : COMPONENTS;
+if (only && ROSTER.length === 0) {
+  console.error(`--only "${only}" matches no component name`);
+  process.exit(1);
+}
+
+for (const component of ROSTER) {
   const page = await browser.newPage({ viewport: { width: 430, height: 932 }, deviceScaleFactor: 2 });
   try {
     await page.goto(`http://localhost:${port}/?scene=island&shot=1&w=430&h=932&t=2.0`, { waitUntil: 'load', timeout: 60000 });

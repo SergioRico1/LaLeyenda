@@ -112,8 +112,31 @@ export function sanitizeName(raw: unknown, fallback = 'Capitán'): string {
   return cleaned.length > NAME_MAX ? cleaned.slice(0, NAME_MAX).trim() : cleaned;
 }
 
+/** The given names whose epithet takes `la`. Cuervo and the male names take
+ *  `el`; Chispa reads as she does on the shipped leaderboard captures. */
+const FEMININE = new Set(['Inés', 'Malva', 'Lucía', 'Chispa', 'Marina', 'Salomé', 'Rocío', 'Perla']);
+
+/** Whether a rolled name's article agrees with its given name. A player typing
+ *  their own name may do as they please; a name WE deal gets its Spanish
+ *  right. Shared with rivals.ts, whose roster rejects on the same rule. */
+export function nameAgrees(name: string): boolean {
+  const [given, article] = name.split(' ');
+  if (article !== 'el' && article !== 'la') return true;   // no article, no clash
+  return (article === 'la') === FEMININE.has(given);
+}
+
 export function rollName(rng: Rng): string {
-  return sanitizeName(`${rng.pick(GIVEN)} ${rng.pick(EPITHET)}`);
+  // Redrawn until the article agrees and the draw fits the box whole. This
+  // used to pick the two halves independently, which dealt "Marina el Tuerto"
+  // to the first field a player ever reads — the rival roster (rivals.ts) was
+  // already rejecting exactly these draws, and the captain deserves no less.
+  // Terminates deterministically: agreeing, untruncated combinations abound
+  // and every draw advances the stream.
+  for (;;) {
+    const draw = `${rng.pick(GIVEN)} ${rng.pick(EPITHET)}`;
+    if (draw.length > NAME_MAX || !nameAgrees(draw)) continue;
+    return sanitizeName(draw);
+  }
 }
 
 /* --------------------------------------------------------------------------

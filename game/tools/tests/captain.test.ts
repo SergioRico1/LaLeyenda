@@ -1,8 +1,8 @@
 import { Rng } from '../../src/core/rng';
 import {
   AVATAR_PARTS, AVATAR_SLOTS, NAME_MAX, OPTIONAL_SLOTS, createCaptain, cycleSlot, isValidLook,
-  looksParts, rollLook, sanitizeCaptain, sanitizeLook, sanitizeName, setCaptain, slotOptional,
-  slotOptions, type AvatarSlot, type CaptainLook,
+  looksParts, nameAgrees, rollLook, rollName, sanitizeCaptain, sanitizeLook, sanitizeName,
+  setCaptain, slotOptional, slotOptions, type AvatarSlot, type CaptainLook,
 } from '../../src/sim';
 import { describe, deepEq, eq, ok, test } from './harness';
 import { T0, game } from './fixtures';
@@ -109,6 +109,21 @@ describe('names', () => {
 
   test('newlines and control characters are collapsed, accents are kept', () => {
     eq(sanitizeName('  Inés\n\n  la   Roja '), 'Inés la Roja', 'one name, one space');
+  });
+
+  test('a dealt name agrees its article and fits the box whole', () => {
+    // The roller redraws mismatches ("Tobías la Corsaria") and truncations —
+    // the rival roster always rejected them, and round 11's cold walk met one
+    // in the first field a player ever reads, so the rule lives in rollName
+    // itself now. 300 draws from 3 seeds: every one legal.
+    for (const seed of ['nombres', 'la-leyenda', 'walk']) {
+      const rng = new Rng(seed);
+      for (let i = 0; i < 100; i++) {
+        const name = rollName(rng);
+        ok(name.length <= NAME_MAX, `"${name}" fits the box`);
+        ok(nameAgrees(name), `"${name}" agrees its article`);
+      }
+    }
   });
 });
 

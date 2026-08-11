@@ -27,8 +27,8 @@ export * from './types';
 export { createNewGame, createDemoIsland } from './state';
 export {
   AVATAR_PARTS, AVATAR_SLOTS, NAME_MAX, OPTIONAL_SLOTS, createCaptain, cycleSlot, isValidLook,
-  looksParts, rollLook, rollName, sanitizeCaptain, sanitizeLook, sanitizeName, slotOptional,
-  slotOptions,
+  looksParts, nameAgrees, rollLook, rollName, sanitizeCaptain, sanitizeLook, sanitizeName,
+  slotOptional, slotOptions,
 } from './captain';
 export { advanceInPlace, applyLongAbsenceGiftInPlace, type OfflineSummary } from './offline';
 export {

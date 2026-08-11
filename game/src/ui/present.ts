@@ -10,7 +10,7 @@ import type { HudState, ResourceState, WorldItemSpec } from './hud';
 import type { SlotState } from './components/tray';
 import type { BuildOption } from './panels/buildPicker';
 import type { StatLine, UpgradeView } from './panels/upgradeSheet';
-import { COPY, type RefusalKey } from './copy';
+import { COPY, UNLOCK_LABEL, type RefusalKey } from './copy';
 
 /**
  * present.ts — sim state → what the HUD draws. Replaces `mockState.ts`.
@@ -247,9 +247,13 @@ function hallNeededFor(type: string, level: number): number | undefined {
   return undefined;
 }
 
-/** Unlock ids in the town-hall table are building ids where one exists. */
+/** Unlock ids in the town-hall table: buildings and resources carry labels in
+ *  balance.json; the feature ids (a chest slot, a hull, a carpenter, a season)
+ *  are named in copy.ts's UNLOCK_LABEL. A bare id on the game's most-read
+ *  sheet is the loudest possible prototype tell, so it is the last resort. */
 const unlockLabel = (id: string): string =>
-  BALANCE.buildings[id]?.label ?? BALANCE.resources[id as ResourceId]?.label ?? id;
+  BALANCE.buildings[id]?.label ?? BALANCE.resources[id as ResourceId]?.label
+    ?? UNLOCK_LABEL[id] ?? id;
 
 /* --------------------------------------------------------------------------
  * LAYOUT_SPEC item 5 — the 2×2 stat grid
