@@ -129,9 +129,16 @@ say('## production');
 
 // A deployment URL answers 200 with Vercel's LOGIN PAGE when protection is on,
 // so a status code proves nothing. The title is the only honest check.
-const title = sh(`curl -s -L --max-time 20 https://project-i07zk.vercel.app | grep -o '<title>[^<]*</title>'`);
+// Three tries before crying wolf. One flaky curl once reported BROKEN over a
+// production that was serving perfectly — and a health check that cries wolf is
+// the same alarm fatigue the workflow grading already had to be cured of. A
+// real outage survives three attempts; a blip does not.
+let title = null;
+for (let i = 0; i < 3 && !(title && title.includes('La Leyenda Pirata')); i++) {
+  title = sh(`curl -s -L --max-time 20 https://project-i07zk.vercel.app | grep -o '<title>[^<]*</title>'`);
+}
 if (title && title.includes('La Leyenda Pirata')) say('project-i07zk.vercel.app  serving the game');
-else { say(`project-i07zk.vercel.app  NOT THE GAME — got: ${title ?? '(no response)'}`); raise('BROKEN'); }
+else { say(`project-i07zk.vercel.app  NOT THE GAME after 3 tries — got: ${title ?? '(no response)'}`); raise('BROKEN'); }
 
 // ---------------------------------------------------------------------------
 if (FULL) {
