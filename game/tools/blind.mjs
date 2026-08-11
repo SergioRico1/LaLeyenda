@@ -176,7 +176,17 @@ const norm = (src) =>
     .resize(W + JITTER, H + JITTER, { fit: 'cover', position: 'centre' })
     .extract({ left: win.dx, top: win.dy, width: W, height: H })
     .composite(BRANDING.map(patch))
-    .png({ compressionLevel: level, effort: 7 })
+    // `palette: false` is LOAD-BEARING and must never be dropped. In sharp,
+    // supplying `effort` (or quality/colours/dither) implies `palette: true`,
+    // and this call carried `effort: 7` from round 10 to round 13 — so every
+    // blind verdict in that span graded a 256-colour palettised proxy with
+    // Floyd-Steinberg dither over about 45% of the frame, not the frame. The
+    // dither landed exactly on the flat sand and open water those rounds
+    // existed to judge, which means some of the "crude ground dither" marked
+    // against the reference was this harness damaging its own evidence. It hit
+    // both sides equally so it never resolved the mapping; it just made
+    // thirteen rounds of fine-texture verdicts softer than they read.
+    .png({ compressionLevel: level, palette: false })
     .toBuffer();
 
 // Both candidates are rendered to MEMORY first and the files are created in an
@@ -195,6 +205,12 @@ const writes = swap
   ? [[B, oursBuf], [A, refBuf]]
   : [[A, oursBuf], [B, refBuf]];
 if (crypto.randomInt(0, 2) === 1) writes.reverse();
+// Unlink first, or the coin flip above is a no-op on any re-run: the entry
+// sweep deliberately keeps a.png and b.png, writeFileSync then truncates the
+// existing inodes, and statx birth time survives from the round's FIRST ever
+// run — encoding that run's flip forever. An eighth judge caught the defence
+// not holding where its own comment claimed it did.
+for (const [dest] of writes) fs.rmSync(dest, { force: true });
 for (const [dest, buf] of writes) fs.writeFileSync(dest, buf);
 const stamp = new Date();
 fs.utimesSync(A, stamp, stamp);
