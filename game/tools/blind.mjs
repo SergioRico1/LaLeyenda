@@ -74,7 +74,12 @@ const PIECES = {
 
 const pieceName = flag('piece', 'island');
 const round = Number(flag('round', '1'));
-const swap = flag('swap', '0') === '1';
+// When the caller does not choose, the HARNESS rolls — a sixth judge was
+// handed a swapless command by the round's own script, and the default of '0'
+// meant a=ours deterministically. A caller may still pin it for reproduction,
+// but silence no longer means a fixed mapping.
+const swapFlag = flag('swap', null);
+const swap = swapFlag === null ? crypto.randomInt(0, 2) === 1 : swapFlag === '1';
 const piece = PIECES[pieceName];
 if (!piece) {
   console.error(`unknown piece ${pieceName} — have: ${Object.keys(PIECES).join(', ')}`);
@@ -179,9 +184,29 @@ const B = path.join(outDir, 'b.png');
 await norm(ours, swap ? B : A);
 await norm(path.join(ROOT, piece.reference), swap ? A : B);
 
+// Identical mtimes on both candidates. Ours is normed first, and a sixth judge
+// noticed the two files a second apart — the earlier one is ours regardless of
+// swap. Order of writing is an implementation detail; the clock must not
+// publish it.
+const stamp = new Date();
+fs.utimesSync(A, stamp, stamp);
+fs.utimesSync(B, stamp, stamp);
+
 // The staging capture goes now. Nothing is left in the blind directory but the
 // two candidates and the key.
 fs.rmSync(staging, { force: true });
+
+// THE HONEST LIMIT, recorded where the tool lives. The same judge proved that
+// with reference/island_hero.png sitting in the judged checkout, any pair is
+// de-anonymizable in seconds: brute-force the 81 crop windows against the
+// reference and the true candidate matches at a residual no encoder jitter can
+// hide. Every mechanical tell found so far is fixed — six of them, by six
+// judges — but a determined forensic effort inside this checkout WILL resolve
+// the mapping for as long as the reference is readable. The protocol therefore
+// rests, finally, on the judge's stated discipline: verdict first, key after.
+// Every judge to date has reported the leaks they found and stated their
+// verdict was formed before using any of them, which is itself the evidence
+// the blind needed.
 
 const key = {
   piece: pieceName,
