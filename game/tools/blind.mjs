@@ -18,9 +18,19 @@
  * --swap is passed in rather than rolled here, so the caller controls the order
  * and can vary it per round without this file needing a clock or a random
  * source it would then have to be trusted about.
+ *
+ * THE ORDER OF A JUDGING BRIEF IS PART OF THE PROTOCOL. Judge the pixels FIRST
+ * and write the verdict to disk; attempt to break the blind SECOND. Nine rounds
+ * of briefs said the opposite — "try to break it, then judge anyway" — and it
+ * finally cost exactly what it was always going to cost: a judge found the
+ * file-size band during the break phase, knew the mapping before it looked at a
+ * pixel, and said so. Its findings were still worth having; its verdict was not
+ * a blind verdict. A leak found after the verdict is filed costs nothing and
+ * teaches the same lesson.
  */
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -204,6 +214,37 @@ const refBuf = await norm(path.join(ROOT, piece.reference));
 const writes = swap
   ? [[B, oursBuf], [A, refBuf]]
   : [[A, oursBuf], [B, refBuf]];
+/**
+ * Pad both PNGs to one byte length, so `ls -l` says nothing.
+ *
+ * The ninth leak, and the cheapest one yet: compressed size is a fingerprint of
+ * texture density, and the crop jitter moves it by about 1% while the two
+ * candidates sit 14% apart — ours around 1.66 MB, the reference around 1.89 MB,
+ * bands that never overlap. Worse, every past round keeps its key.json beside
+ * its frames, so one `cat` of any old key plus one `ls -l` of the new round
+ * resolved every future comparison permanently, no pixels required. That is
+ * cheaper than the crop brute-force the header documents, and no amount of
+ * pixel jitter touches it.
+ *
+ * The padding is an ancillary private PNG chunk before IEND — decoders ignore
+ * it, and both files land on exactly the same number of bytes.
+ */
+const padTo = (buf, total) => {
+  const extra = total - buf.length;
+  if (extra === 0) return buf;
+  const data = Buffer.alloc(extra - 12); // length + type + crc = 12
+  const chunk = Buffer.alloc(extra);
+  chunk.writeUInt32BE(data.length, 0);
+  chunk.write('blNd', 4, 'ascii'); // ancillary, private, safe to copy
+  data.copy(chunk, 8);
+  chunk.writeUInt32BE(zlib.crc32(chunk.subarray(4, 8 + data.length)) >>> 0, 8 + data.length);
+  // IEND is the last 12 bytes; the pad goes immediately before it.
+  return Buffer.concat([buf.subarray(0, buf.length - 12), chunk, buf.subarray(buf.length - 12)]);
+};
+const target = Math.max(oursBuf.length, refBuf.length) + 12;
+writes[0][1] = padTo(writes[0][1], target);
+writes[1][1] = padTo(writes[1][1], target);
+
 if (crypto.randomInt(0, 2) === 1) writes.reverse();
 // Unlink first, or the coin flip above is a no-op on any re-run: the entry
 // sweep deliberately keeps a.png and b.png, writeFileSync then truncates the
