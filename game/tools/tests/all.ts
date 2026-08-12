@@ -9,6 +9,7 @@ import './playtest.test';
 import './tutorial.test';
 import './retention.test';
 import './save.test';
+import './resilience.test';
 import './tokens.test';
 import './decor.test';
 import './sea.test';

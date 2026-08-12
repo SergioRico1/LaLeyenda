@@ -294,8 +294,12 @@
 .sea__boss[hidden] { display: none; }
 
 /* The alert chip lives on the same latitude; while the kraken has the stage
-   the remedy line steps one row down instead of fighting it. */
+   the remedy line steps one row down instead of fighting it — and the zone
+   warning, which sits under the chip, steps down with it. Three rows of
+   standing information, in the order they matter: what is fighting you, what
+   is wrong with your ship, what the water ahead is. */
 .sea.has-boss .sea__alert { top: calc(var(--ui-safe-t) + 132px); }
+.sea.has-boss .sea__banner[data-kind='zone'] { top: calc(var(--ui-safe-t) + 172px); }
 
 .sea__bossHead {
   display: flex;
@@ -466,9 +470,30 @@
 /* Cold steel for the zone plate: deep water naming itself. A caution rather
    than an alarm — red stays reserved for a hull actually dying — with the red
    held to the lip so the register still reads as danger's family. */
+/* THE ZONE WARNING IS A CAUTION, NOT AN ANNOUNCEMENT, and until this round it
+ * wore the same object as both of the sea's genuine shouts. The banner's place
+ * — 30% down the glass, 18px, edge to edge — belongs to the two moments the
+ * game stops for: the kraken turning, and the chest of the deep. A note about
+ * the water ahead is a different register, and drawn at that weight it crossed
+ * the fight it was warning about. Photographed at the lair it lay straight over
+ * the islet, the tentacles and half the hull.
+ *
+ * So it keeps the banner's mechanism (one shout, one timer, one voice) and
+ * steps up into the top band with the boss bar and the alert chip, where every
+ * other piece of standing information on this HUD lives. Same words, same
+ * seconds, same sound; it simply stops standing in front of the thing it is
+ * about. The persistent red ZONA chip in the status bar is what carries the
+ * condition for as long as it lasts — this only has to announce it. */
 .sea__banner[data-kind='zone'] {
   color: #EAF4FF;
-  font-size: 15px;
+  font-size: 13.5px;
+  /* One row under the alert chip, which sits at +72. The two can be up at
+     once — a hull warning and a zone warning are different sentences about
+     different problems — so they cascade rather than share a latitude. */
+  top: calc(var(--ui-safe-t) + 112px);
+  padding: 6px 15px 8px;
+  border-width: var(--ui-ink-w-sm);
+  -webkit-text-stroke-width: 1.4px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0 50%, rgba(0, 0, 0, 0.2) 50% 100%),
     linear-gradient(180deg, #2C4C68, #14283E);

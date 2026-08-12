@@ -278,39 +278,184 @@ Each judged on rendered pixels against `reference/clash/` and
 
 ## 7 · Ship quality, independent of features
 
-- [ ] **Draw calls < 100.** Measured with `node tools/perf.mjs`, which reads
-      `renderer.info.render.calls` after a real frame. The 436 recorded here was
-      stale by several rounds; round 8's gate re-measured both island states:
+**Every number in this section is re-derivable in one command.** That is the
+whole point of the rewrite: this section recorded 436 draw calls for several
+rounds after a round had measured 132, and a stale number in a release
+checklist is worse than no number, because it is believed. Nobody should ever
+have to trust a figure typed in here by hand again.
 
-      | `--parts` | day one (1 building) | `?save=demo` (11 buildings) |
+| what | command | budget |
+|---|---|---|
+| draw calls | `npm run perf` | 100 |
+| — just the counts, in seconds | `npm run perf:calls` | |
+| — where the calls go, by material | `npm run perf:where` | |
+| download | `npm run bundle` | 10 MB |
+| — plus what a real browser fetches | `npm run bundle:boot` | |
+| both | `npm run ship` | |
+
+Measured by round 15 on the round's working tree (HEAD `18e7b1b`, with that
+round's unhappy-path work in `src/core/save.ts`, `src/main.ts` and
+`src/ui/panels/settings.*` present but uncommitted). The code figures move a
+few KB with every round; the model figures and the draw calls do not. Draw
+calls are deterministic — four separate runs returned the same three integers —
+so a number below that has moved is a change somebody made, not noise.
+
+- [ ] **Draw calls < 100.** Read after a real frame, by a counter wrapped
+      around the WebGL context itself: every `drawElements`, `drawArrays` and
+      their instanced forms, shadow pass included. It needs no cooperation from
+      the scene, which is why the sea can be measured at all — only the island
+      publishes `renderer.info` through `window.laLeyenda.stats()`. Where both
+      exist they agree exactly: 137 and 137, 1110 and 1110.
+
+      | scene | calls | triangles | over |
+      |---|---|---|---|
+      | island day one (1 building) | **137** | 94,432 | +37 |
+      | island demo (11 buildings) | **1110** | 152,216 | +1010 |
+      | sea | **217** | 144,696 | +117 |
+
+      Round 11 measured 136 / 1112 / 217. Nothing has regressed and nothing has
+      improved; rounds 12-14 were spent elsewhere.
+
+      **Where they go, by layer** (`--parts`, day one / demo):
+
+      | `--parts` | day one | demo |
       |---|---|---|
-      | terrain | 7 | 7 |
-      | terrain,decor | 50 | 45 |
-      | terrain,decor,buildings | 110 | 1255 |
-      | everything (+ ship) | **132** | **1279** |
+      | terrain | 8 | 8 |
+      | terrain,decor | 55 | 48 |
+      | terrain,decor,buildings | 115 | 1088 |
+      | everything (+ ship) | **137** | **1110** |
 
-      Round 11's gate re-measured whole scenes after the world/water rounds —
-      day one **136**, demo **1112**, and the sea's first figure ever: **217**,
-      taken with a GL-level counter (every drawElements/drawArrays, shadow pass
-      included) that reproduces the island's own 136 exactly. The demo came
-      down 1279 → 1112 with round 11's decor calming; the shape of the problem
-      is unchanged — the buildings are still the whole overrun.
+      Terrain is 8 calls and decor is under 50 — both merged and instanced,
+      neither is the problem. Buildings are +60 for one and +1040 for eleven,
+      about 95 calls a building: each optimised `.glb` still arrives as a mesh
+      per material and nothing merges or instances them. The skiff parked at the
+      dock costs +22 on its own, a fifth of the whole budget for one prop.
 
-      Read down the columns rather than at the totals, because they say something
-      the totals hide. **Terrain is 7 calls and decor is under 45** — both are
-      merged and instanced and neither is the problem. **The buildings are the
-      whole of it**: 60 calls for one Ayuntamiento, 1210 for eleven, which is
-      about 110 draw calls per building. Each optimised `.glb` still arrives as a
-      mesh per material and nothing merges or instances them, so the budget is
-      blown by the fourth building a player places. Not a regression — HEAD
-      measured 132 and 1277 — and not fixable in the island renderer. The lever
-      is `tools/optimize.mjs` and the model loader.
-- [x] Initial download < 10 MB — round 12's gate gzipped every file in `dist/`
-      (JS, CSS, all 60+ models): **3.05 MB** over the wire even if a player
-      fetched every byte of the game (3.16 in round 11); the JS+CSS+HTML a
-      boot actually needs is 0.32 MB
-- [ ] 60 fps on a mid-range phone — needs a real device; SwiftShader cannot
-      answer it
+      **And a thing no round has looked at before — the shadow pass is half the
+      frame.** Splitting the same frames by bound material:
+
+      | scene | shadow pass | visible geometry |
+      |---|---|---|
+      | island day one | 66 (48%) | 71 |
+      | island demo | 591 (53%) | 519 |
+      | sea | **185 (85%)** | 32 |
+
+      Day one draws 71 visible calls — *inside* budget — and then draws 66 more
+      into the shadow map, and that is what puts it at 137. The sea is the loud
+      one: 217 calls of which 185 are shadow casters, for a scene whose visible
+      geometry is 32 calls. Every caster is re-rendered every frame —
+      `shadowMap.autoUpdate` is never set and three.js defaults it to true — so
+      this is a per-frame cost, not a boot cost.
+
+      **Recommended, NOT done this round** (a big instancing refactor was
+      explicitly out of scope, and none of these files were this round's to
+      touch):
+      1. *The sea's caster set* — `seaScene.ts`. Cheapest win in the game:
+         185 → a handful takes the sea from 217 to under 60 without a single
+         change to the models. A mob, a reef and a floating crate on open water
+         do not each need a real shadow.
+      2. *Merge or instance the buildings* — `tools/optimize.mjs` and the model
+         loader. This is the only route to the demo island's 1110.
+      3. *The skiff's 22.* Small, but it is 22% of the budget for scenery.
+
+- [ ] **Initial download < 10 MB** — depends entirely on which download, and
+      the honest answer is that we pass one budget and fail the other.
+
+      | class | files | raw | gzip | brotli |
+      |---|---|---|---|---|
+      | js | 4 | 1159.6 KB | 350.4 KB | 290.4 KB |
+      | css | 3 | 124.3 KB | 24.7 KB | 21.0 KB |
+      | html | 1 | 1.2 KB | 0.7 KB | 0.5 KB |
+      | models | 97 | 12900.9 KB | 2815.9 KB | 2073.0 KB |
+      | fonts | 4 | 30.5 KB | 30.6 KB | 30.5 KB |
+      | textures | 2 | 83.8 KB | 83.7 KB | 83.8 KB |
+      | json | 2 | 17.3 KB | 3.0 KB | 2.3 KB |
+      | **TOTAL** | **113** | **13.98 MB** | **3.23 MB** | **2.44 MB** |
+
+      **A web player passes: 3.23 MB gzipped, 2.44 MB brotli, for every byte of
+      the game.** Round 12's gate reported 3.05 MB for the same measurement; the
+      0.18 MB since has not been attributed to anything in particular.
+
+      **A Capacitor build fails: 13.98 MB raw, 3.98 MB over.** A native shell
+      reads files off its own filesystem and negotiates `Content-Encoding` with
+      nobody, so the raw column is what an `.ipa` carries, and the raw column is
+      the one that has to come down before §7 can be ticked. **Every previous
+      round measured only the gzip column, which is why this line has read as
+      passing.** The gap between 13.98 and 3.23 is itself the measurement of the
+      problem: the models compress by a factor of four and a half, which means
+      those bytes are redundancy a general-purpose compressor can see and the
+      asset pipeline cannot.
+
+      **What a real browser actually fetches**, recorded off a served build with
+      a cold cache per screen:
+
+      | screen | requests | models | raw | gzip |
+      |---|---|---|---|---|
+      | title | 7 | 1 | 1419.7 KB | 417.4 KB |
+      | captain | 48 | 43 | 3643.8 KB | 881.9 KB |
+      | island day one | 43 | 36 | 6315.8 KB | 1534.6 KB |
+      | island demo | 43 | 36 | 6315.8 KB | 1534.6 KB |
+      | sea | 21 | 13 | 3719.8 KB | 955.7 KB |
+      | **first session** (union) | **95** | **86** | **10780.5 KB** | **2529.3 KB** |
+
+      Two things fall out of that table. **The island preloads its whole
+      library**: day one and the eleven-building demo fetch the identical 36
+      models, so a new player downloads ten building models to look at one
+      Ayuntamiento — 3350 KB raw, 743 KB gzipped, of buildings they cannot
+      build yet. And **the captain screen pulls all 43 `av_*` parts** to dress
+      one pirate.
+
+      Three routes down, none of them this round's files. **Neither of the
+      first two is enough alone**: deleting every model nothing loads takes
+      13.98 MB to 11.13 MB, still 1.13 MB over, so the pipeline change has to
+      happen as well.
+      1. *`quantize()` + `EXT_meshopt_compression` in `tools/optimize.mjs`.*
+         The pipeline runs dedup, weld, join, flatten, resample, sparse and a
+         256px webp texture pass — good work, and none of it touches vertex
+         precision. **`meshoptimizer` is already in `devDependencies` and
+         nothing imports it.** This is the one lever that moves the RAW number,
+         because unlike gzip the result stays compressed on disk.
+      2. *Delete nine models nothing loads* — **2918.8 KB raw, 579.1 KB gzip,
+         20.4% of the whole bundle.** Six are named by no source file at all:
+         `mob_jellyfish`, `mob_trilobite`, `mob_sealion`, `mob_anglerfish`,
+         `deco_grove`, `bldg_wishingwell` — `seaScene.ts` maps four mob kinds to
+         four models and the other four mobs were fetched and never wired.
+         Three more are named ONLY in comments, which is how they survived every
+         previous sweep: `bldg_foundry` (386 KB — `balance.json`'s own
+         `$modelNote` records that the smithy replaced it), `deco_fishpoles`
+         (`decor.ts`: *"deliberately NOT in that list"*) and `deco_sandmound`
+         (*"these used to be one each"*). `npm run bundle` re-derives both lists
+         — once over the source as written and once with comments and `$note`
+         fields stripped — so neither can go stale, and it errs safe: an id
+         assembled at runtime is listed for a human rather than dropped.
+      3. *Load buildings when they unlock*, not at island boot — `islandScene.ts`.
+
+- [ ] **60 fps on a mid-range phone — NOT MEASURED, and it cannot be measured
+      here.** This container renders through SwiftShader, a CPU rasteriser. Its
+      milliseconds describe a data-centre CPU pretending to be a GPU. No agent
+      has run this game on a phone, no agent may write a frame rate into this
+      line, and the box stays empty until somebody holds a device.
+
+      What `npm run perf` *can* measure is the half of a frame that is not the
+      GPU's, and that half does transfer — upward, because a phone's CPU is
+      several times slower than this one:
+
+      - **CPU per frame splits into a fixed cost of about 1-2 ms and about
+        5-7 µs per draw call**, fitted by least squares across the three scenes
+        above (residuals under 0.9 ms on a 1.3-9.1 ms range). That is the
+        arithmetic behind the 100-call budget: draw calls are CPU cost before
+        they are GPU cost. The demo island's 1110 calls are ~7 ms of CPU
+        *here*, before the GPU has drawn anything.
+      - **The sea allocates about 250 KB per frame** (measured 243 / 247 /
+        270 KB across three runs); the island day one about 100 KB. At 60 fps
+        the sea is making 15 MB of garbage a second, and a phone collects a
+        nursery that size in a visible hitch. Flagged as pathological. This is
+        one of the few things a CPU rasteriser reports faithfully, because
+        allocation is the same JavaScript either way.
+      - The absolute millisecond columns are **not** stable on this container —
+        the same scene measured 526 ms and 1072 ms a frame in two runs an hour
+        apart, because several agents share the machine. The counts are
+        deterministic; the milliseconds are not. Read ratios, never absolutes.
 - [ ] PWA installable, offline boot verified on a device
 - [ ] Capacitor shell, icons, splash, App Store metadata
 - [ ] An error a player can hit shows something other than a blank canvas

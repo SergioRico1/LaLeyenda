@@ -28,6 +28,9 @@ import { SIM_VERSION, type GameState } from '../sim/types';
 export const SAVE_VERSION = SIM_VERSION;
 export const SAVE_KEY = 'save';
 export const SAVE_FORMAT = 'la-leyenda-save';
+/** Where an unreadable save is quarantined. It is never overwritten and never
+ *  deleted: it is the only copy of that island there will ever be. */
+export const BROKEN_KEY = `${SAVE_KEY}:broken`;
 
 const DB_NAME = 'la-leyenda';
 const DB_STORE = 'game';
@@ -37,6 +40,103 @@ export interface SaveEnvelope {
   version: number;
   savedAt: number;
   state: GameState;
+}
+
+/* --------------------------------------------------------------------------
+ * when the device will not keep the island
+ *
+ * Every failure below used to end at `console.error`, which is a place no
+ * player looks. A phone at its storage quota refuses the write, the autosave
+ * logs it twenty seconds later and again twenty seconds after that, and the
+ * player finds out at the next reload — by which point a whole session is
+ * gone. That is the single most expensive silence in the build, so the store
+ * now SAYS so, once, to whoever is listening.
+ * ----------------------------------------------------------------------- */
+
+export type SaveTroubleKind =
+  /** The device is full. The write was refused and nothing was stored. */
+  | 'quota'
+  /** The write failed for some other reason — a locked db, a dead webview. */
+  | 'write'
+  /** The stored save could not be parsed: half-written, wrong types, garbage. */
+  | 'unreadable'
+  /** The stored save was written by a LATER build than this one. */
+  | 'newer'
+  /** There is no durable backend at all — this session and no further. */
+  | 'ephemeral';
+
+export interface SaveTrouble {
+  kind: SaveTroubleKind;
+  /**
+   * The stored text we could not read, when there is one.
+   *
+   * Carried rather than merely quarantined because it is the player's only
+   * remaining copy: whatever surface reports this can offer to download it,
+   * which is the difference between "your island is gone" and "your island is
+   * in this file, hold on to it".
+   */
+  raw?: string;
+  error?: unknown;
+}
+
+type TroubleListener = (trouble: SaveTrouble | null) => void;
+
+const troubleListeners = new Set<TroubleListener>();
+let lastTrouble: SaveTrouble | null = null;
+
+/**
+ * Listen for the store failing to keep the player's island.
+ *
+ * `null` means the opposite: a write has just landed after a run of failures,
+ * so anything shown about the previous trouble can come down. The last trouble
+ * is REPLAYED to a new listener, which is what makes this raceless — the title
+ * screen's `peekSavedGame()` runs before the router has finished booting, and a
+ * corrupt save found there must still reach the player.
+ */
+export function onSaveTrouble(fn: TroubleListener): () => void {
+  troubleListeners.add(fn);
+  if (lastTrouble) fn(lastTrouble);
+  return () => troubleListeners.delete(fn);
+}
+
+/** For tests, and for a caller that subscribes late on purpose. */
+export function currentSaveTrouble(): SaveTrouble | null {
+  return lastTrouble;
+}
+
+function reportTrouble(trouble: SaveTrouble): void {
+  // The autosave retries every twenty seconds, so an unchanged trouble is
+  // remembered but not re-announced: a notice a player dismissed must not
+  // reappear three times a minute.
+  const repeat = lastTrouble?.kind === trouble.kind;
+  lastTrouble = trouble;
+  console.error(`[save] ${trouble.kind}`, trouble.error ?? '');
+  if (repeat) return;
+  for (const fn of troubleListeners) fn(trouble);
+}
+
+function reportRecovered(): void {
+  if (!lastTrouble || lastTrouble.kind === 'ephemeral') return;
+  lastTrouble = null;
+  for (const fn of troubleListeners) fn(null);
+}
+
+/**
+ * Is this the device telling us it is full?
+ *
+ * Four spellings, all real. Chrome and Firefox raise a DOMException named
+ * `QuotaExceededError`; Firefox's localStorage additionally uses
+ * `NS_ERROR_DOM_QUOTA_REACHED`; older WebKit throws code 22 with an EMPTY name,
+ * which is the one a name check alone misses — and iOS Safari is precisely the
+ * platform where a full quota is most likely.
+ */
+export function isQuotaError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { name?: unknown; code?: unknown; message?: unknown };
+  if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') return true;
+  if (e.code === 22 || e.code === 1014) return true;
+  const message = typeof e.message === 'string' ? e.message.toLowerCase() : '';
+  return message.includes('quota') || message.includes('storage is full');
 }
 
 /* --------------------------------------------------------------------------
@@ -91,18 +191,42 @@ export const MIGRATIONS: Record<number, (state: Record<string, unknown>) => Reco
   }),
 };
 
+/**
+ * Why a save could not be read, as something a caller can BRANCH on.
+ *
+ * The messages are unchanged and still the thing a human reads; the `reason`
+ * is what lets the surface above tell a player whose file is corrupt from a
+ * player who has just installed an older build over a newer save. Those two
+ * need different words and different offers, and matching on message text is
+ * how that goes wrong the first time somebody rewords a string.
+ */
+export type SaveFault = 'not-json' | 'not-ours' | 'incomplete' | 'newer' | 'no-migration';
+
+export class SaveError extends Error {
+  constructor(readonly fault: SaveFault, message: string) {
+    super(message);
+    this.name = 'SaveError';
+  }
+}
+
 export function migrate(envelope: SaveEnvelope): SaveEnvelope {
   let version = envelope.version;
   let state = envelope.state as unknown as Record<string, unknown>;
 
   if (version > SAVE_VERSION) {
-    throw new Error(
+    // A DOWNGRADE, and the one case where refusing is the whole job. Running
+    // today's migrations over a state written by a later build would drop the
+    // fields this build has never heard of and then write the result back —
+    // turning "we cannot read this yet" into "your island is now damaged".
+    // Nothing is stored, nothing is repaired, and load() quarantines the text.
+    throw new SaveError(
+      'newer',
       `[save] this save is from a newer version of the game (${version} > ${SAVE_VERSION})`
     );
   }
   while (version < SAVE_VERSION) {
     const step = MIGRATIONS[version];
-    if (!step) throw new Error(`[save] no migration from version ${version}`);
+    if (!step) throw new SaveError('no-migration', `[save] no migration from version ${version}`);
     state = step(state);
     version++;
   }
@@ -143,22 +267,74 @@ export function serialize(state: GameState, savedAt: number): string {
   return JSON.stringify(envelope);
 }
 
-/** Throws with a readable message on anything that is not one of our saves. */
+/**
+ * The fields the sim reads on the FIRST tick, and therefore the ones whose
+ * absence is a white screen rather than a bug report.
+ *
+ * `parseSave` used to check three things — the format tag, a numeric version
+ * and a truthy state — and hand anything past that straight to the game. A
+ * half-written file that happens to close its braces, a state whose
+ * `buildings` came back as a string, a `store` that is null: all three parsed
+ * cleanly and then threw inside `advanceInPlace` before the first frame, with
+ * the exception landing in `boot().catch` and the player looking at an empty
+ * canvas. Checked HERE instead, where a failure is a message and a quarantined
+ * file rather than a dead app.
+ *
+ * Deliberately shallow. This is a triage gate, not a schema validator: it asks
+ * whether each field is the right SHAPE for the code that is about to walk it,
+ * and leaves the contents to `repairCaptain` and to the sim's own tolerance.
+ */
+const SHAPE: ReadonlyArray<[keyof GameState, 'number' | 'string' | 'object' | 'array']> = [
+  ['version', 'number'], ['seed', 'string'], ['now', 'number'],
+  ['buildings', 'array'], ['obstacles', 'array'], ['chests', 'array'],
+  ['store', 'object'], ['builders', 'object'], ['daily', 'object'],
+  ['quests', 'object'], ['stats', 'object'], ['flags', 'object'],
+];
+
+function faultsIn(state: unknown): string[] {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) return ['the state is not an object'];
+  const record = state as Record<string, unknown>;
+  const bad: string[] = [];
+  for (const [key, kind] of SHAPE) {
+    const value = record[key as string];
+    const ok =
+      kind === 'array' ? Array.isArray(value)
+      : kind === 'object' ? !!value && typeof value === 'object' && !Array.isArray(value)
+      : typeof value === kind && (kind !== 'number' || Number.isFinite(value));
+    if (!ok) bad.push(`${String(key)} should be ${kind === 'array' ? 'an array' : `a ${kind}`}`);
+  }
+  return bad;
+}
+
+/** Throws a SaveError with a readable message on anything that is not one of
+ *  our saves, or is one of ours and is damaged. */
 export function parseSave(text: string): SaveEnvelope {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
-    throw new Error('[save] that file is not JSON');
+    // Includes the truncated case: a write killed halfway leaves valid JSON
+    // right up to the point it stops, and JSON.parse is what notices.
+    throw new SaveError('not-json', '[save] that file is not JSON');
   }
   const envelope = parsed as Partial<SaveEnvelope>;
-  if (!envelope || envelope.format !== SAVE_FORMAT) {
-    throw new Error('[save] that file is not a La Leyenda save');
+  if (!envelope || typeof envelope !== 'object' || envelope.format !== SAVE_FORMAT) {
+    throw new SaveError('not-ours', '[save] that file is not a La Leyenda save');
   }
   if (typeof envelope.version !== 'number' || !envelope.state) {
-    throw new Error('[save] that save is missing its version or its state');
+    throw new SaveError('incomplete', '[save] that save is missing its version or its state');
   }
-  return migrate(envelope as SaveEnvelope);
+
+  // The version gate runs BEFORE the shape gate on purpose: a save from a
+  // later build may legitimately have fields this one does not recognise, and
+  // "we cannot read this yet" is a different sentence from "this is damaged".
+  const migrated = migrate(envelope as SaveEnvelope);
+
+  const bad = faultsIn(migrated.state);
+  if (bad.length) {
+    throw new SaveError('incomplete', `[save] that save is damaged: ${bad.join(', ')}`);
+  }
+  return migrated;
 }
 
 /** A stable, human-ish filename: one per day plus the clock, no collisions. */
@@ -256,6 +432,12 @@ async function pickBackend(): Promise<Backend> {
       console.warn('[save] localStorage unavailable, the save will not survive this session', err);
     }
   }
+  // Both doors shut. The game still runs — an island in memory is better than
+  // no island — but every hour of it dies at the next reload, and that is not
+  // something to discover afterwards. Private-mode Safari and locked-down
+  // webviews land here, and so does a device so full that even the two-byte
+  // probe is refused.
+  reportTrouble({ kind: 'ephemeral' });
   return memoryBackend();
 }
 
@@ -309,20 +491,71 @@ export class SaveStore {
     try {
       return parseSave(text).state;
     } catch (err) {
-      // A corrupt save is kept, not overwritten: it is the only copy the player
-      // has and they may still be able to export it by hand.
-      console.error('[save] could not read the stored save', err);
-      await this.backend.set(`${SAVE_KEY}:broken`, text);
+      // A save we cannot read is KEPT, never overwritten: it is the only copy
+      // the player has, and a file we cannot parse today is still a file a
+      // later build — or a hand-edited rescue — may be able to. Quarantining is
+      // half the job; the other half is that somebody is told, with the text in
+      // hand, so it can be offered as a download.
+      const newer = err instanceof SaveError && err.fault === 'newer';
+      try {
+        await this.backend.set(BROKEN_KEY, text);
+      } catch (quarantineErr) {
+        console.warn('[save] could not quarantine the unreadable save', quarantineErr);
+      }
+      reportTrouble({ kind: newer ? 'newer' : 'unreadable', raw: text, error: err });
       return null;
     }
   }
 
+  /** The quarantined text, if this device is holding one. Offered in Ajustes
+   *  as a download, because it may be the only copy of that island left. */
+  async quarantined(): Promise<string | null> {
+    try {
+      return await this.backend.get(BROKEN_KEY);
+    } catch {
+      return null;
+    }
+  }
+
+  /** What the last successful write actually stored, so an identical one can
+   *  be skipped. See the note in `save`. */
+  private lastWritten: string | null = null;
+
   async save(state: GameState, savedAt: number): Promise<void> {
+    const body = JSON.stringify(state);
+    // AN IDENTICAL WRITE IS SKIPPED, and the moment it matters is the worst
+    // moment there is. Backgrounding a game on a phone fires `visibilitychange`
+    // and then `pagehide` within a millisecond of each other, and the loop has
+    // already stopped, so both handlers serialize the SAME state and both ask
+    // the device to store 16 KB — while the OS is trying to freeze the app. On
+    // a slow device that is two full IndexedDB transactions bought for nothing.
+    //
+    // Compared on the state alone rather than on the envelope, because
+    // `savedAt` differs on every call by construction and would defeat the
+    // check entirely. Nothing reads the stored `savedAt`: `load` takes only
+    // `.state`, and an export stamps its own.
+    if (body === this.lastWritten) return;
     const text = serialize(state, savedAt);
-    await this.enqueue(() => this.backend.set(SAVE_KEY, text));
+    try {
+      await this.enqueue(() => this.backend.set(SAVE_KEY, text));
+      this.lastWritten = body;
+      reportRecovered();
+    } catch (err) {
+      // Announced AND rethrown. The throw is what the Guardar row in Ajustes
+      // already reports on; the announcement is for the autosave, which is the
+      // path a player is actually on and which had nowhere to put this but the
+      // console. A player whose island stopped saving and was not told is a
+      // player who loses everything at the next reload.
+      reportTrouble({ kind: isQuotaError(err) ? 'quota' : 'write', error: err });
+      throw err;
+    }
   }
 
   async clear(): Promise<void> {
+    // The remembered text goes with it, or Empezar de nuevo followed by a save
+    // of the identical fresh island would be skipped as a duplicate and the
+    // store would be left empty.
+    this.lastWritten = null;
     await this.enqueue(() => this.backend.del(SAVE_KEY));
   }
 
@@ -407,16 +640,45 @@ export async function adoptSave(state: GameState, savedAt = Date.now()): Promise
 
 /** Downloads the save as a JSON file. */
 export function exportSaveFile(state: GameState, savedAt = Date.now()): void {
-  const blob = new Blob([serialize(state, savedAt)], { type: 'application/json' });
+  downloadText(serialize(state, savedAt), exportFilename(savedAt));
+}
+
+/**
+ * Downloads a save we could NOT read, exactly as it is stored.
+ *
+ * The recovery half of quarantine. A file this build refuses — damaged, or
+ * written by a later one — is still the player's island, and a byte-for-byte
+ * copy on their disk is the difference between a bad afternoon and a lost
+ * account. Deliberately not re-serialized: whatever is wrong with it, it goes
+ * out untouched, because the version that can read it is not this one.
+ */
+export function exportBrokenSaveFile(raw: string, savedAt = Date.now()): void {
+  downloadText(raw, exportFilename(savedAt).replace('.json', '-dañada.json'));
+}
+
+function downloadText(text: string, filename: string): void {
+  const blob = new Blob([text], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = exportFilename(savedAt);
+  link.download = filename;
   document.body.append(link);
   link.click();
   link.remove();
   // Revoke on the next turn: Safari cancels the download if the URL dies first.
   setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/** Whatever unreadable save this device is holding, if any. Read at boot so
+ *  Ajustes can offer it for as long as it exists, not only in the one session
+ *  where the failure happened. */
+export async function readQuarantinedSave(): Promise<string | null> {
+  try {
+    const store = await SaveStore.open();
+    return await store.quarantined();
+  } catch {
+    return null;
+  }
 }
 
 /** Reads a save the player picked from an `<input type="file">`. */

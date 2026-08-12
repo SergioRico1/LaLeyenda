@@ -227,6 +227,11 @@ const COPY = {
   importReadyBody: (file: string) => `Se cargará ${file} y tu isla actual desaparecerá.`,
   importGoNow: 'Sustituir mi isla',
 
+  rescueLabel: 'Rescatar partida dañada',
+  rescueHint: 'Guardamos el archivo que no pudimos leer. Descárgalo por si otra versión puede abrirlo.',
+  rescueGo: 'Descargar',
+  rescueDone: 'Archivo descargado.',
+
   /* --- zona de peligro --- */
   danger: 'Zona de peligro',
   reset: 'Empezar de nuevo',
@@ -347,6 +352,15 @@ export interface SettingsPanelOptions {
   onReset?: (() => Promise<void> | void) | null;
   /** Shown under the heading so a player can see whose island this is. */
   captainName?: string | null;
+  /**
+   * A save this device is holding that the game could not read.
+   *
+   * Present only when there is one, and when it is present the Partida group
+   * grows a row that downloads it. The session where the failure happened gets
+   * the notice below; this is what keeps the offer alive afterwards, because a
+   * player who dismissed a card at boot still deserves the file a week later.
+   */
+  onRescue?: (() => void) | null;
 }
 
 export interface SettingsPanel {
@@ -526,6 +540,19 @@ export function createSettingsPanel(opts: SettingsPanelOptions): SettingsPanel {
   const importRow = row(COPY.importLabel, COPY.importHint,
     goButton(COPY.importGo, 'grey', opts.onImport ? () => openImportWarning() : null));
 
+  /* The rescue row exists only when there is something to rescue. A row that
+   * said "no hay ninguna partida dañada" would be a permanent reminder of a
+   * failure that has not happened, on every device that is working fine. */
+  const onRescue = opts.onRescue;
+  let rescueRow: ReturnType<typeof row> | null = null;
+  if (onRescue) {
+    rescueRow = row(COPY.rescueLabel, COPY.rescueHint,
+      goButton(COPY.rescueGo, 'grey', () => {
+        onRescue();
+        rescueRow?.say(COPY.rescueDone, 'ok');
+      }));
+  }
+
   const importConfirm = el('div', 'settings__confirm settings__confirm--warn');
   importConfirm.hidden = true;
 
@@ -679,9 +706,13 @@ export function createSettingsPanel(opts: SettingsPanelOptions): SettingsPanel {
     opts.onClose();
   });
 
+  const gameRows: HTMLElement[] = [saveRow.el, exportRow.el, importRow.el];
+  if (rescueRow) gameRows.push(rescueRow.el);
+  gameRows.push(importConfirm, file);
+
   const body = el('div', 'settings__body',
     group(COPY.audio, 'plain', ...audioRows),
-    group(COPY.game, 'plain', saveRow.el, exportRow.el, importRow.el, importConfirm, file),
+    group(COPY.game, 'plain', ...gameRows),
     group(COPY.danger, 'danger', resetRow.el, resetConfirm),
     creditsGroup);
 
@@ -733,3 +764,150 @@ export function createSettingsPanel(opts: SettingsPanelOptions): SettingsPanel {
     },
   };
 }
+
+/* ==========================================================================
+ * el aviso — what a player sees when the device lets us down
+ *
+ * PRODUCTION.md §7: "An error a player can hit shows something other than a
+ * blank canvas." Measured this round on the built game with the radio cut
+ * mid-session: tapping Jugar disposed the title, failed to fetch the captain's
+ * models, and left an EMPTY PAGE over open water — no text, no buttons, no way
+ * back. The router caught the rejection, set `window.__error` and logged it,
+ * which is a complete report to nobody.
+ *
+ * So every way this game can lose to a real phone ends here instead, and the
+ * shape of it is decided by ONE question: can the player carry on?
+ *
+ *  · `stop`  — no. Something they were owed is not on screen. A card over a
+ *              scrim, with the way out ON it. Modal, because the alternative
+ *              is a blank page.
+ *  · `warn`  — yes, but they need to know. A bar under the safe area that does
+ *              not block a tap. A quota failure must never take the game away
+ *              from someone in the middle of a session; it must only make sure
+ *              they are not the last to find out.
+ *
+ * Both carry §0.2's four layers, because a warning drawn as flat web chrome is
+ * the one object in the build a player would be right to distrust.
+ * ======================================================================= */
+
+export type NoticeWeight = 'stop' | 'warn';
+
+export interface NoticeAction {
+  label: string;
+  /** The one the hand should land on. Exactly one per notice, or none. */
+  primary?: boolean;
+  /** Returning false keeps the notice up — a download does not dismiss it. */
+  run(): boolean | void;
+}
+
+export interface NoticeOptions {
+  weight: NoticeWeight;
+  title: string;
+  body: string;
+  actions: NoticeAction[];
+  /** Called when the notice takes itself down. */
+  onDismiss?: () => void;
+}
+
+export interface Notice {
+  readonly el: HTMLElement;
+  dispose(): void;
+}
+
+export function createNotice(opts: NoticeOptions): Notice {
+  const acts = el('div', 'notice__acts');
+  const card = el('div', `notice__card notice__card--${opts.weight}`,
+    el('p', 't t-caption notice__title', opts.title),
+    el('p', 't t-body notice__body', opts.body),
+    acts);
+
+  const root = el('div', `notice notice--${opts.weight} layer-page`);
+
+  const dispose = (): void => {
+    root.remove();
+    opts.onDismiss?.();
+  };
+
+  for (const action of opts.actions) {
+    const button = el('button', `btn btn--${action.primary ? 'green' : 'grey2'} notice__go`,
+      el('span', 't t-btn', action.label));
+    button.type = 'button';
+    button.setAttribute('aria-label', action.label);
+    pressable(button, () => {
+      // A handler that returns false is one that did something the player may
+      // want to do twice — downloading a rescue file — so the card stays.
+      if (action.run() === false) return;
+      dispose();
+    });
+    acts.append(button);
+  }
+
+  // The scrim is part of `stop` and absent from `warn`: it is what makes one
+  // modal and the other not. It does NOT dismiss on tap — the way out of a
+  // blocking notice is a labelled button, never a guess at the backdrop.
+  if (opts.weight === 'stop') root.append(el('div', 'notice__scrim'));
+  root.append(card);
+
+  return { el: root, dispose };
+}
+
+/**
+ * The words for each way the store can fail, in one place because they are one
+ * decision: what a player is told, and what they are offered instead.
+ *
+ * Every one of them names the cause in a sentence a person can act on, and
+ * every one that risks an island offers the file. "No se pudo guardar" alone
+ * is a shrug; "el dispositivo está lleno, descarga una copia" is a way out.
+ */
+export const TROUBLE_COPY: Record<string, { title: string; body: string; rescue: boolean }> = {
+  quota: {
+    title: 'Tu isla ha dejado de guardarse',
+    body:
+      'Este dispositivo está sin espacio y ha rechazado el guardado. Libera sitio y ' +
+      'volverá sola; mientras tanto, descarga una copia para no perder la partida.',
+    rescue: false,
+  },
+  write: {
+    title: 'Tu isla ha dejado de guardarse',
+    body:
+      'Este dispositivo no nos deja escribir la partida. Descarga una copia ahora: ' +
+      'es lo único que la conserva si cierras el juego.',
+    rescue: false,
+  },
+  ephemeral: {
+    title: 'Esta partida no sobrevivirá al cierre',
+    body:
+      'El navegador no nos deja guardar nada — suele pasar en una ventana privada. ' +
+      'Puedes jugar, pero exporta una copia antes de cerrar.',
+    rescue: false,
+  },
+  unreadable: {
+    title: 'No hemos podido leer tu partida',
+    body:
+      'El archivo guardado en este dispositivo está dañado. No lo hemos borrado: ' +
+      'descárgalo por si podemos rescatarlo, y empieza una isla nueva mientras tanto.',
+    rescue: true,
+  },
+  newer: {
+    title: 'Tu partida es de una versión más nueva',
+    body:
+      'La guardó una versión posterior del juego y esta no sabe leerla, así que no ' +
+      'la hemos tocado. Actualiza el juego para recuperarla, o descarga el archivo.',
+    rescue: true,
+  },
+  navigation: {
+    title: 'Falta algo por cargar',
+    body:
+      'No hemos podido traer una parte del juego. Casi siempre es la conexión: ' +
+      'inténtalo otra vez y, si sigue igual, cierra el juego y ábrelo de nuevo.',
+    rescue: false,
+  },
+};
+
+export const NOTICE_COPY = {
+  export: 'Exportar copia',
+  rescue: 'Descargar archivo',
+  understood: 'Entendido',
+  retry: 'Reintentar',
+  toTitle: 'Volver al título',
+} as const;

@@ -4,8 +4,14 @@ import { createIslandScene, type IslandScene } from './scenes/islandScene';
 import { createTitleScene } from './scenes/titleScene';
 import { createCaptainScene } from './scenes/captainScene';
 import { createGame, type Game } from './core/game';
-import { adoptSave, importSaveFile, peekSavedGame } from './core/save';
-import { createSettingsPanel, type SettingsPanel } from './ui/panels/settings';
+import {
+  adoptSave, exportBrokenSaveFile, importSaveFile, onSaveTrouble, peekSavedGame,
+  readQuarantinedSave, type SaveTrouble,
+} from './core/save';
+import {
+  NOTICE_COPY, TROUBLE_COPY, createNotice, createSettingsPanel,
+  type Notice, type NoticeAction, type NoticeWeight, type SettingsPanel,
+} from './ui/panels/settings';
 import { createStorePanel, type StorePanel } from './ui/panels/store';
 import { createLeaderboardPanel, fetchStandings, type LeaderboardPanel } from './ui/panels/leaderboard';
 import { createTutorial, type Tutorial } from './ui/tutorial';
@@ -105,6 +111,57 @@ const SHOT_EPOCH = Date.UTC(2026, 0, 5, 12, 0, 0);
 const canvas = document.getElementById('scene') as HTMLCanvasElement;
 
 /* --------------------------------------------------------------------------
+ * el aviso — the one place a failure becomes something a player can see
+ *
+ * PRODUCTION.md §7 has wanted this since round 8: "An error a player can hit
+ * shows something other than a blank canvas." It was still open, and this
+ * round measured what "blank" actually means. Built game, radio cut after the
+ * title had loaded, player taps Jugar: `show()` disposes the title, the captain
+ * screen's models fail to fetch, the promise rejects, `nav` writes the stack to
+ * `window.__error` and logs it — and the page is left with NO TEXT AND NO
+ * BUTTONS over open water. A complete report, filed with nobody.
+ *
+ * So every failure the router can catch now ends up here instead. It lives at
+ * module scope rather than inside `runRouter` because `boot()` can fail before
+ * a router exists, and that is the worst moment of all to have nowhere to put
+ * a message.
+ *
+ * Its root is appended to #app, NOT to #ui: `islandScene.dispose()` empties
+ * #ui wholesale, and a notice that a navigation destroyed would be a notice
+ * about the navigation that destroyed it.
+ * ----------------------------------------------------------------------- */
+
+let notice: Notice | null = null;
+/** Which trouble the notice on screen is about, so a store that starts
+ *  working again takes down its own warning and nothing else's. */
+let noticeKey: string | null = null;
+
+function raise(key: string, weight: NoticeWeight, actions: NoticeAction[]): void {
+  const copy = TROUBLE_COPY[key];
+  if (!copy) return;
+  const previous = notice;
+  notice = null;
+  noticeKey = null;
+  previous?.dispose();
+
+  const next = createNotice({
+    weight,
+    title: copy.title,
+    body: copy.body,
+    actions,
+    onDismiss: () => { if (notice === next) { notice = null; noticeKey = null; } },
+  });
+  notice = next;
+  noticeKey = key;
+  (document.getElementById('app') ?? document.body).append(next.el);
+}
+
+/** Takes down a notice about `key`, and only about `key`. */
+function lower(keys: readonly string[]): void {
+  if (noticeKey && keys.includes(noticeKey)) notice?.dispose();
+}
+
+/* --------------------------------------------------------------------------
  * screens
  * ----------------------------------------------------------------------- */
 
@@ -198,8 +255,79 @@ async function runRouter(stage: Stage): Promise<void> {
     void run().catch((err) => {
       window.__error = String(err?.stack || err);
       console.error('[router] navigation failed', err);
+      // `show()` disposed the old screen before building the new one, so at
+      // this instant there is nothing on the page at all. Two ways out, both
+      // on the card.
+      //
+      // REINTENTAR RELOADS, and it has to. `src/render/assets.ts` caches the
+      // PROMISE per model id — `cache.set(id, entry)` runs whether that promise
+      // resolves or rejects — so once a fetch has failed, every later
+      // `loadModel` of that id hands back the same rejection for the life of
+      // the page. Calling the failed navigation again in place would therefore
+      // fail identically with the radio back on, which is worse than no button
+      // at all: a retry that cannot succeed is a lie told twice. A reload is
+      // the retry that works, it costs nothing (the state is on disk, and
+      // `toSea` flushes before it sails), and it is what the card's own body
+      // text tells the player to do if this does not help.
+      //
+      // ✎ The day that cache evicts a rejection — `entry.catch(() => cache.delete(id))`
+      // is the whole fix — this can become `nav(run)` and the flow does not change.
+      raise('navigation', 'stop', [
+        { label: NOTICE_COPY.retry, primary: true, run: () => { location.reload(); } },
+        // The title is the one destination that needs nothing new: its ship and
+        // its fonts are already in memory or this card could not be on screen.
+        { label: NOTICE_COPY.toTitle, run: () => { nav(toTitle); } },
+      ]);
     });
   };
+
+  /* --- the device letting us down ---------------------------------------- */
+
+  /**
+   * Subscribed before anything loads, and `onSaveTrouble` REPLAYS the last
+   * trouble to a new listener — which matters, because the first thing that
+   * reads storage is the title screen's `peekSavedGame()`, and a corrupt save
+   * found there fires before this line would otherwise run.
+   *
+   * Two weights, one rule: can the player carry on?
+   *
+   *  · quota / write / ephemeral — yes. The island is intact, it is only the
+   *    writing that has stopped. A bar, not a wall, with the export on it: the
+   *    game has no server, so a file on their disk is the ONLY backup that
+   *    exists and this is the moment they need to be told to take one.
+   *  · unreadable / newer — no. We are about to start them on a BLANK ISLAND
+   *    over the top of a save we refused to read, and doing that without
+   *    saying so is how a player loses a month and never finds out why.
+   */
+  onSaveTrouble((trouble: SaveTrouble | null) => {
+    // A write has landed after a run of failures: the player freed some space,
+    // or the browser let go of whatever it was holding. Take the warning down —
+    // and only that warning, never somebody else's card.
+    if (!trouble) { lower(['quota', 'write']); return; }
+    if (shotMode) return;
+
+    const exportable = game;
+    const actions: NoticeAction[] = [];
+
+    if (trouble.raw) {
+      // Returning false keeps the card up: a download is not an acknowledgement,
+      // and a player who missed the file wants the button still there.
+      actions.push({
+        label: NOTICE_COPY.rescue,
+        primary: true,
+        run: () => { exportBrokenSaveFile(trouble.raw ?? ''); return false; },
+      });
+    } else if (exportable) {
+      actions.push({
+        label: NOTICE_COPY.export,
+        primary: true,
+        run: () => { exportable.exportSave(); },
+      });
+    }
+    actions.push({ label: NOTICE_COPY.understood, run: () => undefined });
+
+    raise(trouble.kind, TROUBLE_COPY[trouble.kind]?.rescue ? 'stop' : 'warn', actions);
+  });
 
   /* --- the frame --------------------------------------------------------- */
 
@@ -255,6 +383,30 @@ async function runRouter(stage: Stage): Promise<void> {
   }
 
   /* --- the game ---------------------------------------------------------- */
+
+  /**
+   * Write the save, and NEVER let that failure take a navigation down with it.
+   *
+   * Found by driving a device with no IndexedDB and a localStorage at its
+   * quota: confirming a captain called `startNewGame`, whose `await
+   * game.saveNow()` rejected, which rejected the navigation, which showed the
+   * player "Falta algo por cargar" — a message about the network — and left
+   * them on a disposed screen with no island. Two failures, one of them
+   * invented, and the true one hidden behind it.
+   *
+   * A save that will not write is real and serious, and it already has a
+   * channel of its own that says so in the player's own terms (`onSaveTrouble`
+   * above). What it must not do is stop the game from opening: the island in
+   * memory is playable, and a player who can see it and export it is in a far
+   * better position than one looking at the wrong error message.
+   */
+  const flush = async (live: Game): Promise<void> => {
+    try {
+      await live.saveNow();
+    } catch {
+      // Already announced by the store, in words about storage.
+    }
+  };
 
   async function ensureGame(): Promise<Game> {
     game ??= await createGame({
@@ -317,7 +469,7 @@ async function runRouter(stage: Stage): Promise<void> {
     game?.stop();
     game = await createGame({ seed: captain.seed, start: 'new' });
     game.dispatch((state) => setCaptain(state, captain));
-    await game.saveNow();
+    await flush(game);
     await toIsland();
   }
 
@@ -378,7 +530,7 @@ async function runRouter(stage: Stage): Promise<void> {
     // Astillero and taps ¡Zarpar! inside that window sails the hull they just
     // paid to replace. The gate's round-10 walk hit exactly that: 20 000 oro
     // for the Balandra, and the dock card said Esquife.
-    await live.saveNow();
+    await flush(live);
     await show('sea', () => createSeaScene(stage, {
       seed: live.state().seed,
       onEnd: (voyage) => {
@@ -391,7 +543,7 @@ async function runRouter(stage: Stage): Promise<void> {
           if (over > 0) console.log(`[voyage] ${Math.round(over)} units would not fit in the stores`);
           return { ok: true, state, events: [] };
         });
-        nav(() => live.saveNow().then(() => toIsland()));
+        nav(() => flush(live).then(() => toIsland()));
       },
     }));
   }
@@ -486,9 +638,18 @@ async function runRouter(stage: Stage): Promise<void> {
     if (!game && (shotMode || (await peekSavedGame()) !== null)) await ensureGame();
 
     const live = game;
+    // Read every time Ajustes opens rather than cached at boot: a save can be
+    // quarantined mid-session by an import of a file this build cannot read,
+    // and the row that rescues it should exist from that moment on.
+    const broken = shotMode ? null : await readQuarantinedSave();
+
     settings = createSettingsPanel({
       captainName: live?.state().captain.name ?? null,
       onClose: () => closeSettings(),
+      // The other half of quarantine, and the half that makes it a RECOVERY
+      // rather than a bin: the notice at boot can be dismissed, this row cannot
+      // be lost. It appears only on a device actually holding a damaged save.
+      onRescue: broken ? () => exportBrokenSaveFile(broken) : null,
       onSave: live ? () => live.saveNow() : null,
       onExport: live ? () => live.exportSave() : null,
       // From the title there is no game to import INTO, so the file is written
@@ -669,6 +830,29 @@ async function runRouter(stage: Stage): Promise<void> {
     else await toIsland();
   } else if (saveParam) await toIsland();
   else await toTitle();
+
+  /**
+   * ✎ A capture knob, not a product feature — the same trick `?panel=` plays
+   * in settings.ts, and for the same reason: these cards exist only when a
+   * device has failed, which is a state no capture can reach on purpose.
+   * Read ONLY under `shot=1`.
+   *
+   *   npm run shoot -- island --mobile --notice quota
+   */
+  const wanted = shotMode ? params.get('notice') : null;
+  if (wanted && TROUBLE_COPY[wanted]) {
+    const rescue = TROUBLE_COPY[wanted].rescue;
+    raise(wanted, rescue || wanted === 'navigation' ? 'stop' : 'warn',
+      wanted === 'navigation'
+        ? [
+            { label: NOTICE_COPY.retry, primary: true, run: () => undefined },
+            { label: NOTICE_COPY.toTitle, run: () => undefined },
+          ]
+        : [
+            { label: rescue ? NOTICE_COPY.rescue : NOTICE_COPY.export, primary: true, run: () => undefined },
+            { label: NOTICE_COPY.understood, run: () => undefined },
+          ]);
+  }
 }
 
 /* --------------------------------------------------------------------------
@@ -844,4 +1028,11 @@ async function showDevScene(stage: Stage, which: 'model' | 'measure'): Promise<v
 boot().catch((err) => {
   window.__error = String(err?.stack || err);
   console.error(err);
+  // The worst moment to have nowhere to put a message: there is no router yet,
+  // so there is no screen to go back to and nothing to retry but the load
+  // itself. A reload is a real fix for a transport failure, and it is a
+  // hundred times better than the blank canvas this used to leave behind.
+  raise('navigation', 'stop', [
+    { label: NOTICE_COPY.retry, primary: true, run: () => { location.reload(); } },
+  ]);
 });

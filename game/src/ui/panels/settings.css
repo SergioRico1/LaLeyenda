@@ -42,8 +42,19 @@
   align-items: stretch;
   /* The top pad clears the X, which straddles the sheet's top edge. The rest
      leaves a real band of dimmed world on every side: a sheet flush to the
-     viewport is a screen, and this is an overlay the world is still behind. */
-  padding: calc(var(--ui-safe-t) + 34px) 14px calc(var(--ui-safe-b) + 22px);
+     viewport is a screen, and this is an overlay the world is still behind.
+
+     The SIDES carry the safe area too, and that is not decoration. Measured
+     this round with the four inset tokens forced to an iPhone 14 Pro's real
+     values: in landscape the housing takes 59pt off the leading edge, and a
+     flat 14px here was only clear because a 420px sheet happens to be centred
+     in an 852px viewport. Rotate a 568pt phone instead and the sheet is the
+     screen less its margins — 540px of it — and its left edge lands under the
+     housing. The one inset nobody tests, because a portrait capture never
+     sees it. */
+  padding:
+    calc(var(--ui-safe-t) + 34px) calc(var(--ui-safe-r) + 14px)
+    calc(var(--ui-safe-b) + 22px) calc(var(--ui-safe-l) + 14px);
 }
 
 /* Absolutely positioned against .settings' PADDING box, so the dim covers the
@@ -599,4 +610,166 @@ html.shot:not(.motion) .settings__scrim { opacity: 1; }
   .settings { padding-top: calc(var(--ui-safe-t) + 26px); }
   .settings__head { padding: 8px 58px 7px; }
   .settings__body { padding: 10px 12px 14px; }
+}
+
+/* ============================================================================
+ * el aviso — the surface a player meets when the device lets us down
+ *
+ * See the note over `createNotice` in settings.ts for why this exists at all:
+ * with the radio cut mid-session the game presented an EMPTY PAGE, and every
+ * failure it knew about went to the console.
+ *
+ * Two weights, and the difference between them is whether the player can carry
+ * on. `stop` is a card over a scrim with the way out on it; `warn` is a bar
+ * that never eats a tap. Both are §0.2 objects — ink contour, hard gloss step,
+ * warm top rim, lip plus a zero-x extrusion — because a warning that reads as
+ * flat web chrome is the one object here a player would be right to distrust.
+ * ========================================================================== */
+
+.notice {
+  position: absolute;
+  inset: 0;
+  /* Over Ajustes (940) and over the toast (950): a quota failure can happen
+     while the player is IN Ajustes pressing Guardar, and the answer to that
+     press must not be hidden behind the sheet that raised it. */
+  z-index: 960;
+  display: flex;
+  justify-content: center;
+  /* The safe-area insets on all four sides, so a notch, a home bar and a
+     landscape sensor housing all keep their hands off the words. */
+  padding:
+    calc(var(--ui-safe-t) + 12px) calc(var(--ui-safe-r) + 12px)
+    calc(var(--ui-safe-b) + 12px) calc(var(--ui-safe-l) + 12px);
+  /* The layer itself never eats a tap; only the scrim and the card do. That is
+     what lets `warn` sit over a live island without stealing a finger from it. */
+  pointer-events: none;
+}
+
+.notice--stop  { align-items: center; }
+.notice--warn  { align-items: flex-start; }
+
+.notice__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 8, 12, 0.62);
+  pointer-events: auto;
+  opacity: 0;
+  animation: ui-scrim-in 0.2s ease-out forwards;
+}
+html.shot:not(.motion) .notice__scrim { opacity: 1; }
+
+/* --- the card ------------------------------------------------------------- */
+
+.notice__card {
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* min() rather than a fixed width: at 320px the card is the screen less its
+     margins, and on a landscape phone it stops at a readable measure. */
+  width: min(380px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 13px 14px 14px;
+
+  border: var(--ui-ink-w) solid var(--ui-ink);        /* layer 1: ink contour */
+  border-radius: 14px;
+  overflow-x: hidden;
+  /* The SAME parchment as the confirmation card in this file, deliberately:
+     they are one species of object — a raised card that interrupts — and a
+     second cream would read as a second game. It also gets the light running
+     the right way. Scanned at 320x568 with the body an independent lighter
+     cream, the head band's foot landed at L=226 over a body top of L=239: the
+     light ran UPHILL across the one hard step the object has, which is exactly
+     what tokens.test.ts exists to catch on the button families. Band foot
+     #F4E6CE (L=230) over body top #E9D8BA (L=216) is a step you can see. */
+  background: linear-gradient(180deg,
+    #E9D8BA 0%,      #DCC8A2 93%,
+    #A98F68 93.01%,  #A98F68 100%);                   /* layer 4: the lip */
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.85),          /* layer 3: warm top rim */
+    inset 0 -2px 0 rgba(255, 255, 255, 0.28),
+    0 5px 0 rgba(0, 0, 0, 0.34),                      /* layer 4: zero-x drop */
+    var(--ui-cast-lg);
+
+  animation: ui-pop-s 0.2s cubic-bezier(0.2, 1.35, 0.4, 1);
+}
+
+/* Layer 2 as a STRUCTURE, exactly as the confirmation card does it: on an
+   object this tall a percentage break lands mid-sentence and photographs as a
+   seam, so the lit plane becomes the head band with the hard step at its foot. */
+.notice__title {
+  margin: -13px -14px 2px;
+  padding: 12px 14px 10px;
+  background: linear-gradient(180deg, #FFF9EE 0%, #F4E6CE 100%);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.9),   /* layer 3: the warm top rim */
+    0 1px 0 rgba(23, 19, 14, 0.24);           /* layer 2: the hard step */
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+/* Ink on parchment. Outlined white type belongs on the world, never here. */
+.notice__title,
+.notice__body {
+  -webkit-text-stroke-width: 0;
+  text-shadow: none;
+}
+.notice__title { color: #8A4A0C; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.55); }
+.notice__body  { margin: 0; color: #3B2C1E; line-height: 1.36; }
+
+/* A stop is a failure, a warn is a caution: the head band says which before a
+   word is read. */
+.notice__card--stop .notice__title { color: var(--settings-danger-ink, #7C0A0C); }
+
+.notice__acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 4px;
+}
+.notice__go {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 46px;
+  padding: 8px 14px;
+  --brk: 60%;
+}
+.notice__go .t-btn { font-size: 16px; }
+
+/* --- the warn bar --------------------------------------------------------
+ * The SAME object, kept short: a player who can carry on is not owed four
+ * lines of explanation at the top of their island. The head band, the body and
+ * the one action stay stacked — turning the card on its side would break the
+ * band that IS layer 2 — and the whole thing costs about 120px of the top of
+ * the screen while the HUD underneath keeps every tap. */
+.notice--warn .notice__card {
+  width: min(440px, 100%);
+  gap: 6px;
+  padding: 11px 12px 12px;
+}
+.notice--warn .notice__title { margin: -11px -12px 2px; padding: 10px 12px 9px; font-size: 17px; }
+.notice--warn .notice__body { font-size: 14px; }
+.notice--warn .notice__go { min-height: 44px; }
+.notice--warn .notice__go .t-btn { font-size: 15px; }
+
+/* At 320pt the card is the screen less its margins, so every pixel of padding
+   is a pixel off the measure. */
+@media (max-width: 379px) {
+  .notice { padding-left: calc(var(--ui-safe-l) + 9px); padding-right: calc(var(--ui-safe-r) + 9px); }
+  .notice__card { padding: 12px 11px 12px; }
+  .notice__title { margin: -12px -11px 2px; padding: 11px 11px 9px; font-size: 17px; }
+  .notice__body { font-size: 14px; }
+  .notice__go .t-btn { font-size: 15px; }
+}
+
+/* A phone held sideways has about 390px of height and the card must not run
+   off both ends of it. The body scrolls inside the card; the buttons do not. */
+@media (orientation: landscape) and (max-height: 480px) {
+  .notice__card { max-height: calc(100% - 4px); }
+  .notice__body { font-size: 14px; line-height: 1.3; }
+  .notice__go { min-height: 42px; }
 }
