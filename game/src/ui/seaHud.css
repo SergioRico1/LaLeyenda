@@ -975,6 +975,188 @@ html.is-steering .sea__helm {
     0 1px 0 rgba(0, 0, 0, 0.3);
 }
 
+/* The price of leaving from here, on the button that charges it. A second line
+   inside the same object rather than a chip beside it: two objects would be two
+   things to read, and this is one fact about one button. */
+.sea__leaveWord {
+  display: block;
+  line-height: 1.05;
+}
+
+.sea__leaveShare {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  line-height: 1;
+  /* The one hot colour on a mid-stone object, which is what makes a percentage
+     read as a PRICE rather than as another readout. It is not the hull's red:
+     nothing here is an emergency, it is a bill. */
+  color: var(--ui-ink);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.sea__leaveShare u {
+  font-size: 0.72em;
+  text-decoration: none;
+  opacity: 0.7;
+}
+
+/* The `hidden` attribute loses to any explicit display, and this file has been
+   round-tripping that lesson since the alert plate: `display: block` above beat
+   the UA's `[hidden] { display: none }` outright, and the price stayed on the
+   button behind the end-of-voyage card, quoting a decision that had already
+   been made. Same one-line rule the banner, the alert and the boss bar carry. */
+.sea__leaveShare[hidden] { display: none; }
+
+/* Priced, i.e. there is a hold aboard and home water is somewhere else.
+   The object GROWS INTO its second line and changes nothing else: the family
+   stays mid-stone secondary for the reason it was chosen — a loud button beside
+   a red hull bar is two alarms, and the player reads neither. The information
+   is a numeral, so a numeral is what carries it. */
+.sea__leave.is-priced {
+  padding: 5px 13px 7px;
+}
+
+/* --- the sheet that asks before it charges -------------------------------- */
+
+.sea__sheet {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--ui-scrim);
+  pointer-events: auto;
+  z-index: var(--z-celebrate);
+}
+
+.sea__sheetCard {
+  min-width: 262px;
+  max-width: 80vw;
+  padding: 18px 20px 18px;
+  border-radius: 16px;
+  text-align: center;
+  background: var(--ui-panel);
+  color: var(--ui-ink);
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  box-shadow: inset 0 3px 0 var(--ui-rim), inset 0 -4px 0 var(--ui-lip), var(--ui-drop-lg);
+}
+
+.sea__sheetTitle {
+  font-size: 20px;
+  margin-bottom: 4px;
+}
+
+.sea__sheetNote {
+  font-size: 13px;
+  line-height: 1.35;
+  opacity: 0.78;
+  margin-bottom: 12px;
+}
+
+.sea__sheetNote b {
+  opacity: 1;
+}
+
+/* Two rows, one over the other, so the trade is read as a trade: what lands,
+   and directly under it what does not. Same chip language as the end card. */
+.sea__sheetRow {
+  margin-bottom: 8px;
+}
+
+.sea__sheetTag {
+  display: block;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  margin-bottom: 4px;
+}
+
+.sea__sheetRow--lost .sea__sheetTag {
+  color: var(--ui-red-a);
+  opacity: 1;
+}
+
+.sea__sheetRow .sea__endList {
+  margin-bottom: 0;
+}
+
+/* The primary is CARRYING ON, not quitting: the sheet exists to make the trip
+   home the obvious answer, and the loud object is the one the player should
+   want. Leaving keeps all four layers in a duller family — UI_SPEC anti-goal
+   10: a secondary is the same physical thing in a quieter hue, never a
+   flattened one. */
+/* THE THREE BUTTONS BELOW ARE `position: relative` AND IT IS LOAD-BEARING.
+ *
+ * `.tap::after` in base.css is the finger-sized hit area every control in this
+ * game carries: `position: absolute; left: 50%; top: 50%; width: max(100%,
+ * var(--ui-tap-min))`. Its 100% — and its anchor — resolve against the nearest
+ * POSITIONED ancestor, and a `static` button is not one. On this sheet the
+ * nearest positioned ancestor is `.sea__sheet`, the full-screen scrim, so both
+ * buttons' hit areas came out 430x932 centred on the whole screen.
+ *
+ * The gate's cold walk hit it on the first tap and Playwright named it exactly:
+ * *"<button data-quit> intercepts pointer events"*. Measured in the live page,
+ * `elementFromPoint` at the dead centre of the green "Seguimos a puerto"
+ * returned `data-quit` — so tapping the SAFE choice performed the destructive
+ * one, and a player who read the price and decided to sail on lost a tenth of
+ * the hold for saying so. `data-quit` won only because it is last in the DOM.
+ *
+ * The end card's CTA had the same 430x932 hit area. There it was invisible —
+ * one button on a modal card, so "tap anywhere to continue" is what it looked
+ * like — but it is the same fault and it is fixed in the same breath, because
+ * the next control added to that card would inherit the bug.
+ *
+ * Same family as round 13's tutorial finding, and the same lesson: a hit area
+ * is not what you can see. */
+.sea__sheetCta {
+  position: relative;
+  width: 100%;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 16px;
+  color: #fff;
+  margin-top: 6px;
+  padding: 11px 16px 13px;
+  border-radius: 13px;
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  background: linear-gradient(180deg, var(--ui-green-gloss-a) 0 50%, var(--ui-green-a) 50% 100%);
+  box-shadow:
+    inset 0 3px 0 var(--ui-rim),
+    inset 0 -4px 0 var(--ui-green-lip),
+    var(--ui-drop);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.4);
+}
+
+.sea__sheetAlt {
+  position: relative;
+  width: 100%;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 15px;
+  margin-top: 8px;
+  padding: 9px 16px 11px;
+  border-radius: 12px;
+  color: var(--ui-ink);
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  background:
+    linear-gradient(180deg, var(--ui-grey2-gloss-a) 0 50%, var(--ui-grey2-a) 50% 100%);
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim),
+    inset 0 -3px 0 var(--ui-grey-lip-2),
+    var(--ui-drop-sm);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.sea__sheetCta:active,
+.sea__sheetAlt:active {
+  transform: translateY(2px);
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.22),
+    0 1px 0 rgba(0, 0, 0, 0.3);
+}
+
 /* --- the end-of-voyage card ---------------------------------------------- */
 
 .sea__end {
@@ -1050,6 +1232,9 @@ html.is-steering .sea__helm {
 }
 
 .sea__endCta {
+  /* See the note on .sea__sheetCta: without this the finger area is the whole
+     screen instead of the button. */
+  position: relative;
   width: 100%;
   border: 0;
   cursor: pointer;

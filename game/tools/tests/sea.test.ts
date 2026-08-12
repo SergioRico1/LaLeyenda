@@ -1,8 +1,9 @@
 import {
-  MOBS, SEA_CELL, SEA_RANGE, SEA_STEP, SHIPS, bearingHome, cellsInRing, holdUsed, mobsAt,
+  HARBOUR, MOBS, SEA_CELL, SEA_RANGE, SEA_STEP, SHIPS, abandonVoyageInPlace, bearingHome,
+  careenBill, cellsInRing, holdUsed, landfallShare, mobsAt, previewAbandon,
   ringOf, siteAt, sitesNear, startVoyage, steer, stepVoyage, type SeaEvent, type Voyage,
 } from '../../src/sim/sea';
-import { landCargoInPlace, storeCap } from '../../src/sim';
+import { landCargoInPlace, previewLanding, storeCap } from '../../src/sim';
 import { clone } from '../../src/sim/economy';
 import { describe, eq, near, ok, test } from './harness';
 import { quiet } from './fixtures';
@@ -26,6 +27,56 @@ function sail(v: Voyage, seconds: number, helm?: { turn?: number; throttle?: num
     events.push(...out.events);
   }
   return { voyage, events };
+}
+
+/**
+ * Outside the harbour, pointed at it, laden, and marked as having gone — a ship
+ * one order away from banking a hold, with a quiet sea around her.
+ *
+ * The approach is CHOSEN rather than assumed: a seeded sea moors islets as
+ * close as forty-four units to the harbour, and a run that grounds on one is
+ * deflected away and never arrives — which measures the scenery rather than the
+ * arrival. Eight bearings are sampled and the first clear one is sailed.
+ */
+function outboundLaden(seed: string): Voyage {
+  const out = startVoyage(seed);
+  const away = SEA_CELL * 1.2;
+  const clear = (angle: number) => {
+    for (let t = 0; t <= 1; t += 1 / 12) {
+      const x = Math.cos(angle) * away * (1 - t);
+      const y = Math.sin(angle) * away * (1 - t);
+      for (const site of sitesNear(seed, x, y, 60)) {
+        if (Math.hypot(site.x - x, site.y - y) < site.radius + SHIPS.skiff.radius + 8) return false;
+      }
+    }
+    return true;
+  };
+  const bearing = Array.from({ length: 8 }, (_, i) => (i * Math.PI) / 4).find(clear) ?? 0;
+  out.x = Math.cos(bearing) * away;
+  out.y = Math.sin(bearing) * away;
+  out.heading = bearing + Math.PI;
+  out.departed = true;
+  out.cargo = { oro: 300 };
+  for (let cx = -3; cx <= 3; cx++) for (let cy = -3; cy <= 3; cy++) out.seen.push(`${cx}:${cy}`);
+  return out;
+}
+
+/** Sinks a laden ship `cells` out along +x and hands back the wreck. Nothing
+ *  moves: she is dead in the water, so where she goes down is where she was. */
+function sinkAt(cells: number, cargo: Partial<Record<'oro' | 'madera' | 'metal' | 'ron', number>>): Voyage {
+  const v = startVoyage(`sink-${cells}`);
+  v.x = SEA_CELL * cells;
+  v.departed = true;
+  v.hull = 1;
+  v.cargo = { ...cargo };
+  v.mobs.push({
+    id: 1, kind: 'hammerdead', x: v.x + 4, y: 0, heading: Math.PI, hp: 999,
+    state: 'attack', cooldown: 0, homeX: v.x, homeY: 0, tether: 0, cell: `${Math.round(cells)}:0`,
+  });
+  for (let cx = -20; cx <= 20; cx++) for (let cy = -3; cy <= 3; cy++) v.seen.push(`${cx}:${cy}`);
+  const { voyage } = sail(v, 6, { throttle: 0 });
+  if (!voyage.sunk) throw new Error(`the fixture at ${cells} cells did not sink`);
+  return voyage;
 }
 
 describe('the world is a function of the seed', () => {
@@ -583,7 +634,10 @@ describe('the water warns before it outranks the hull', () => {
         if (e.kind === 'zone-warning' && warn < 0) { warn = i; warnedAt = here; }
         if (e.kind === 'hit' && e.target === 'ship' && hit < 0 && here > rated) hit = i;
       }
-      if (v.sunk) break;
+      // Every ending stops the run, not just the wet one. A voyage that is over
+      // is over — see the freeze at the top of stepVoyage — and steps taken
+      // after it are steps no player is present for.
+      if (v.sunk || v.home) break;
     }
     return { warn, warnedAt, crossed, hit, rated };
   }
@@ -592,15 +646,30 @@ describe('the water warns before it outranks the hull', () => {
     // The playtest's own input — hold the drag and go — with the sea live, so
     // what is being measured is the real race between the plate and the teeth.
     let worst = Infinity;
+    let measured = 0;
+    const runs = [];
     for (const seed of ['la-leyenda', 'isla-a', 'isla-b', 'isla-c', 'isla-d', 'isla-e']) {
       for (const heading of [0, 0.6, 1.1]) {
-        const { warn, hit } = runOutbound(seed, heading);
-        ok(warn >= 0, `${seed}@${heading}: the run was warned at all`);
-        if (hit < 0) continue;              // nothing bit on this run
-        ok(warn < hit, `${seed}@${heading}: warned at step ${warn}, first outranked hit at ${hit}`);
-        worst = Math.min(worst, (hit - warn) * SEA_STEP);
+        runs.push({ seed, heading, ...runOutbound(seed, heading) });
       }
     }
+    for (const { seed, heading, warn, hit, crossed } of runs) {
+      // ROUND 14: a run can now END before it ever reaches water the hull is
+      // not rated for. isla-d at 1.1 rad is one: the scenery deflects her, she
+      // comes back through the harbour at step 706 and the voyage is over
+      // there. It used to keep sailing through home water and get warned 1178
+      // steps in — a plate no player could ever have seen, because the scene
+      // had already put the end-of-voyage card up. The claim is unchanged and
+      // is now made only about runs the claim is about; the count below is what
+      // stops that turning into a test that quietly asserts nothing.
+      if (crossed < 0) continue;
+      ok(warn >= 0, `${seed}@${heading}: the run was warned at all`);
+      if (hit < 0) continue;              // nothing bit on this run
+      ok(warn < hit, `${seed}@${heading}: warned at step ${warn}, first outranked hit at ${hit}`);
+      worst = Math.min(worst, (hit - warn) * SEA_STEP);
+      measured++;
+    }
+    ok(measured >= 16, `${measured} of ${runs.length} runs reached outranked water and were measured`);
     // The number the round is actually about. At the boundary this measured
     // 0.3s; a player cannot turn a ship in 0.3s, so the plate was decoration.
     ok(worst >= 2, `the tightest margin over the fleet is ${worst.toFixed(1)}s of warning`);
@@ -687,6 +756,251 @@ describe('the hold reaches the island', () => {
     const { landed, spilled } = landCargoInPlace(state, { oro: 25 });
     eq(landed.oro, undefined, 'nothing landed');
     eq(spilled.oro, 25, 'all of it is accounted for');
+  });
+});
+
+/**
+ * THE VOYAGE IS A DECISION — round 13's playtest, finding 1, which is a design
+ * hole rather than a bug:
+ *
+ *   "The sea has no stakes and no decisions. Volver (top-right, always live)
+ *    banks the entire hold instantly from any distance and any hull state — I
+ *    tapped it at 200m out with the hull at 19% and kept everything, twice.
+ *    Sinking costs almost nothing either: you keep half the cargo and the hull
+ *    is restored to 100% free."
+ *
+ * One rule answers both halves: the sea charges by distance. What the harbour
+ * takes off a voyage is the hold times the share for the water it ended in, so
+ * a full hold banks in full only from home water — and the only way there is to
+ * sail. Sinking keeps its half, exactly as PLAN.md requires, and then swims the
+ * same distance with it.
+ */
+describe('the sea charges for the trip back', () => {
+  /** A ship parked `cells` out along +x with `cargo` in the hold. */
+  const laden = (cells: number, cargo: Partial<Record<'oro' | 'madera' | 'metal' | 'ron', number>>) => {
+    const v = startVoyage('tithe');
+    v.x = SEA_CELL * cells;
+    v.departed = true;
+    v.cargo = { ...cargo };
+    return v;
+  };
+
+  test('home water banks the whole hold, and nothing else does', () => {
+    eq(landfallShare(0, 0), 1, 'at the mooring');
+    eq(landfallShare(SEA_CELL * HARBOUR * 0.99, 0), 1, 'anywhere inside the harbour');
+    ok(landfallShare(SEA_CELL * HARBOUR * 1.01, 0) < 1, 'and one unit outside it, the sea takes a cut');
+  });
+
+  test('every ring out costs more, and the far sea stops getting worse', () => {
+    // Read off the ring the HUD's zone chip is already showing, so the charge
+    // is never a number the player has not been looking at all voyage.
+    const at = (cells: number) => landfallShare(SEA_CELL * cells, 0);
+    const shares = [1, 3, 5, 9, 13, 30].map(at);
+    for (let i = 1; i < shares.length; i++) {
+      ok(shares[i] <= shares[i - 1], `ring ${i} keeps no more than the ring inside it`);
+    }
+    ok(shares[0] > shares[3], 'the near sea is much kinder than the deep');
+    ok(shares[shares.length - 1] >= 0.5, 'and the floor holds however far out you go');
+    eq(shares[4], shares[5], 'past the table the last band tiles outward forever');
+  });
+
+  test('quitting four zones out lands the share, and only the share', () => {
+    const v = laden(9, { oro: 400, madera: 200 });   // ring 4
+    const quote = previewAbandon(v);
+    eq(quote.ring, 4, 'nine cells out is zone 4');
+    const events = abandonVoyageInPlace(v);
+    eq(events.length, 1, 'the sim says what happened');
+    const done = events[0];
+    ok(done.kind === 'abandoned' && done.share === quote.share, 'and it charged what it quoted');
+    eq(v.cargo.oro, Math.ceil(400 * quote.share), 'the gold that reaches the island');
+    eq(v.cargo.madera, Math.ceil(200 * quote.share), 'and the timber');
+    ok((v.cargo.oro ?? 0) < 400, 'which is less than was aboard — that is the whole point');
+  });
+
+  test('the quote on the button is the price at the till', () => {
+    for (const cells of [1, 2.5, 4, 6, 12]) {
+      const v = laden(cells, { oro: 137, ron: 41 });
+      const quote = previewAbandon(v);
+      const before = { ...v.cargo };
+      abandonVoyageInPlace(v);
+      eq(JSON.stringify(v.cargo), JSON.stringify(quote.kept), `${cells} cells out: quoted exactly`);
+      // And the quote itself never moved the ship's hold.
+      ok(before.oro === 137, 'previewing charges nothing');
+      for (const res of ['oro', 'ron'] as const) {
+        eq((quote.kept[res] ?? 0) + (quote.lost[res] ?? 0), before[res], `${res} is all accounted for`);
+      }
+    }
+  });
+
+  test('turning for home at the harbour costs nothing at all', () => {
+    const v = laden(0.2, { oro: 500 });
+    eq(previewAbandon(v).share, 1, 'inside home water there is nothing to charge');
+    abandonVoyageInPlace(v);
+    eq(v.cargo.oro, 500, 'the hold is untouched');
+  });
+
+  test('sailing her in banks everything the tithe would have taken', () => {
+    const out = { ...outboundLaden('bank'), cargo: { oro: 300 } };
+    const quit = { ...out, cargo: { ...out.cargo } };
+    abandonVoyageInPlace(quit);
+    const arrived = sail(out, 20, { throttle: 1 }).voyage;
+    ok(arrived.home, 'she made it in');
+    eq(arrived.cargo.oro, 300, 'and the whole hold banks');
+    ok((quit.cargo.oro ?? 0) < 300, 'where leaving from out there would not have');
+  });
+
+  test('being sunk out in the deep costs half, and then the distance', () => {
+    // PLAN.md still binds: it is LOOT, never progress. Half the hold rounded in
+    // the player's favour, and the crew then swim the same water everyone else
+    // sails, so the share applies to what they are carrying.
+    const near = sinkAt(0.2, { oro: 400 });
+    const far = sinkAt(9, { oro: 400 });
+    eq(near.cargo.oro, 200, 'at the harbour mouth it is exactly half');
+    eq(near.careened, 0, 'and there is nothing to refloat her from');
+    ok((far.cargo.oro ?? 0) < 200, 'four zones out keeps less than half');
+    ok(far.careened > 0, 'because the yard has to go and get her');
+  });
+
+  test('drowning is never the better answer', () => {
+    // If sinking ever paid more than quitting in the same water, the optimal
+    // play would be to let the ship go down, and the whole tithe would be a
+    // tax on caring.
+    for (const cells of [1, 3, 5, 9, 13]) {
+      const quit = laden(cells, { oro: 600, madera: 300 });
+      abandonVoyageInPlace(quit);
+      const drowned = sinkAt(cells, { oro: 600, madera: 300 });
+      const total = (c: Partial<Record<string, number>>) =>
+        Object.values(c).reduce((a: number, b) => a + (b ?? 0), 0);
+      ok(
+        total(drowned.cargo) < total(quit.cargo),
+        `${cells} cells out: sunk lands ${total(drowned.cargo)}, quit lands ${total(quit.cargo)}`
+      );
+    }
+  });
+
+  test('the careen takes what it can and never leaves a debt', () => {
+    const bill = careenBill('skiff');
+    ok(bill > 0, `a skiff's refit is worth something (${bill})`);
+    const broke = sinkAt(9, { oro: 4 });
+    eq(broke.careened <= bill, true, 'it can never take more than it is owed');
+    for (const amount of Object.values(broke.cargo)) ok((amount ?? 0) >= 0, 'and never below empty');
+    const rich = sinkAt(9, { madera: 800 });
+    eq(rich.careened, bill, 'a hold that can cover it pays the whole bill');
+  });
+
+  test('a bigger hull is a bigger refit', () => {
+    const ladder = ['skiff', 'sloop', 'galleon', 'frigate', 'marauder'].map(careenBill);
+    for (let i = 1; i < ladder.length; i++) {
+      ok(ladder[i] > ladder[i - 1], `${ladder[i]} costs more to refloat than ${ladder[i - 1]}`);
+    }
+  });
+
+  test('a voyage that came home on her own bottom owes the yard nothing', () => {
+    const arrived = sail(outboundLaden('nobill'), 20, { throttle: 1 }).voyage;
+    ok(arrived.home, 'she is in');
+    eq(arrived.careened, 0, 'and nobody had to refloat her');
+  });
+});
+
+/**
+ * THE LEDGER BUG, and it is the same shape as every other bug this sea has had:
+ * a voyage that goes on happening after the player has been told it ended.
+ *
+ * Round 13's playtest, verified three times in three: "the end-of-voyage
+ * summary does not match the ledger — Voyage A promised Oro 48 and Madera 265
+ * and credited +24 and +133", about half. Exactly half is the sinking rule, and
+ * that is what it was: the scene's frame loop keeps stepping the simulation
+ * while the end card is up, so a ship abandoned at 19% hull with a hammerdead
+ * alongside went to the bottom UNDERNEATH the card, and the object the island
+ * landed was not the object the card was built from.
+ */
+describe('a voyage that has ended is over', () => {
+  /** The playtest's own move: quit with the hull nearly gone and teeth in it. */
+  const cornered = (seed: string) => {
+    const v = startVoyage(seed);
+    // Ring 3, and fifty units of clear water all round her: the point is what
+    // the hold does under the card, so nothing must be able to add to it.
+    v.x = -SEA_CELL * 5;
+    v.departed = true;
+    v.hull = SHIPS.skiff.hull * 0.19;              // "the hull at 19%"
+    v.cargo = { oro: 48, madera: 265 };            // the playtest's own manifest
+    v.mobs.push({
+      id: 1, kind: 'hammerdead', x: v.x - 4, y: 0, heading: 0, hp: 999,
+      state: 'attack', cooldown: 0, homeX: v.x, homeY: 0, tether: 0, cell: '-5:0',
+    });
+    for (let cx = -8; cx <= 0; cx++) for (let cy = -3; cy <= 3; cy++) v.seen.push(`${cx}:${cy}`);
+    return v;
+  };
+
+  test('the card and the ledger are the same numbers', () => {
+    const v = cornered('ledger');
+    abandonVoyageInPlace(v);                       // the player taps Volver
+    const card = JSON.stringify(v.cargo);          // what the end card prints
+
+    // Now the scene goes on rendering frames for as long as the player reads
+    // the card. Ten seconds of them, with the sea exactly as hostile as it was.
+    const after = sail(v, 10, { throttle: 0 }).voyage;
+    eq(JSON.stringify(after.cargo), card, 'nothing under the card changed the hold');
+    ok(!after.sunk, 'and the sea cannot sink a voyage that is already over');
+    eq(after.x, v.x, 'she does not drift either');
+  });
+
+  test('without the latch the same ten seconds halve it — which is the bug', () => {
+    // The evidence that the test above is testing something. Same ship, same
+    // sea, same ten seconds, minus the one line that says the voyage ended.
+    const v = cornered('ledger');
+    const promised = (v.cargo.oro ?? 0) + (v.cargo.madera ?? 0);
+    const after = sail(v, 10, { throttle: 0 }).voyage;
+    ok(after.sunk, 'left running, this ship goes down while the card is up');
+    const credited = (after.cargo.oro ?? 0) + (after.cargo.madera ?? 0);
+    ok(credited < promised * 0.75, `promised ${promised}, credited ${credited}`);
+  });
+
+  test('arriving home is also an ending, and it holds', () => {
+    const arrived = sail(outboundLaden('frozen'), 20, { throttle: 1 }).voyage;
+    ok(arrived.home, 'she is in');
+    const banked = JSON.stringify(arrived.cargo);
+    const later = sail(arrived, 30, { throttle: 1 }).voyage;
+    eq(JSON.stringify(later.cargo), banked, 'the hold is banked and stays banked');
+    eq(later.x, arrived.x, 'and she does not sail back out from under the card');
+    eq(later.step, arrived.step, 'the simulation has genuinely stopped');
+  });
+
+  test('abandoning latches once, like every other ending', () => {
+    const v = startVoyage('once');
+    v.x = SEA_CELL * 9;
+    v.departed = true;
+    v.cargo = { oro: 1000 };
+    eq(abandonVoyageInPlace(v).length, 1, 'the first tap ends the voyage');
+    const once = JSON.stringify(v.cargo);
+    eq(abandonVoyageInPlace(v).length, 0, 'a second tap is not a second charge');
+    eq(JSON.stringify(v.cargo), once, 'and the hold is charged exactly once');
+    ok(v.abandoned, 'the flag the scene and the HUD both read');
+  });
+
+  test('a sunk ship cannot then be abandoned, or a wreck would pay twice', () => {
+    const wreck = sinkAt(5, { oro: 300 });
+    const banked = JSON.stringify(wreck.cargo);
+    eq(abandonVoyageInPlace(wreck).length, 0, 'there is nothing left to leave');
+    eq(JSON.stringify(wreck.cargo), banked, 'and the hold is untouched');
+  });
+
+  test('what the card promises is what the island banks', () => {
+    // End to end through the real seam: the sim charges its tithe, the scene
+    // previews the landing off the stored save, the island lands the same
+    // object after the tap. One arithmetic, three readings of it.
+    const v = startVoyage('endtoend');
+    v.x = SEA_CELL * 5;
+    v.departed = true;
+    v.cargo = { madera: 300, oro: 90 };
+    abandonVoyageInPlace(v);
+
+    const island = clone(quiet());
+    const preview = previewLanding(island, v.cargo);
+    const later = sail(v, 12, { throttle: 1 }).voyage;   // the card is up a while
+    const { landed, spilled } = landCargoInPlace(island, later.cargo);
+    eq(JSON.stringify(landed), JSON.stringify(preview.landed), 'the card listed what landed');
+    eq(JSON.stringify(spilled), JSON.stringify(preview.spilled), 'and what the caps refused');
   });
 });
 

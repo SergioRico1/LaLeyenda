@@ -476,6 +476,101 @@ export const HARBOUR: number = SEA.harbour;
  *  `stepVoyage`, which is where the reasoning is. */
 const DEPARTED: number = SEA.departed;
 
+/* --------------------------------------------------------------------------
+ * landfall — what the harbour actually takes off a voyage
+ * ----------------------------------------------------------------------- */
+
+const LANDFALL = SEA.landfall;
+const KEEP: readonly number[] = LANDFALL.keep;
+const SUNK_SHARE: number = LANDFALL.sunk;
+const CAREEN_RATE: number = LANDFALL.careen.rate;
+const CAREEN_ORDER = LANDFALL.careen.order as readonly ResourceId[];
+
+/**
+ * The fraction of a hold that reaches the stores from a voyage that ended HERE.
+ *
+ * Round 13's playtest found the sea's biggest hole and it was not a bug: "Volver
+ * banks the entire hold instantly from any distance and any hull state — I
+ * tapped it at 200m out with the hull at 19% and kept everything, twice." Every
+ * ring pays more than the last, and nothing at all charged for the trip back, so
+ * the risk/reward curve `rings` spends forty lines calibrating never reached the
+ * player. Distance was difficulty in one direction only.
+ *
+ * This is the other direction, and it is one number: THE SEA CHARGES BY
+ * DISTANCE. A full hold banks in full only from home water — the arrival the
+ * departure latch and the 'home' event below already model — and anywhere else
+ * the crew land what they can carry through the water they are in.
+ *
+ * Indexed by the ring the voyage ended in, which is the number the HUD's zone
+ * chip has been showing all voyage, so the charge is never a surprise. Inside
+ * `harbour` it is exactly 1: the last twenty-five units of water are worth the
+ * whole tithe, and Volver at the dock costs nothing at all.
+ */
+export function landfallShare(x: number, y: number): number {
+  // ONE definition of home in this file, and it is the one the 'home' event and
+  // the HUD's compass already use. The harbour's own CELL is a shade wider than
+  // its radius — 27.5 units against 24.75 — so the table is read from ring 1
+  // for anything outside home water, including that sliver: the gentlest rate
+  // in the table for the water closest to the dock, and no second answer to the
+  // question "am I home".
+  if (Math.hypot(x, y) < SEA_CELL * HARBOUR) return 1;
+  const ring = ringOf(Math.round(x / SEA_CELL), Math.round(y / SEA_CELL));
+  return KEEP[Math.min(Math.max(ring, 1), KEEP.length) - 1];
+}
+
+/** What the yard charges to refloat and patch a hull that went down out there.
+ *  A fraction of the hull it is repairing, so every deck pays its own size. */
+export function careenBill(shipType: string): number {
+  return Math.round((SHIPS[shipType] ?? SHIPS.skiff).hull * CAREEN_RATE);
+}
+
+/**
+ * Takes `share` of every resource in `from`, rounding in the player's favour.
+ *
+ * One place, so the tithe, the sinking and anything that comes later cannot
+ * disagree about what "half" means. `Math.ceil` is deliberate and is the rule
+ * the sinking rule already had: an odd unit belongs to the crew.
+ */
+function keepShare(
+  from: Partial<Record<ResourceId, number>>, share: number
+): { kept: Partial<Record<ResourceId, number>>; lost: Partial<Record<ResourceId, number>> } {
+  const kept: Partial<Record<ResourceId, number>> = {};
+  const lost: Partial<Record<ResourceId, number>> = {};
+  for (const [res, amount] of Object.entries(from) as [ResourceId, number][]) {
+    if (!(amount > 0)) continue;
+    const stays = Math.ceil(amount * share);
+    if (stays > 0) kept[res] = stays;
+    if (amount - stays > 0) lost[res] = amount - stays;
+  }
+  return { kept, lost };
+}
+
+/**
+ * Charges `units` against a hold, materials first, and reports what it took.
+ *
+ * PLAN.md Fase 3's cheap-but-real repair, charged where this round can actually
+ * charge it. It stops when the hold is dry: a wreck can leave the player with
+ * nothing, and it can never leave them owing anything. `order` puts timber and
+ * iron in front of the gold because that is what a yard wants and because
+ * taking the gold last is the version of this a player forgives.
+ */
+function chargeBill(
+  hold: Partial<Record<ResourceId, number>>, units: number
+): Partial<Record<ResourceId, number>> {
+  const taken: Partial<Record<ResourceId, number>> = {};
+  let owed = units;
+  for (const res of CAREEN_ORDER) {
+    if (owed <= 0) break;
+    const have = hold[res] ?? 0;
+    if (have <= 0) continue;
+    const pay = Math.min(have, owed);
+    taken[res] = pay;
+    hold[res] = have - pay;
+    owed -= pay;
+  }
+  return taken;
+}
+
 export interface Shot {
   id: number;
   x: number;
@@ -526,6 +621,32 @@ export interface Voyage {
   /** Set once the ship goes down; the voyage is over but readable. */
   sunk: boolean;
   /**
+   * Units the yard actually took off this voyage to refloat and patch her.
+   *
+   * 0 on every voyage that came back on her own bottom, and 0 on one that went
+   * down inside the harbour. It is recorded rather than recomputed because the
+   * bill is charged against a hold that may not cover it — what the player is
+   * owed an explanation for is what was TAKEN, not what was owed.
+   */
+  careened: number;
+  /**
+   * Set once the player has struck the colours and left the sea from here.
+   *
+   * The third way a voyage ends, and until this round the only one the
+   * simulation could not see: sinking and arriving are things the sea does, and
+   * quitting is a thing a thumb does. That asymmetry was a real bug and not a
+   * tidiness point — with no end state to latch, the scene went on stepping the
+   * sim underneath the end-of-voyage card, so a ship abandoned at 19% hull with
+   * mobs still on her went down while the player was reading what she had
+   * brought home, and the ledger credited half of what the card had promised.
+   * Verified three times in three by round 13's playtest.
+   *
+   * Set by `abandonVoyageInPlace`, which is what the sea HUD's Volver dispatches
+   * into the sim. Like `sunk` and `home` it freezes `stepVoyage`, so the numbers
+   * on the card are the numbers the island banks.
+   */
+  abandoned: boolean;
+  /**
    * Set once the ship has actually left home water.
    *
    * You cannot come BACK from somewhere you never went, and without this latch
@@ -575,8 +696,15 @@ export type SeaEvent =
   | { kind: 'mob-killed'; mob: MobKind; x: number; y: number; ring: number; loot: Partial<Record<ResourceId, number>> }
   | { kind: 'looted'; site: SiteKind; loot: Partial<Record<ResourceId, number>>; x: number; y: number }
   | { kind: 'hold-full' }
-  | { kind: 'sunk'; lost: Partial<Record<ResourceId, number>> }
+  /** `lost` is what went down with her — the half, plus whatever the distance
+   *  home took off the half. `careen` is the yard's bill for refloating her,
+   *  charged out of what did land and empty when she sank inside the harbour.
+   *  Both are itemised because the end card has to be able to say WHY. */
+  | { kind: 'sunk'; lost: Partial<Record<ResourceId, number>>; careen: Partial<Record<ResourceId, number>> }
   | { kind: 'home' }
+  /** The player left the sea from here rather than sailing the hold home.
+   *  `kept` is what the crew land, `lost` is the sea's tithe on the rest. */
+  | { kind: 'abandoned'; ring: number; share: number; kept: Partial<Record<ResourceId, number>>; lost: Partial<Record<ResourceId, number>> }
   /** The ship has crossed into a ring deeper than its hull is rated for
    *  (`ShipSpec.rated`) — round 11's playtest finding 6: twin ring-3
    *  hammerdeads melted a skiff with no warning that zones outrank the
@@ -614,7 +742,7 @@ export function startVoyage(
     helm: { turn: 0, throttle: 0 },
     cargo: {}, mobs: [], shots: [], taken: [], seen: [], nextId: 1,
     sinceHit: CALM, aground: 0,
-    sunk: false, departed: false, home: false,
+    sunk: false, careened: 0, abandoned: false, departed: false, home: false,
     deepChest: opts.deepChest ?? true,
     boarding: null,
     warnedRing: 0,
@@ -848,7 +976,18 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
     seen: [...prev.seen],
   };
   const events: SeaEvent[] = [];
-  if (v.sunk) return { voyage: v, events };
+  // A VOYAGE THAT HAS ENDED IS OVER, AND ALL THREE ENDINGS COUNT.
+  //
+  // `sunk` has frozen the step since the sim was written. The other two did
+  // not, and that was round 13's ledger bug: the scene keeps its frame loop
+  // running while the end-of-voyage card is up, so a ship that reached home or
+  // was abandoned went on sailing, went on being shot at, and could go down
+  // underneath the card — halving a hold the card had already promised in full.
+  // "Voyage A promised Oro 48 and Madera 265 and credited +24 and +133", three
+  // times in three. The card, the preview and the island ledger are the same
+  // arithmetic on the same object, so the only fix that holds is for that
+  // object to stop changing the instant the voyage ends.
+  if (v.sunk || v.home || v.abandoned) return { voyage: v, events };
 
   v.step += 1;
   const spec = SHIPS[v.shipType];
@@ -1200,14 +1339,21 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
     v.hull = 0;
     v.sunk = true;
     // Half the hold, rounded in the player's favour. PLAN.md: being sunk costs
-    // loot, never progress.
-    const lost: Partial<Record<ResourceId, number>> = {};
-    for (const [res, amount] of Object.entries(v.cargo) as [ResourceId, number][]) {
-      const half = Math.floor(amount / 2);
-      if (half > 0) lost[res] = half;
-      v.cargo[res] = amount - half;
-    }
-    events.push({ kind: 'sunk', lost });
+    // loot, never progress — so `sunk` is a share of the cargo and never
+    // touches a building, a level or a hull the player paid for.
+    //
+    // Then the landfall share, because the crew are swimming from wherever she
+    // went down: half at the harbour mouth, a third of it four zones out. And
+    // then the yard's bill for refloating her, which is the round's cheap-real
+    // repair and the reason sinking costs something beyond the hold's fraction
+    // even when the fraction is small. Order matters and this is it — halve,
+    // carry home, pay the carpenter out of what landed.
+    const share = landfallShare(v.x, v.y);
+    const { kept, lost } = keepShare(v.cargo, SUNK_SHARE * share);
+    v.cargo = kept;
+    const careen = share < 1 ? chargeBill(v.cargo, careenBill(v.shipType)) : {};
+    v.careened = Object.values(careen).reduce((a: number, b) => a + (b ?? 0), 0);
+    events.push({ kind: 'sunk', lost, careen });
   } else if (!v.home && v.departed
              && ringOf(Math.round(v.x / SEA_CELL), Math.round(v.y / SEA_CELL)) === 0
              && Math.hypot(v.x, v.y) < SEA_CELL * HARBOUR) {
@@ -1305,6 +1451,54 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
  */
 export function bearingHome(x: number, y: number): number {
   return Math.atan2(-x, y);
+}
+
+/**
+ * What abandoning the voyage from here would land, without abandoning it.
+ *
+ * The number the sea HUD paints on the Volver button and reads out in its
+ * confirmation, and the same arithmetic `abandonVoyageInPlace` performs — so
+ * the price the player is quoted is the price they pay. Pure; touches nothing.
+ */
+export function previewAbandon(v: Voyage): {
+  ring: number;
+  share: number;
+  kept: Partial<Record<ResourceId, number>>;
+  lost: Partial<Record<ResourceId, number>>;
+} {
+  const share = landfallShare(v.x, v.y);
+  return {
+    ring: ringOf(Math.round(v.x / SEA_CELL), Math.round(v.y / SEA_CELL)),
+    share,
+    ...keepShare(v.cargo, share),
+  };
+}
+
+/**
+ * THE PLAYER HAS LEFT THE SEA FROM HERE. The sim's third ending.
+ *
+ * Round 13's playtest: "Volver (top-right, always live) banks the entire hold
+ * instantly from any distance and any hull state." Volver still returns the
+ * player to the island — a game you cannot leave is not a game — but leaving is
+ * now an ENDING with a place attached, and `landfallShare` charges for the
+ * water between that place and the harbour. Sail the hold home and it all
+ * banks; drop it four zones out and 40% of it never sees a store.
+ *
+ * IN PLACE, and deliberately so, in the codebase's own `...InPlace` idiom
+ * (`landCargoInPlace`, `collectInPlace`, `advanceInPlace`). The sea scene hands
+ * ONE voyage object to the end-of-voyage card and to the island's landing, and
+ * `SeaHudOptions.onLeave` — the scene's signature, not this round's file —
+ * returns nothing, so a new-state-out action could not reach either of them.
+ * The direction is still the house rule's: the UI says the player quit HERE,
+ * the sim decides what that costs, and the freeze at the top of `stepVoyage`
+ * makes the answer final.
+ */
+export function abandonVoyageInPlace(v: Voyage): SeaEvent[] {
+  if (v.sunk || v.home || v.abandoned) return [];
+  const { ring, share, kept, lost } = previewAbandon(v);
+  v.abandoned = true;
+  v.cargo = kept;
+  return [{ kind: 'abandoned', ring, share, kept, lost }];
 }
 
 /** Sets the helm for the next steps. Clamped here so no caller can exceed it. */

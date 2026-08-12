@@ -1,6 +1,9 @@
 import './seaHud.css';
 import type { ResourceId } from '../sim';
-import { HARBOUR, MOBS, SHIPS, bearingHome, holdUsed, ringOf, SEA_CELL, type Voyage } from '../sim/sea';
+import {
+  HARBOUR, MOBS, SHIPS, abandonVoyageInPlace, bearingHome, holdUsed, previewAbandon,
+  ringOf, SEA_CELL, type Voyage,
+} from '../sim/sea';
 import { CAPTURE } from './env';
 import { HELM_STEER } from './stick';
 
@@ -58,6 +61,22 @@ import { HELM_STEER } from './stick';
 const RESOURCE_LABEL: Record<string, string> = {
   oro: 'Oro', madera: 'Madera', metal: 'Metal', ron: 'Ron',
 };
+
+/**
+ * A haul as chips, in the sea's one chip language.
+ *
+ * Module scope because three different moments now print a list of resources —
+ * what leaving here would land, what it would leave in the water, and what the
+ * end card banks — and a player who is being asked to compare two of them must
+ * be reading the same object twice, not two designs of it.
+ */
+function chips(entries: Partial<Record<string, number>>): string {
+  return Object.entries(entries)
+    .filter(([, amount]) => (amount ?? 0) > 0)
+    .map(([res, amount]) =>
+      `<span class="sea__endItem">${RESOURCE_LABEL[res] ?? res} ${Math.round(amount ?? 0)}</span>`)
+    .join('');
+}
 
 /** The hulls, named for the player. Lives here because this HUD is the screen
  *  that says them; the sim speaks only ids. */
@@ -317,7 +336,17 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
     <!-- The sea's two shouted lines (boss phase, chest of the deep). -->
     <div class="sea__banner" data-banner hidden></div>
 
-    <button class="sea__leave tap" type="button">Volver</button>
+    <!-- Leaving is now a PRICE, so the button carries it. The percentage under
+         the word is what the harbour would take off the hold if the player left
+         from where the ship is standing, and it climbs as they sail home —
+         which is the whole point: the trip back is the thing being paid for,
+         and a number that moves while you steer is the only way a player feels
+         that without being lectured. Silent when there is nothing aboard to
+         lose, because a fee on an empty hold is noise. -->
+    <button class="sea__leave tap" type="button">
+      <span class="sea__leaveWord">Volver</span>
+      <span class="sea__leaveShare num" data-leaveshare hidden></span>
+    </button>
 
     <div class="sea__compass" data-compass="port">
       <span class="sea__compassCap">A casa</span>
@@ -359,8 +388,20 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
   const arrow = root.querySelector('.sea__arrow') as HTMLElement;
   const hurtVeil = root.querySelector('.sea__hurt') as HTMLElement;
   const leave = root.querySelector('.sea__leave') as HTMLButtonElement;
-  leave.addEventListener('click', () => opts.onLeave());
+  const leaveShare = root.querySelector('[data-leaveshare]') as HTMLElement;
   let bannerTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * The voyage this screen was last painted with — the sim's live object.
+   *
+   * The scene owns the voyage and reassigns it inside its frame callback, and
+   * this reference is set at the END of that callback, so between two frames it
+   * IS the scene's current voyage. A tap handler runs between frames (there is
+   * one thread and a rAF callback cannot be interrupted by a click), which is
+   * what makes it safe for Volver to dispatch an ending into this object and
+   * have the scene, the card and the island's ledger all see the same one.
+   */
+  let seen: Voyage | null = null;
 
   // `update` runs once per rendered frame. Writing an attribute, a textContent
   // or a custom property invalidates style for that element whether or not the
@@ -503,6 +544,85 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
     dismissCoach(true);
   }
 
+  /* --- leaving is a decision, so it is asked ------------------------------ */
+
+  /** Any sheet currently over the sea, so two taps cannot stack two of them. */
+  let sheet: HTMLElement | null = null;
+
+  function closeSheet(): void {
+    sheet?.remove();
+    sheet = null;
+  }
+
+  /**
+   * Volver, asked properly.
+   *
+   * Round 13's playtest: "Volver (top-right, always live) banks the entire hold
+   * instantly from any distance and any hull state — I tapped it at 200m out
+   * with the hull at 19% and kept everything, twice." The sim now charges for
+   * that (`landfallShare`), and a charge the player only discovers on the end
+   * card is a trap rather than a decision. So the price is quoted first, in
+   * resources rather than in percentages, with the alternative named in the
+   * same breath: sail her in and the whole hold banks.
+   *
+   * No sheet where there is nothing to decide — inside home water, or with an
+   * empty hold, the button just leaves. A confirmation with no stakes in it is
+   * how players learn to tap through confirmations.
+   */
+  function askToLeave(): void {
+    const voyage = seen;
+    if (sheet) return;
+    if (!voyage || voyage.sunk || voyage.home || voyage.abandoned) {
+      opts.onLeave();
+      return;
+    }
+    const plan = previewAbandon(voyage);
+    const losing = Object.values(plan.lost).reduce((a, b) => a + (b ?? 0), 0);
+    if (plan.share >= 1 || losing <= 0) {
+      opts.onLeave();
+      return;
+    }
+
+    sheet = document.createElement('div');
+    sheet.className = 'sea__sheet';
+    sheet.innerHTML = `
+      <div class="sea__sheetCard">
+        <div class="sea__sheetTitle">¿Lo dejamos aquí?</div>
+        <div class="sea__sheetNote">
+          ${plan.ring > 0
+            ? `Estamos en la zona ${plan.ring}.`
+            : 'Aún estamos fuera del puerto.'}
+          Desde aquí la tripulación sólo desembarca
+          <b>el ${Math.round(plan.share * 100)}%</b> de la bodega.
+          En puerto llega entera.
+        </div>
+        <div class="sea__sheetRow">
+          <span class="sea__sheetTag">Llega</span>
+          <span class="sea__endList">${chips(plan.kept)}</span>
+        </div>
+        <div class="sea__sheetRow sea__sheetRow--lost">
+          <span class="sea__sheetTag">Se queda en el agua</span>
+          <span class="sea__endList sea__endList--spill">${chips(plan.lost)}</span>
+        </div>
+        <button class="sea__sheetCta tap" type="button" data-stay>Seguimos a puerto</button>
+        <button class="sea__sheetAlt tap" type="button" data-quit>Dejarlo aquí</button>
+      </div>
+    `;
+    root.append(sheet);
+    (sheet.querySelector('[data-stay]') as HTMLButtonElement).addEventListener('click', closeSheet);
+    (sheet.querySelector('[data-quit]') as HTMLButtonElement).addEventListener('click', () => {
+      closeSheet();
+      // The sim decides what leaving from here costs, and latches the ending so
+      // nothing that happens under the end card can change it. The scene reads
+      // THIS object one line later to build its landing preview, and the island
+      // lands the same object after the card is dismissed.
+      if (seen) abandonVoyageInPlace(seen);
+      opts.onLeave();
+    });
+  }
+
+  leave.addEventListener('click', askToLeave);
+
   if (wantCoach) {
     coach = document.createElement('div');
     coach.className = 'sea__coach';
@@ -530,6 +650,8 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
 
   return {
     update(voyage) {
+      // The scene's live object, latched for the tap handlers — see `seen`.
+      seen = voyage;
       const spec = SHIPS[voyage.shipType];
       const shipName = SHIP_LABEL[voyage.shipType] ?? 'Casco';
 
@@ -560,6 +682,28 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
       const holdFull = holdFraction >= 0.999;
       const holdHeavy = holdFraction >= HOLD_HEAVY;
       setText(holdLabel, holdFull ? '¡Llena!' : 'Bodega');
+
+      // --- what leaving from here would land ---------------------------------
+      // The sea's tithe, live on the button that charges it. It only appears
+      // once there is a hold to lose and the ship is out of home water, and it
+      // climbs the whole way in — so the last stretch home reads as money
+      // rather than as chores. `landfallShare` is the sim's, not a second
+      // opinion: the button quotes the price the sim will charge.
+      const share = previewAbandon(voyage).share;
+      // Nothing left to decide once the voyage has ended, whichever way it
+      // ended — a price on a button behind the end card is a price on nothing.
+      const over = voyage.sunk || voyage.home || voyage.abandoned;
+      const priced = used > 0 && share < 1 && !over;
+      if (leaveShare.hidden !== !priced) leaveShare.hidden = !priced;
+      if (leave.classList.contains('is-priced') !== priced) {
+        leave.classList.toggle('is-priced', priced);
+      }
+      // NAMED, not just numbered. The hull percentage is four centimetres away
+      // in the capsule above, and a bare "70%" beside a bare "69%" is two
+      // readings of the same kind of thing — the first draft of this line read
+      // as a second hull bar. One word fixes it, and it is the same word the
+      // confirmation uses, so the button and the sheet are telling one story.
+      if (priced) setHtml(leaveShare, `llega ${Math.round(share * 100)}<u>%</u>`);
 
       shownRing = ringOf(Math.round(voyage.x / SEA_CELL), Math.round(voyage.y / SEA_CELL));
       setText(ringOut, String(shownRing));
@@ -683,28 +827,46 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
       // without a thumb ever going down (the abandon button, or a mob sinking a
       // ship that never moved), and only steering proves the lesson landed.
       dismissCoach(false);
+      // A sheet asking a question about a voyage that has just ended is not a
+      // question any more. (It can only be the Volver sheet, and only if the
+      // sea sank the ship in the moment between the tap and the answer.)
+      closeSheet();
       return new Promise((resolve) => {
-        const chips = (entries: Partial<Record<string, number>>): string =>
-          Object.entries(entries)
-            .filter(([, amount]) => (amount ?? 0) > 0)
-            .map(([res, amount]) =>
-              `<span class="sea__endItem">${RESOURCE_LABEL[res] ?? res} ${Math.round(amount ?? 0)}</span>`)
-            .join('');
-
         // What the card lists is what will LAND — the preview is the landing's
         // own arithmetic, run for us by the scene. Only a card with no save to
-        // read (captures) falls back to reciting the hold.
+        // read (captures) falls back to reciting what is aboard.
+        //
+        // THE MANIFEST IS NOT THE LEDGER, and until this round the card printed
+        // the manifest: "Voyage A promised Oro 48 and Madera 265 and credited
+        // +24 and +133", three times in three. Two things had to be true for
+        // the card to stop lying and both now are — the sim charges its tithe
+        // and its careen BEFORE the scene builds this preview, so `voyage.cargo`
+        // is already what the harbour takes; and the voyage is frozen the
+        // instant it ends, so the object the island lands after the tap is the
+        // object this card was built from.
         const landed = chips(preview ? preview.landed : voyage.cargo);
         const spilled = preview ? chips(preview.spilled) : '';
 
         const title = reason === 'sunk' ? '¡Nos hunden!' : 'De vuelta a puerto';
         const note = reason === 'sunk'
-          ? 'La tripulación se salva y llega a nado con la mitad de la carga.'
-          : landed
-            ? 'La carga pasa a tus almacenes.'
-            : spilled
-              ? 'Esta vez no desembarca nada.'
-              : 'Sin carga esta vez.';
+          ? 'La tripulación se salva a nado con lo que puede cargar.'
+          : reason === 'left'
+            ? 'Dejamos la travesía a medias; esto es lo que llega a la isla.'
+            : landed
+              ? 'La carga pasa a tus almacenes.'
+              : spilled
+                ? 'Esta vez no desembarca nada.'
+                : 'Sin carga esta vez.';
+
+        // The yard's bill for refloating her, itemised. PLAN.md Fase 3 asks for
+        // cheap repairs whose sting is the loot and never the progress, and a
+        // charge the player cannot see is not a repair, it is a shortfall.
+        // `careened` is what was actually TAKEN, not what was owed: a hold that
+        // could not cover the bill pays what it has and owes nothing after.
+        const careen = voyage.careened > 0
+          ? `<div class="sea__endSpillNote sea__endSpillNote--careen">Carenar la nave se lleva ${Math.round(voyage.careened)} de lo salvado.</div>`
+          : '';
+
         // The loss is said AT THE DOCK, before the tap that performs it. The
         // arrival toast on the island repeats it with the missing store named
         // — same numbers, because it is the same arithmetic.
@@ -720,6 +882,7 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
             <div class="sea__endTitle">${title}</div>
             <div class="sea__endNote">${note}</div>
             <div class="sea__endList">${landed}</div>
+            ${careen}
             ${spill}
             <button class="sea__endCta tap" type="button">A la isla</button>
           </div>
