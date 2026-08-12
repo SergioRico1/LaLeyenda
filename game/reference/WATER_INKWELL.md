@@ -98,3 +98,38 @@ If any actual Inkwell source is copied in doing this — even a few lines of WGS
 translated to GLSL — say so at the site and carry the MIT notice. Learning the
 model from a paper-level description and writing our own is not copying;
 transliterating their function is.
+
+---
+
+## A third input, and the same answer: Three.js Water Pro (12 Aug)
+
+The owner pointed at `threejsroadmap.com/assets/threejs-water-pro`. The page
+itself 403s to automated fetching, so this is established from search rather
+than read first-hand, and both facts that matter are firm.
+
+**It is a PAID commercial asset**, sold through that site's asset store and
+lifetime membership. So unlike Inkwell (MIT) it cannot be used at all unless
+the owner holds a licence — and a commercial asset licence normally forbids
+redistribution, which is a live constraint here because this repo is public.
+It would have to live gitignored the way `tools/uipack/` already does.
+
+**And it is the same direction as Inkwell**, which this document already judged
+unportable for us: a physically-based ocean with FFT wave simulation, dynamic
+foam, caustics and atmospheric rendering. Written in TSL, so unlike the WebGPU
+repos it could plausibly run on our WebGL target — that removes the API
+objection but not the two that matter. The budget objection stands (FFT
+cascades against a mobile frame that must also carry terrain, buildings, props,
+shadows and UI), and the art-direction objection stands harder than before:
+
+**our water has since WON.** The island frame beat the shipped game in the
+first genuinely blind comparison this project ever ran, and it won partly on
+the water — round 13 measured our deep carrying less than half the reference's
+white with glitter peaking on the shelf, exactly where it should. Dropping a
+photoreal ocean into that would trade a measured win for somebody else's look,
+which is the same mistake this repo has already declined twice: the grass
+shader, and In The Same Boat's desaturated palette.
+
+If the owner does hold a licence and wants it used anyway, that is their call
+to make and it is a legitimate one — the honest cost is that it would replace
+six rounds of art-directed tuning, and the blind comparison would have to be
+re-run from scratch to find out what that bought.
