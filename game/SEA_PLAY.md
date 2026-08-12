@@ -115,3 +115,70 @@ another go?* And by the harness — `tools/voyages.mjs` must show the tide
 producing a survival curve that falls with time at sea, and the weight showing
 up as a measurable difference between running home loaded and running home
 empty.
+
+---
+
+## 5 · EL SONDEO — the extraction beat (owner's idea, 12 Aug)
+
+*"Al acercarte a una isla vas descubriendo por tiempo el botín y dices si
+cogerlo o no, así en ese tiempo tienes la intriga de si te vienen a atacar."*
+
+Right, and it is the best decision-per-second the sea can get. Today a site is
+taken by contact — sail over it, numbers go up, zero drama. That is the flattest
+verb in the game and it is attached to the thing the player sails toward.
+
+**We already have the seed.** Round 12 gave wrecks a boarding beat: the party
+rows over and the loot only lands if the ship holds station. This generalises
+that to every site and adds the two things that turn a wait into a decision.
+
+### The mechanic
+
+Enter a site's radius and a **sondeo** begins. Loot is revealed in stages
+rather than granted — a first tier quickly, the good stuff later — and it only
+banks when you break off. Hold station and the survey continues; leave and you
+take what has been revealed so far.
+
+Four properties make it work, and three of them are the design rather than the
+feature:
+
+**PARTIAL EXTRACTION IS THE TENSION ENGINE.** Bailing with what you have must
+always be allowed. The question is never "loot or not" — it is *"is the next
+tier worth another twenty seconds"*, asked again every few seconds, with an
+answer that changes as the situation does. One decision at the start would be a
+menu; a decision that renews is a game.
+
+**THE ATTENTION IS CAUSED, NOT ROLLED.** A sondeo makes noise — smoke, a
+signal, whatever reads — and mobs are drawn to it. The danger must be a
+consequence of the player's own choice, not a dice roll that happens to land
+during it. That is the difference between tension and bad luck, and it is what
+makes a player who dies at 90% blame themselves rather than the game.
+
+**IT SPENDS THE ROUND'S OWN CURRENCY.** Time in a sondeo advances *la marea*.
+So looting is not free even when nothing attacks: every site you strip makes
+the rest of the voyage harder. The tide, the weight and the sondeo then form
+one economy — you are always spending pressure to buy cargo, and carrying the
+cargo costs speed.
+
+**THE VERB IS THE HELM.** No new button. Staying is steering to stay; leaving
+is steering away. The existing thumb does it, and the read is immediate. A
+"tomar y huir" affordance can confirm the bank, but the decision itself lives
+in the stick where it belongs.
+
+### What the player must see
+
+The tier ladder with what is already secured and what the next stage would add;
+a survey clock; and — most important — **the approach of whatever the noise
+drew**, early enough to decide with. A player who is surprised at 90% learns
+nothing; a player who sees three sails on the horizon at 60% and chooses to
+stay has played a game.
+
+### Where it goes
+
+Round 17, not 16. Round 16's builders are inside `src/sim/sea.ts` and the sea
+HUD right now, which is exactly the collision this project has spent sixteen
+rounds avoiding — and the sondeo genuinely wants the tide to already exist,
+because "looting raises the tide" is the sentence that makes it a cost rather
+than a free timer.
+
+Sequenced deliberately: 16 gives the voyage an arc and a build, 17 gives its
+best moment a decision.
