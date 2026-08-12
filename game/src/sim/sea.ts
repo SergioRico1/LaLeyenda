@@ -636,6 +636,16 @@ const CALM: number = SEA.ships.calm;
 
 const WEIGHT = SEA.weight;
 const GEAR = SEA.loadout;
+/**
+ * Zafarrancho — see balance.json `sea.$zafarrancho` for the whole argument.
+ *
+ * Exported because the HUD counts the same seconds the sim does and the suite
+ * asserts against the table rather than against copies of its numbers.
+ */
+export const ZAFARRANCHO: {
+  seconds: number; cooldown: number; speed: number; turn: number; drag: number;
+} = SEA.zafarrancho;
+const DASH = ZAFARRANCHO;
 
 /**
  * THE PERTRECHOS SEAM. SEA_PLAY.md item 3, from this side of it.
@@ -746,12 +756,22 @@ export function effectiveShip(v: Voyage): ShipSpec {
   const gear = v.loadout;
   return {
     ...spec,
-    speed: spec.speed * (1 - load * WEIGHT.speed) * gear.speed,
-    turn: spec.turn * (1 - load * WEIGHT.turn) * gear.turn,
+    // ZAFARRANCHO rides on top of everything else — the weight and the
+    // pertrechos both still count, so a full hold under zafarrancho is a full
+    // hold moving faster rather than an empty one. It is three seconds of the
+    // ship handled harder, not three seconds of a different ship.
+    speed: spec.speed * (1 - load * WEIGHT.speed) * gear.speed * (v.dash > 0 ? DASH.speed : 1),
+    turn: spec.turn * (1 - load * WEIGHT.turn) * gear.turn * (v.dash > 0 ? DASH.turn : 1),
     accel: spec.accel * (1 - load * WEIGHT.accel),
     // Drag goes the other way: a laden hull gives up MORE way through a hard
     // turn, which is what makes a full hold feel like a full hold on the stick.
-    turnDrag: Math.min(0.9, spec.turnDrag * (1 + load * WEIGHT.drag)),
+    //
+    // And this is the multiplier that makes zafarrancho a MANOEUVRE rather than
+    // a straight-line boost: turning normally sheds way, so a hard turn at
+    // speed is a slow turn. For these three seconds it barely costs anything,
+    // which is what lets a hull be thrown across a telegraph instead of arcing
+    // politely away from it.
+    turnDrag: Math.min(0.9, spec.turnDrag * (1 + load * WEIGHT.drag) * (v.dash > 0 ? DASH.drag : 1)),
     reload: spec.reload * gear.reload,
     range: spec.range * gear.range,
     arc: spec.arc * gear.arc,
@@ -1009,6 +1029,14 @@ export interface Voyage {
    *  index its seeded stream is forked on, so a replay sends the same ones. */
   swells: number;
 
+  // --- ZAFARRANCHO. The one verb that is not the helm. ---------------------
+  /** Seconds of the burst still running; 0 when she is sailing normally. */
+  dash: number;
+  /** Seconds until it can be called again; 0 when it is ready. Counts down
+   *  through the burst as well, so `cooldown` is the whole cycle rather than
+   *  the wait after it — one number for the player to read. */
+  dashCooldown: number;
+
   /**
    * The pertrechos in the hold, as coefficients — see `Loadout`.
    *
@@ -1048,6 +1076,12 @@ export type SeaEvent =
    *  reason. `level` is 0..1 and `stage` indexes TIDE_STAGES; the presentation
    *  layer names it and the player decides whether to stay. */
   | { kind: 'tide-turn'; stage: number; stageId: TideStage; level: number }
+  // --- zafarrancho. Two, because the START is the player's own doing and needs
+  // no announcing — they just pressed it — while the END and the READY are
+  // things the sea tells them about. A wake that stops with no cue reads as a
+  // stutter, and a button that goes live in silence is a button nobody presses.
+  | { kind: 'dash-ended' }
+  | { kind: 'dash-ready' }
   /** The sea has put something on the water near the ship, because it is late
    *  rather than because the ship went anywhere. `count` surfaced at (x, y);
    *  the renderer owes this a boil of foam, because a threat that simply
@@ -1090,6 +1124,7 @@ export function startVoyage(
     boarding: null,
     warnedRing: 0,
     atSea: 0, tide: 0, tideStage: 0, swells: 0,
+    dash: 0, dashCooldown: 0,
     loadout: loadoutOf(opts.loadout),
   };
 }
@@ -1339,6 +1374,23 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
   if (v.sunk || v.home || v.abandoned) return { voyage: v, events };
 
   v.step += 1;
+
+  // --- zafarrancho, running down -------------------------------------------
+  // ABOVE the `effectiveShip` read below, and that is the whole reason it is
+  // here rather than beside the tide: `spec` is taken ONCE at the top of the
+  // step and everything under it sails that ship. Ticking the burst down after
+  // the read would give every dash one extra step of boosted hull at the end,
+  // and the step the burst ends on would be a step where the numbers and the
+  // screen disagree about which ship is on the water.
+  if (v.dash > 0) {
+    v.dash = Math.max(0, v.dash - dt);
+    if (v.dash === 0) events.push({ kind: 'dash-ended' });
+  }
+  if (v.dashCooldown > 0) {
+    v.dashCooldown = Math.max(0, v.dashCooldown - dt);
+    if (v.dashCooldown === 0) events.push({ kind: 'dash-ready' });
+  }
+
   // THE HULL AS SHE IS, not as the shipyard sold her: what the hold weighs and
   // what the pertrechos changed are already in these numbers. One read, at the
   // top, so nothing below can be sailing a different ship from the guns.
@@ -2037,4 +2089,52 @@ export function steer(v: Voyage, helm: Partial<Helm>): Voyage {
       throttle: Math.max(0, Math.min(1, helm.throttle ?? v.helm.throttle)),
     },
   };
+}
+
+/* --------------------------------------------------------------------------
+ * ZAFARRANCHO — SEA_PLAY.md item 4
+ * ----------------------------------------------------------------------- */
+
+/** What the HUD needs to draw the one button: is it ready, and if not, how
+ *  far through the wait. `running` is the burst itself, so the button can
+ *  say "now" rather than only "soon". */
+export interface DashRead {
+  ready: boolean;
+  running: boolean;
+  /** 0 at the moment it was called, 1 when it is ready again. */
+  charge: number;
+  /** Seconds left of the wait, 0 when ready. */
+  wait: number;
+}
+
+export function readDash(v: Voyage): DashRead {
+  const over = v.sunk || v.home || v.abandoned;
+  return {
+    ready: !over && v.dashCooldown <= 0,
+    running: v.dash > 0,
+    charge: DASH.cooldown > 0 ? 1 - Math.max(0, v.dashCooldown) / DASH.cooldown : 1,
+    wait: Math.max(0, v.dashCooldown),
+  };
+}
+
+/** Whether calling it right now would do anything. The button asks this. */
+export function canDash(v: Voyage): boolean {
+  return readDash(v).ready;
+}
+
+/**
+ * Pipe the hands to zafarrancho.
+ *
+ * REFUSED rather than queued when it is not ready, and refused rather than
+ * silently ignored when the voyage has ended — a control that pretends to work
+ * is worse than one that visibly does not, and the HUD reads `canDash` for
+ * exactly this reason. Returns the voyage unchanged if it was not called, so a
+ * caller can compare identity to know whether the tap landed.
+ *
+ * The cooldown starts NOW, not when the burst ends, so `cooldown` is the whole
+ * cycle and there is one number for the player to learn.
+ */
+export function callDash(v: Voyage): Voyage {
+  if (!canDash(v)) return v;
+  return { ...v, dash: DASH.seconds, dashCooldown: DASH.cooldown };
 }

@@ -823,6 +823,157 @@
  * seam, which is the one interaction a player never has to be taught.
  * ======================================================================== */
 
+/* --- zafarrancho: the one button on this screen ---------------------------- */
+/* Inboard of the helm, on the arc the same right thumb already sweeps, and
+   deliberately the ONLY button out here — SEA_PLAY.md refuses a fire button and
+   a second stick both, so this one has to carry the whole idea of "something to
+   press". It is drawn with the four layers because it is a THING, and it is the
+   only pressable object in the lower half of the sea. */
+
+.sea__dash {
+  position: absolute;
+  right: calc(var(--helm-right) + var(--helm-size) + 6px);
+  bottom: calc(var(--ui-safe-b) + var(--helm-bottom) + 14px);
+  width: 72px;
+  height: 72px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  color: #fff;
+  pointer-events: auto;
+  cursor: pointer;
+  /* No tap highlight and no text selection: this is a control that gets
+     hammered, and a blue flash over it reads as a web page. */
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  touch-action: none;
+  transition: opacity 0.16s ease-out, transform 0.12s ease-out;
+}
+
+/* Like the helm sign, it stands down while a stick is live — the thumb that
+   would press it is busy, and a lit button under a dragging finger is a
+   mis-tap waiting to happen. */
+html.is-steering .sea__dash { opacity: 0.34; }
+
+/* Alongside there is nothing to fight. It arrives with the voyage. */
+.sea:not(.is-departed) .sea__dash { opacity: 0; pointer-events: none; }
+
+.sea__dashRing {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  background: rgba(18, 14, 10, 0.62);
+  box-shadow: inset 0 3px 4px rgba(0, 0, 0, 0.55);
+}
+
+/* The wait, filling from the bottom like water coming back into a glass. Height
+   rather than a conic gradient on purpose: a sweep hand needs a hand to read as
+   one, and at 72px a filling level is legible where an arc is not. */
+.sea__dashSweep {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0%;
+  background: linear-gradient(180deg, rgba(143, 224, 245, 0.5) 0 50%, rgba(62, 159, 192, 0.5) 50% 100%);
+  transition: height 0.2s linear;
+}
+
+.sea__dashBody {
+  position: absolute;
+  inset: 7px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  /* The four layers. Warm wood and brass, the family the helm already speaks. */
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0 50%, rgba(0, 0, 0, 0.16) 50% 100%),
+    linear-gradient(180deg, #8A5A2B 0 50%, #6B4320 50% 100%);
+  box-shadow:
+    inset 0 3px 0 var(--ui-rim),
+    inset 0 -4px 0 rgba(0, 0, 0, 0.4),
+    var(--ui-drop-sm);
+  transition: filter 0.2s linear, box-shadow 0.12s ease-out, transform 0.12s ease-out;
+}
+
+.sea__dashMark {
+  width: 40px;
+  height: 32px;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.45));
+}
+
+.sea__dashWait {
+  position: absolute;
+  font-size: 22px;
+  line-height: 1;
+  -webkit-text-stroke-width: 2.2px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.8);
+}
+
+.sea__dashWait[hidden] { display: none; }
+
+.sea__dashCap {
+  position: absolute;
+  left: 50%;
+  bottom: -17px;
+  transform: translateX(-50%);
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  opacity: 0.66;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.75);
+  white-space: nowrap;
+}
+
+/* WAITING. The mark goes quiet and the number takes the middle, because during
+   the wait the only information is how long. */
+.sea__dash:disabled { cursor: default; }
+.sea__dash:not(.is-ready):not(.is-running) .sea__dashBody { filter: grayscale(0.7) brightness(0.62); }
+.sea__dash:not(.is-ready):not(.is-running) .sea__dashMark { opacity: 0.22; }
+
+/* READY. It breathes — slowly, because a button that flashes at a player who is
+   being chased is one more thing shouting. */
+.sea__dash.is-ready .sea__dashRing { border-color: var(--ui-gold-lip); }
+.sea__dash.is-ready .sea__dashBody { animation: sea-dash-ready 2.2s ease-in-out infinite; }
+
+@keyframes sea-dash-ready {
+  50% { box-shadow: inset 0 3px 0 var(--ui-rim), inset 0 -4px 0 rgba(0, 0, 0, 0.4), var(--ui-drop-sm), 0 0 0 3px rgba(245, 213, 70, 0.34); }
+}
+
+/* RUNNING. Lit, and unmistakably a different state from ready — this is the
+   three seconds the player paid for and they must be able to see them. */
+.sea__dash.is-running .sea__dashRing {
+  border-color: var(--ui-gold-a);
+  background: rgba(90, 58, 12, 0.7);
+}
+
+.sea__dash.is-running .sea__dashBody {
+  animation: none;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.26) 0 50%, rgba(0, 0, 0, 0.12) 50% 100%),
+    linear-gradient(180deg, var(--ui-gold-a) 0 50%, var(--ui-gold-b) 50% 100%);
+  box-shadow:
+    inset 0 3px 0 var(--ui-rim),
+    inset 0 -4px 0 rgba(0, 0, 0, 0.4),
+    var(--ui-drop-sm),
+    0 0 0 4px rgba(245, 213, 70, 0.28);
+}
+
+/* Pressed: the same 2px drop every other object in the game gives by. */
+.sea__dash:active .sea__dashBody {
+  transform: translateY(2px);
+  box-shadow: inset 0 2px 0 var(--ui-rim), inset 0 -2px 0 rgba(0, 0, 0, 0.4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sea__dash.is-ready .sea__dashBody { animation: none; }
+}
+
 .sea__helm {
   position: absolute;
   right: var(--helm-right);

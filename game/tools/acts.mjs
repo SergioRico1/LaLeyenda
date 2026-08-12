@@ -635,6 +635,31 @@ export const ACTS = {
   },
 
   /**
+   * Zafarrancho, actually pressed.
+   *
+   *   npm run shoot -- sea --mobile --at 220,0 --act zafarrancho
+   *
+   * Under way first, because a ship alongside has nothing to dodge and the
+   * button stands down with the rest of the voyage chrome. Then the real
+   * pointerdown the thumb sends — not a synthetic `click`, because the button
+   * listens on pointerdown for the ~90ms it buys — and a few frames so the
+   * burst is caught RUNNING rather than at the instant it started.
+   */
+  async zafarrancho(page) {
+    await page.evaluate(() => window.__sail?.('hunt'));
+    for (let i = 0; i < 8; i++) await step(page, 20);
+    const button = await need(page, '.sea__dash', 'the zafarrancho button');
+    const box = await button.boundingBox();
+    if (!box) throw new Error('act: zafarrancho — the button has no box on screen');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.up();
+    await step(page, 12);
+    const running = await page.$eval('.sea__dash', (el) => el.classList.contains('is-running'));
+    if (!running) throw new Error('act: zafarrancho — pressed it and nothing is running');
+  },
+
+  /**
    * The choice of three, EARNED rather than posed.
    *
    *   npm run shoot -- sea --mobile --at 220,0 --act pertrechos

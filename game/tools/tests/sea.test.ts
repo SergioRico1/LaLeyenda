@@ -1,9 +1,10 @@
 import {
   HARBOUR, MOBS, NEUTRAL_LOADOUT, SEA_CELL, SEA_RANGE, SEA_STEP, SHIPS, SHIP_TYPES,
-  TIDE_STAGES, abandonVoyageInPlace, bearingHome,
+  TIDE_STAGES, ZAFARRANCHO, abandonVoyageInPlace, bearingHome,
   careenBill, cellsInRing, effectiveShip, holdLoad, holdUsed, landfallShare, loadoutOf,
   mobsAt, previewAbandon,
-  readTide, ringOf, siteAt, sitesNear, startVoyage, steer, stepVoyage, stow, tideAt, tideClock,
+  canDash, callDash, readDash, readTide, ringOf, siteAt, sitesNear, startVoyage, steer,
+  stepVoyage, stow, tideAt, tideClock,
   tideStageOf, type Loadout, type SeaEvent, type Voyage,
 } from '../../src/sim/sea';
 import { landCargoInPlace, previewLanding, storeCap } from '../../src/sim';
@@ -2198,5 +2199,156 @@ describe('the pertrechos seam', () => {
     // pulled the ship would be a way to swim, and the sea has exactly one verb.
     eq(hauled.ship.x, free.ship.x, 'the ship was dragged on x');
     eq(hauled.ship.y, free.ship.y, 'the ship was dragged on y');
+  });
+});
+
+/**
+ * ZAFARRANCHO — SEA_PLAY.md item 4, and the round-16 leg that was missing.
+ *
+ * The brief's first sentence is the thing this has to answer: "the player has
+ * ONE VERB. Steering." So the tests below are about a second one existing, being
+ * rare, being a MANOEUVRE rather than a straight-line boost, and — the one that
+ * keeps it honest — not being an escape from anything except by moving the hull.
+ */
+describe('zafarrancho: the one thing to press that is not the helm', () => {
+  /** Under way in clear water with a runway to use the burst in — a ship marked
+   *  departed at the origin is a ship the `home` latch ends the voyage of on
+   *  its very first step, and every one of these cases needs several. */
+  const underWay = (seed: string): Voyage => {
+    const v = startVoyage(seed, 'skiff', {});
+    const at = openWater(seed, 140);
+    v.x = at.x;
+    v.y = at.y;
+    v.heading = at.heading;
+    v.departed = true;
+    sweep(v);
+    return v;
+  };
+
+  test('a voyage starts with it ready and nothing running', () => {
+    const v = startVoyage('zafa');
+    eq(v.dash, 0, 'nothing is running at the dock');
+    eq(v.dashCooldown, 0, 'and nothing is being waited for');
+    ok(canDash(v), 'the first one is free');
+    const read = readDash(v);
+    ok(read.ready && !read.running, 'and the button says so');
+    eq(read.charge, 1, 'a full charge');
+    eq(read.wait, 0, 'with no wait to print');
+  });
+
+  test('calling it runs for its seconds and then stops on its own', () => {
+    const v = callDash(underWay('zafa-run'));
+    ok(v.dash > 0, 'the burst started');
+    const first = sail(v, ZAFARRANCHO.seconds - 0.2, { throttle: 1 });
+    ok(first.voyage.dash > 0, 'still running just before its time');
+    ok(!first.events.some((e) => e.kind === 'dash-ended'), 'and it has not said otherwise');
+    const after = sail(first.voyage, 0.5, { throttle: 1 });
+    eq(after.voyage.dash, 0, 'and over just after it');
+    ok(after.events.some((e) => e.kind === 'dash-ended'), 'which the sea says once');
+  });
+
+  test('it cannot be held down: one call, then a real wait', () => {
+    const v = callDash(underWay('zafa-wait'));
+    ok(!canDash(v), 'a second call the same instant is refused');
+    eq(callDash(v), v, 'and refused by returning the same voyage, not a changed one');
+    // Through the burst and most of the wait, it is still not ready.
+    const mid = sail(v, ZAFARRANCHO.cooldown - 0.5, { throttle: 1 }).voyage;
+    ok(!canDash(mid), `still on the wait at ${(ZAFARRANCHO.cooldown - 0.5).toFixed(0)}s`);
+    ok(readDash(mid).charge > 0.9, 'though the button is nearly full');
+    const ready = sail(mid, 1, { throttle: 1 });
+    ok(canDash(ready.voyage), 'and ready a moment later');
+    ok(ready.events.some((e) => e.kind === 'dash-ready'), 'and it says so, once');
+    // The cooldown is the WHOLE cycle, not the wait after the burst: a player
+    // learning "twelve seconds" must not find it is really fifteen.
+    ok(
+      ZAFARRANCHO.cooldown > ZAFARRANCHO.seconds,
+      'a cooldown shorter than the burst would make it permanent'
+    );
+  });
+
+  test('it is a manoeuvre, not a straight line', () => {
+    const swept = (dash: boolean): { heading: number; way: number } => {
+      let v = underWay('zafa-vira');
+      const from = { x: v.x, y: v.y, heading: v.heading };
+      if (dash) v = callDash(v);
+      const out = sail(v, ZAFARRANCHO.seconds, { turn: 1, throttle: 1 }).voyage;
+      return { heading: Math.abs(out.heading - from.heading), way: out.speed };
+    };
+    const plain = swept(false);
+    const called = swept(true);
+    ok(
+      called.heading > plain.heading * 1.3,
+      `she comes round much further (${called.heading.toFixed(2)} rad against ${plain.heading.toFixed(2)})`
+    );
+    // And she keeps her WAY while doing it, which is the half `drag` buys and
+    // the half that makes it a zafarrancho rather than a handbrake. Measured as
+    // speed rather than as distance from the start on purpose: a tighter turn
+    // ends up NEARER where it began, so displacement would score the better
+    // manoeuvre lower — the first draft of this line did exactly that.
+    ok(
+      called.way > plain.way * 1.3,
+      `and holds her way through it (${called.way.toFixed(1)} against ${plain.way.toFixed(1)})`
+    );
+  });
+
+  test('it moves the hull and NOTHING else', () => {
+    const spec = SHIPS.skiff;
+    const plain = underWay('zafa-solo');
+    const dashing = callDash(underWay('zafa-solo'));
+    const a = effectiveShip(plain);
+    const b = effectiveShip(dashing);
+    ok(b.speed > a.speed && b.turn > a.turn, 'speed and helm are what it buys');
+    eq(b.hull, a.hull, 'not one point of hull');
+    eq(b.damage, a.damage, 'not a heavier ball');
+    eq(b.reload, a.reload, 'not a faster gun');
+    eq(b.range, a.range, 'not a longer reach');
+    eq(b.hold, a.hold, 'and not a bigger hold');
+    eq(a.hull, spec.hull, 'and the plain ship is the shipyard ship');
+  });
+
+  test('the weight and the pertrechos still count under it', () => {
+    // A laden ship under zafarrancho is a laden ship moving faster, not an
+    // empty one — otherwise the burst would erase SEA_PLAY.md item 2 for three
+    // seconds at a time, which is exactly when a heavy hold matters most.
+    const laden = (dash: boolean): number => {
+      let v = underWay('zafa-peso');
+      v.cargo = { oro: SHIPS.skiff.hold };
+      if (dash) v = callDash(v);
+      return effectiveShip(v).speed;
+    };
+    const empty = (dash: boolean): number => {
+      let v = underWay('zafa-peso');
+      if (dash) v = callDash(v);
+      return effectiveShip(v).speed;
+    };
+    ok(laden(true) > laden(false), 'the burst helps a full hold');
+    ok(laden(true) < empty(true), 'but a full hold under it is still slower than an empty one');
+    near(laden(true) / laden(false), empty(true) / empty(false), 1e-9, 'and the burst is the same multiplier either way');
+  });
+
+  test('a voyage that has ended cannot call it', () => {
+    for (const end of ['sunk', 'home', 'abandoned'] as const) {
+      const v = { ...startVoyage(`zafa-${end}`), [end]: true };
+      ok(!canDash(v), `a ${end} voyage refuses it`);
+      eq(callDash(v).dash, 0, 'and nothing starts');
+      ok(!readDash(v).ready, 'and the button knows');
+    }
+  });
+
+  test('a voyage with a zafarrancho in it still replays exactly', () => {
+    const run = () => {
+      let v = underWay('zafa-replay');
+      for (let i = 0; i < Math.round(40 / SEA_STEP); i++) {
+        if (i === 60 || i === 500) v = callDash(v);
+        v = stepVoyage(steer(v, { turn: 0.4, throttle: 1 })).voyage;
+      }
+      return v;
+    };
+    const a = run();
+    const b = run();
+    eq(a.x, b.x, 'same seed, same calls, same position');
+    eq(a.heading, b.heading, 'on the same heading');
+    eq(a.dashCooldown, b.dashCooldown, 'with the same wait left');
+    eq(a.hull, b.hull, 'and the same damage taken');
   });
 });

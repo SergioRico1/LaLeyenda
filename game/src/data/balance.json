@@ -1607,6 +1607,38 @@
         "spread": 8
       }
     },
+    "$zafarrancho": [
+      "SEA_PLAY.md item 4 — THE ONE THING TO PRESS THAT IS NOT THE HELM, and the",
+      "leg of that design round 16 shipped without. The diagnosis it answers is the",
+      "first line of the brief: 'the player has one verb', so positioning is optional",
+      "and nothing punishes sailing in a straight line.",
+      "",
+      "'Zafarrancho de combate' is what a Spanish crew is piped to before an action:",
+      "everything loose struck below, every hand at a station. Here it is `seconds` of",
+      "a ship handled harder than she can be handled for long — `speed` on top speed,",
+      "`turn` on the helm, and `drag` BELOW 1 on the way a hard turn costs, which is",
+      "the one that actually changes what the thumb can do. Turning normally sheds way;",
+      "for these three seconds it barely does, so the ship can be thrown round a",
+      "telegraph or across a swarm's station-keeping instead of arcing away from it.",
+      "",
+      "THREE SECONDS AND TWELVE, and both halves are the design. Long enough to be a",
+      "manoeuvre rather than a twitch — a skiff at 17 crosses about 60 units of water",
+      "in it, which is a strike circle and a half — and rare enough that spending it",
+      "is a decision. A dodge on a 2-second cooldown is a button that is simply held.",
+      "",
+      "WHAT IT DELIBERATELY IS NOT: a fire button, a second stick, or an escape from",
+      "consequences. It moves the ship and nothing else — no invulnerability, no",
+      "damage, no reload — so it can dodge a strike, close on something fleeing, break",
+      "a swarm or run from a tide that has turned, and every one of those is the",
+      "player choosing where the hull IS, which is the skill PLAN.md Fase 2 asks for."
+    ],
+    "zafarrancho": {
+      "seconds": 3,
+      "cooldown": 12,
+      "speed": 1.5,
+      "turn": 1.45,
+      "drag": 0.35
+    },
     "$maxLive": [
       "THE CROWD CEILING, and it belongs to the sea rather than to any one thing that",
       "puts creatures in it. `patrols` argues it at length: a cell is 55 units, the sim",

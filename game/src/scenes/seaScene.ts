@@ -12,7 +12,7 @@ import {
 } from '../sim/pertrechos';
 import { sfx } from '../ui/sfx';
 import {
-  HARBOUR, MOBS, SEA_CELL, SEA_RANGE, SEA_STEP, SHIPS, SQUID_STRIKE_RADIUS, sitesNear,
+  HARBOUR, MOBS, SEA_CELL, SEA_RANGE, SEA_STEP, SHIPS, SQUID_STRIKE_RADIUS, callDash, sitesNear,
   startVoyage, steer, stepVoyage,
   type Mob, type MobKind, type SeaEvent, type Site, type Voyage,
 } from '../sim/sea';
@@ -590,7 +590,14 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
   // the version that error cannot catch.
   const hudEnabled = params.get('hud') !== '0';
   const hud: SeaHud | null = uiRoot && hudEnabled
-    ? createSeaHud(uiRoot, { onLeave: () => end('left') })
+    ? createSeaHud(uiRoot, {
+      onLeave: () => end('left'),
+      // ZAFARRANCHO. The screen asks; the sim decides. `callDash` refuses a
+      // call that is on cooldown or on a voyage that has ended by handing back
+      // the SAME object, so there is no state here to get out of step — the
+      // next `update` reads whatever the sim allowed.
+      onDash: () => { voyage = callDash(voyage); },
+    })
     : null;
 
   /**
@@ -2055,6 +2062,18 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
    */
   function feedback(event: SeaEvent): void {
     switch (event.kind) {
+      // ZAFARRANCHO's two cues, and only two: the START is the player's own
+      // finger and needs no telling. The END gets a shove of foam off the
+      // quarter, because a burst that simply stops reads as a stutter in the
+      // frame rate rather than as a thing ending. READY is a small chime, and
+      // it is the one that matters most — a cooldown nobody notices expiring is
+      // an ability nobody uses twice.
+      case 'dash-ended':
+        shockAt(voyage.x, voyage.y, 2.2, 9, 0.3, 0.9, 0.86, 0.2);
+        break;
+      case 'dash-ready':
+        sfx('tick');
+        break;
       case 'fired': {
         sfx('cannon');
         const side = broadsides[event.side];

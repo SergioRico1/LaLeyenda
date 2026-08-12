@@ -1,11 +1,13 @@
 import './seaHud.css';
 import type { ResourceId } from '../sim';
 import {
-  HARBOUR, MOBS, SHIPS, abandonVoyageInPlace, bearingHome, effectiveShip, holdUsed,
-  previewAbandon, readTide, ringOf, SEA_CELL, TIDE_STAGE_AT, type TideStage, type Voyage,
+  HARBOUR, MOBS, SHIPS, abandonVoyageInPlace, bearingHome, canDash, effectiveShip, holdUsed,
+  previewAbandon, readDash, readTide, ringOf, SEA_CELL, TIDE_STAGE_AT,
+  type TideStage, type Voyage,
 } from '../sim/sea';
 import { progress, type PertrechosState } from '../sim/pertrechos';
 import { CAPTURE } from './env';
+import { sfx } from './sfx';
 import { HELM_STEER } from './stick';
 
 /**
@@ -287,6 +289,14 @@ export interface LandingPreview {
 export interface SeaHudOptions {
   /** Called when the player abandons the voyage from the button. */
   onLeave(): void;
+  /**
+   * The player piped the hands to zafarrancho. The scene calls the sim's
+   * `callDash`; this screen never touches the voyage itself.
+   *
+   * Optional so a capture or a test harness can mount the HUD without one — the
+   * button simply refuses, which is the same thing it does on a cooldown.
+   */
+  onDash?(): void;
 }
 
 /** The ship's wheel, drawn twice: ink underneath, brass on top (UI_SPEC §0.2). */
@@ -301,6 +311,31 @@ const WHEEL_SVG = `
       <path d="M24 7.5v33M7.5 24h33M12.3 12.3l23.4 23.4M35.7 12.3L12.3 35.7"/>
     </g>
     <circle cx="24" cy="24" r="4.6" fill="#C57C2A" stroke="#17130E" stroke-width="2.6"/>
+  </svg>
+`;
+
+/**
+ * Zafarrancho's mark: a hull under a hard bow wave, drawn twice — ink under,
+ * brass over — the same two-pass build the wheel uses.
+ *
+ * A boat rather than a lightning bolt or a chevron on purpose. Every other
+ * dash button in the genre is an abstraction; this one is the thing it does,
+ * which is a ship being driven harder than she likes.
+ */
+const DASH_SVG = `
+  <svg class="sea__dashMark" viewBox="0 0 40 32" aria-hidden="true">
+    <g fill="none" stroke="#17130E" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M8 21 L32 21 L27 27 L13 27 Z"/>
+      <path d="M20 5 L20 21"/>
+      <path d="M20 8 L28 13 L20 17"/>
+      <path d="M4 12 h5 M3 18 h4"/>
+    </g>
+    <path d="M8 21 L32 21 L27 27 L13 27 Z" fill="#C57C2A" stroke="#F5D546" stroke-width="2"
+          stroke-linejoin="round"/>
+    <path d="M20 5 L20 21" stroke="#F5D546" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M20 8 L28 13 L20 17 Z" fill="#FFF3C8" stroke="#F5D546" stroke-width="1.6"
+          stroke-linejoin="round"/>
+    <path d="M4 12 h5 M3 18 h4" stroke="#8FE0F5" stroke-width="2.6" stroke-linecap="round"/>
   </svg>
 `;
 
@@ -430,6 +465,22 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
       ${CHEVRONS_SVG}
       <span class="sea__helmCap">Timón</span>
     </div>
+
+    <!-- ZAFARRANCHO. SEA_PLAY.md item 4, and the only button on this screen
+         that DOES something to the sea rather than saying something about it.
+         It sits inboard of the helm — the second place the same thumb reaches
+         without leaving the wheel — and it is deliberately the only one, because
+         the design refuses a fire button and a second stick both. -->
+    <button class="sea__dash" type="button" data-dash aria-label="Zafarrancho">
+      <span class="sea__dashRing" aria-hidden="true">
+        <span class="sea__dashSweep" data-dashsweep></span>
+      </span>
+      <span class="sea__dashBody">
+        ${DASH_SVG}
+        <span class="sea__dashWait num" data-dashwait hidden></span>
+      </span>
+      <span class="sea__dashCap">Zafarrancho</span>
+    </button>
   `;
   host.append(root);
 
@@ -440,6 +491,9 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
   const holdOut = root.querySelector('[data-hold]') as HTMLElement;
   const holdLabel = root.querySelector('[data-holdlabel]') as HTMLElement;
   const ringOut = root.querySelector('[data-ring]') as HTMLElement;
+  const dashBtn = root.querySelector('[data-dash]') as HTMLButtonElement;
+  const dashSweep = root.querySelector('[data-dashsweep]') as HTMLElement;
+  const dashWait = root.querySelector('[data-dashwait]') as HTMLElement;
   const strip = root.querySelector('[data-strip]') as HTMLElement;
   const tideTrack = root.querySelector('[data-tidetrack]') as HTMLElement;
   const tideFill = root.querySelector('[data-tidefill]') as HTMLElement;
@@ -704,6 +758,29 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
 
   leave.addEventListener('click', askToLeave);
 
+  // ZAFARRANCHO, on POINTERDOWN rather than click.
+  //
+  // This is the one control on the screen with a fight on the other side of it,
+  // and a click fires on release: at the far end of a synthetic tap that is
+  // ~90ms of a three-second burst spent doing nothing, and on a real thumb it is
+  // the difference between dodging a telegraph and eating it. Everything else
+  // here is a menu and can keep its click. `preventDefault` stops the tap from
+  // also becoming a helm gesture on the glass underneath.
+  dashBtn.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    if (!seen || !opts.onDash || !canDash(seen)) return;
+    // The gun's own report, one octave of urgency below a broadside: this is the
+    // ship being driven, and it belongs to the same family as the cannons.
+    sfx('press');
+    navigator.vibrate?.(18);
+    // Painted immediately rather than waiting for the next `update`: a control
+    // whose feedback arrives a frame after the finger is a control that feels
+    // broken, however fast the frame is.
+    dashBtn.classList.add('is-running');
+    dashBtn.classList.remove('is-ready');
+    opts.onDash();
+  });
+
   if (wantCoach) {
     coach = document.createElement('div');
     coach.className = 'sea__coach';
@@ -802,6 +879,23 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
       // · 38s" is a decision, because it is what turns *one more site?* from a
       // shrug into arithmetic the player can actually do. The sim computes it
       // (`readTide().toNext`) so the screen cannot disagree with the sea.
+      // --- zafarrancho -------------------------------------------------------
+      // Three states and they must not be confusable: READY (bright, breathing,
+      // pressable), RUNNING (lit, and the ring is emptying with the burst) and
+      // WAITING (grey, with a sweep filling and the seconds printed on it). A
+      // cooldown that only greys out teaches nothing — the number is what turns
+      // "not yet" into "in four seconds", which is a thing a player can plan a
+      // turn around.
+      const dash = readDash(voyage);
+      dashBtn.classList.toggle('is-ready', dash.ready);
+      dashBtn.classList.toggle('is-running', dash.running);
+      dashBtn.disabled = !dash.ready;
+      const sweep = `${(dash.charge * 100).toFixed(0)}%`;
+      if (dashSweep.style.height !== sweep) dashSweep.style.height = sweep;
+      const waiting = !dash.ready && !dash.running && dash.wait > 0;
+      if (dashWait.hidden !== !waiting) dashWait.hidden = !waiting;
+      if (waiting) setText(dashWait, String(Math.ceil(dash.wait)));
+
       const tide = readTide(voyage);
       const tideWidth = `${(tide.level * 100).toFixed(1)}%`;
       if (tideFill.style.width !== tideWidth) tideFill.style.width = tideWidth;
