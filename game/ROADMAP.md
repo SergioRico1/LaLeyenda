@@ -129,3 +129,79 @@ Store packages bundled inside it are off limits.
 **Round 11 is done when a blind critic, shown our frames beside the shipped
 game's with no labels, picks ours — and when the whole path above has been
 walked by a person on a phone without hitting anything that reads as unfinished.**
+
+---
+
+# Round 16 — the voyage gets an arc and a build, and both are measured
+
+SEA_PLAY.md's diagnosis was that the sea has one verb, no arc, nothing that
+compounds and no trade-off. Four systems answer it, and this round landed
+three of them plus the surface that makes them legible.
+
+## What shipped
+
+**LA MAREA.** A tide level read off the voyage clock, flat for 40 seconds and
+then climbing to full flood over 180. It multiplies what a cell posts, how
+tough it is, and how close the sea puts it — and, through `swell`, it puts
+creatures on the water near a ship that will not come to it, so the clock
+cannot be waited out by stopping.
+
+**THE HOLD HAS WEIGHT.** Cargo takes speed, helm and acceleration, and adds
+turn drag. Measured against the same seeds and the same water below.
+
+**PERTRECHOS.** Kills and sites pay into a ladder; at each rung the voyage
+stops and offers one of three upgrades that die at the dock. Ten in the pool,
+seeded, drawn without repeats, stacking where it makes sense.
+
+**THE TWO CLOCKS, ON SCREEN.** A strip under the readout capsule carrying the
+tide as a bar with the sim's own stage ticks, its name (Calma · Creciente ·
+Alta · Pleamar) and the countdown to the next one, beside the pertrechos
+ladder. Each crossing announces itself once.
+
+## What the harness says — 60 seeded voyages a row, autopilot on the real stick
+
+SEA_PLAY.md set the test itself: *"the tide producing a survival curve that
+falls with time at sea, and the weight showing up as a measurable difference
+between running home loaded and running home empty."* Both hold, and the
+control is the same sea with the clock stopped.
+
+    LA MAREA — the same voyage, staying out longer
+    ring · pilot        out   tide  returns  no tide   difference
+    1 · novato          60s   0.16     100%     100%        0 pp
+    1 · novato         240s   0.95     100%     100%        0 pp
+    2 · novato         120s   0.38      62%      82%      −20 pp
+    2 · novato         180s   0.51      25%      78%      −53 pp
+    3 · veterano       180s   0.29      63%      80%      −17 pp
+
+Ring 1 is untouched at every level, which is the promise `grace` was written
+for: a first voyage, and every efficient trip to the near sea, sails the water
+the fleet table measured. From ring 2 out, staying is a real decision — three
+minutes of loitering turns a four-in-five return into a one-in-four.
+
+    THE WEIGHT — home empty against home full, same seeds, same hull
+    ring  hull   empty: home  secs    full: home  secs   cost
+    3     100%          100%  23.6          100%  26.6  +3.0s
+    4     100%           93%  42.5           83%  47.0  +4.5s
+    4      40%           77%  42.0           63%  46.3  +4.3s
+    5      40%           25%  64.4           18%  73.5  +9.1s
+
+A full hold is three seconds slower home from ring 3 and nine from ring 5, and
+those seconds are paid in hulls: ten points of return at ring 4 and seven at
+ring 5. Running home rich is a harder job than running home empty, which is
+what makes the last site a question.
+
+    THE LADDER — hunting, day-one skiff
+    first choice at 7.3s · second at ~21s · third at ~37s · three picks a run
+
+## What round 16 did NOT do
+
+**Zafarrancho** — SEA_PLAY.md item 4, the one active verb — is not built. The
+voyage still has one thing to press and it is the helm. It is the first thing
+round 18 should take.
+
+## Round 17 — el sondeo
+
+The owner's own idea and the best decision-per-second the sea can buy;
+SEA_PLAY.md §5 has the design and the three properties that make it a game
+rather than a timer. It waits for the tide deliberately, because *"looting
+raises the tide"* is the sentence that makes it a cost rather than a free wait.
