@@ -139,6 +139,102 @@ export function cellsInRing(ring: number): [number, number][] {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// LA MAREA — the other axis of difficulty, and the one the sea did not have
+//
+// `ringOf` above is the WHERE. This is the WHEN. SEA_PLAY.md's diagnosis, which
+// is correct: "minute ten is exactly as tense as minute one. Pressure is spatial
+// only — it rises when you sail outward and falls when you sail back — so the
+// only shape a voyage has is one the player draws by leaving."
+//
+// The tide is one number between 0 and 1, read off the voyage clock and nothing
+// else. It MULTIPLIES the ring curve rather than replacing it: how many a cell
+// posts, how tough what it posts is, and how close the sea puts things to the
+// ship. At level 0 every roll in this file happens in the same order with the
+// same arguments as it did before the tide existed, which is why `grace` matters
+// as much as `span` — a first voyage sails in the sea that was measured.
+//
+// Pure, and a function of one argument, so the harness can print the curve
+// rather than infer it. `sea.tide` in balance.json is where the shape is argued.
+
+const TIDE = SEA.tide;
+const TIDE_STAGE_AT: readonly number[] = TIDE.stages;
+const SWELL = TIDE.swell;
+
+/** What the sea is called at each step of the flood, outermost id first used by
+ *  the HUD. Ids, not copy — the presentation layer names them in Spanish. */
+export const TIDE_STAGES = ['calm', 'making', 'high', 'flood'] as const;
+export type TideStage = (typeof TIDE_STAGES)[number];
+
+/**
+ * The tide at `seconds` of voyage, 0 to 1.
+ *
+ * Flat through `grace`, then linear to full flood over `span`, then held. `rate`
+ * is the loadout's hand on the clock — Contramaestre below 1 makes the whole
+ * thing later, grace included, which is what "the tide rises more slowly" has
+ * to mean if it is to be worth a pick.
+ */
+export function tideAt(seconds: number, rate = 1): number {
+  const t = (seconds * rate - TIDE.grace) / TIDE.span;
+  return t <= 0 ? 0 : t >= 1 ? 1 : t;
+}
+
+/** The inverse: the voyage clock at which the tide reaches `level`. What the
+ *  HUD counts down to, and what the harness sweeps by. */
+export function tideClock(level: number, rate = 1): number {
+  return (TIDE.grace + Math.max(0, Math.min(1, level)) * TIDE.span) / rate;
+}
+
+/** Which named step of the flood a level is in. */
+export function tideStageOf(level: number): number {
+  let stage = 0;
+  for (let i = 1; i < TIDE_STAGE_AT.length; i++) if (level >= TIDE_STAGE_AT[i]) stage = i;
+  return stage;
+}
+
+/**
+ * Everything the HUD needs to draw the tide, off one voyage.
+ *
+ * Exported and shaped for the presentation layer on purpose: a rising threat the
+ * player cannot see is a difficulty knob, and SEA_PLAY.md is explicit that this
+ * has to be legible. `level` is the bar, `stage` is the pips, `toNext` is the
+ * countdown, and the three multipliers are what the sea is actually doing —
+ * printable, so the player can be told rather than surprised.
+ */
+export interface TideRead {
+  /** 0 at slack water, 1 at full flood. */
+  level: number;
+  /** Index into TIDE_STAGES. */
+  stage: number;
+  stageId: TideStage;
+  /** Seconds of voyage until the next stage; 0 once the tide is in. */
+  toNext: number;
+  /** Multiplier on how many the sea posts. */
+  spawns: number;
+  /** Multiplier on the hp and the bite of what it posts from here on. */
+  toughness: number;
+  /** 0 to 1: how much nearer than the horizon the swell is surfacing. */
+  closeness: number;
+}
+
+export function readTide(v: Voyage): TideRead {
+  const level = v.tide;
+  const stage = tideStageOf(level);
+  const rate = v.loadout.tideRate;
+  const next = stage + 1 < TIDE_STAGE_AT.length
+    ? Math.max(0, tideClock(TIDE_STAGE_AT[stage + 1], rate) - v.atSea)
+    : 0;
+  return {
+    level,
+    stage,
+    stageId: TIDE_STAGES[stage],
+    toNext: next,
+    spawns: 1 + level * TIDE.spawnPerLevel,
+    toughness: 1 + level * TIDE.toughPerLevel,
+    closeness: level,
+  };
+}
+
 /** A cell's own stream. Forked from the seed and the coordinates, so two cells
  *  never share rolls and a cell answers the same way however you reach it. */
 function cellRng(seed: string, cx: number, cy: number, salt: string): Rng {
@@ -308,8 +404,20 @@ export interface Mob {
   homeY: number;
   /** Set for a lair guardian, which must not be kited off its site. */
   tether: number;
-  /** The cell that produced it, so it is spawned exactly once per visit. */
+  /** The cell that produced it, so it is spawned exactly once per visit.
+   *  A swell mob belongs to no cell and carries `swell:<n>` instead. */
   cell: string;
+  /**
+   * The tide multiplier this creature was born under, absent below 1.
+   *
+   * BAKED IN AT BIRTH rather than read live, and that is the design and not an
+   * optimisation: what is already on the water stays what it was, and the
+   * frightening thing about a rising tide is what it BRINGS. A player who
+   * cleared a nest at slack water does not watch it grow teeth behind them.
+   */
+  tough?: number;
+  /** Seconds of Palanqueta left on it — see `Loadout.chainSlow`. */
+  slow?: number;
 
   // --- the boss's own machinery, absent on everything that is not one -------
   /** A strike being telegraphed: where the tentacles will fall, and when.
@@ -323,14 +431,31 @@ export interface Mob {
   frenzied?: boolean;
 }
 
-/** What patrols a cell, deterministically. */
-export function mobsAt(seed: string, cx: number, cy: number, nextId: number): Mob[] {
+/**
+ * What patrols a cell, deterministically.
+ *
+ * `tide` is the voyage clock's hand on this cell, and it MULTIPLIES what the
+ * ring was already going to post — more of them, tougher, and posted tighter to
+ * the thing they are guarding. At tide 0 every draw below happens in the same
+ * order with the same arguments as it did before the tide existed, so the sea a
+ * first voyage sails is the sea the fleet table measured; `toward` is the ship,
+ * used only to decide which HALF of an open-water cell the loners are standing
+ * in, so a late arrival is met rather than found.
+ */
+export function mobsAt(
+  seed: string, cx: number, cy: number, nextId: number,
+  flood: { tide?: number; toward?: Vec2 } = {}
+): Mob[] {
   const ring = ringOf(cx, cy);
   if (ring === 0) return [];
+  const tide = Math.max(0, Math.min(1, flood.tide ?? 0));
   const site = siteAt(seed, cx, cy);
   const rng = cellRng(seed, cx, cy, 'mobs');
 
-  // A lair is a boss and its escort, and nothing else in the cell matters.
+  // A lair is a boss and its escort, and nothing else in the cell matters. The
+  // squid is the one thing the tide does not touch: its whole fight is a
+  // telegraphed cast and a health bar the HUD draws in pips, and moving either
+  // would make the boss a different boss depending on when you found it.
   if (site?.kind === 'lair') {
     const boss = makeMob('squid', site.x, site.y, site.x, site.y, nextId, `${cx}:${cy}`, rng);
     boss.tether = site.radius + 26;
@@ -356,9 +481,17 @@ export function mobsAt(seed: string, cx: number, cy: number, nextId: number): Mo
   //
   // So: patrols belong to sites, open water gets the occasional loner, and the
   // deep sea is dangerous because of WHAT is there rather than how much.
-  const count = guarded
+  //
+  // THE TIDE IS A COEFFICIENT ON THAT BUDGET, not a second budget. It raises
+  // the odds that empty water carries a loner at all and then multiplies
+  // whatever the ring drew — so the shape of the sea is still the ring's, and
+  // what late means is MORE OF IT. Neither line consumes an extra draw, which
+  // is what keeps a tide-0 cell identical to the cell that shipped.
+  const openChance = PATROL_OPEN * (1 + tide * TIDE.openPerLevel);
+  const drawn = guarded
     ? rng.int(band[0], band[1])
-    : rng.chance(PATROL_OPEN) ? rng.int(1, Math.max(1, band[0])) : 0;
+    : rng.chance(openChance) ? rng.int(1, Math.max(1, band[0])) : 0;
+  const count = Math.round(drawn * (1 + tide * TIDE.spawnPerLevel));
 
   // Guards stand on the treasure. Anchoring a patrol anywhere in its cell made
   // the two halves of the game independent: the loot was over there, the
@@ -367,15 +500,40 @@ export function mobsAt(seed: string, cx: number, cy: number, nextId: number): Mo
   // doing less damage than the scenery. A patrol ringed round the thing it is
   // guarding is also the readable version — you can SEE what taking that islet
   // is going to cost before you commit to it.
+  //
+  // AND THE TIDE PUTS THEM CLOSER. Two different meanings of closer, one for
+  // each kind of anchor. A guard's post shrinks toward the shore it is standing
+  // on, so at the flood the ring of teeth is inside the water the ship has to
+  // enter to take the site and cannot be skirted at all. An open-water loner is
+  // dragged toward the ship's own side of its cell — the sea meeting a late
+  // arrival rather than being found by it. Neither uses a draw.
+  const half = SEA_CELL / 2;
+  const pull = tide * half;
+  /** The anchor's offset inside its own cell, leaned toward the ship and then
+   *  held inside the cell — a loner never wanders into the next square. */
+  const lean = (drift: number, centre: number, ship: number | undefined): number =>
+    ship === undefined ? drift
+      : Math.max(-half, Math.min(half, drift + Math.sign(ship - (centre + drift)) * pull));
+
   const out: Mob[] = [];
   for (let i = 0; i < count; i++) {
     const bearing = rng.range(-Math.PI, Math.PI);
-    const post = guarded ? guarded.radius + rng.range(PATROL_POST[0], PATROL_POST[1]) : 0;
+    const reachOut = rng.range(PATROL_POST[0], PATROL_POST[1]) * (1 - tide * TIDE.postShrink);
+    const post = guarded ? guarded.radius + reachOut : 0;
+    const driftX = rng.range(-half, half);
+    const driftY = rng.range(-half, half);
     const hx = guarded ? guarded.x + Math.cos(bearing) * post
-      : cx * SEA_CELL + rng.range(-SEA_CELL / 2, SEA_CELL / 2);
+      : cx * SEA_CELL + lean(driftX, cx * SEA_CELL, flood.toward?.x);
     const hy = guarded ? guarded.y + Math.sin(bearing) * post
-      : cy * SEA_CELL + rng.range(-SEA_CELL / 2, SEA_CELL / 2);
+      : cy * SEA_CELL + lean(driftY, cy * SEA_CELL, flood.toward?.y);
     const mob = makeMob(rng.pick(pool), hx, hy, hx, hy, nextId + i, `${cx}:${cy}`, rng);
+    // What the ring drew, made worse by when it was drawn. Hp is set here so it
+    // is a real number on a real creature the guns have to chew through; the
+    // multiplier rides along so the bite can be scaled by the same figure.
+    if (tide > 0) {
+      mob.tough = 1 + tide * TIDE.toughPerLevel;
+      mob.hp = Math.round(MOBS[mob.kind].hp * mob.tough);
+    }
     // Everything in the sea belongs to a patch of it.
     //
     // A guard stays with what it is guarding on a short leash: it will run a
@@ -455,6 +613,105 @@ export const SHIPS: Record<string, ShipSpec> = {
 
 /** Seconds of not being touched before the crew can start patching. */
 const CALM: number = SEA.ships.calm;
+
+// ---------------------------------------------------------------------------
+// WEIGHT, and PERTRECHOS: the two things that change what a hull is, mid-voyage
+//
+// One helper answers both, because there is exactly one place in this file that
+// should be allowed to say what the ship's numbers ARE right now, and everything
+// downstream — the helm, the guns, the renderer's arc, the HUD's speed readout —
+// has to be reading the same answer or they will disagree on screen.
+
+const WEIGHT = SEA.weight;
+const GEAR = SEA.loadout;
+
+/**
+ * THE PERTRECHOS SEAM. SEA_PLAY.md item 3, from this side of it.
+ *
+ * A flat bag of named coefficients on the ship the sim already simulates. The
+ * pool, the thresholds and the one-of-three offer are another module's job and
+ * are deliberately not here; what is here is the CONTRACT — fill a field, and
+ * the simulation below already reads it, every step, with no further wiring.
+ *
+ * Neutral is the identity: `NEUTRAL_LOADOUT` reproduces the shipped ship
+ * exactly, and the suite asserts that a voyage with an empty loadout replays
+ * step for step against one with none at all. Multipliers COMPOSE by
+ * multiplication, so two picks of the same pertrecho stack without any of this
+ * needing to know that two were picked.
+ */
+export interface Loadout {
+  /** Multiplier on the reload. BELOW 1 is faster — Brigada de artilleros. */
+  reload: number;
+  /** Multiplier on gun range, both sides — Pólvora fina. */
+  range: number;
+  /** Multiplier on the half-angle of the firing arc off each beam. */
+  arc: number;
+  /** Multiplier on top speed, applied after the hold's weight — Fondo de cobre. */
+  speed: number;
+  /** Multiplier on the helm's rate, applied after the hold's weight. */
+  turn: number;
+  /** Multiplier on how fast the tide makes. BELOW 1 is a slower tide —
+   *  Contramaestre. It scales the whole clock, `tide.grace` included. */
+  tideRate: number;
+  /** 0 to 1: the fraction of its speed a ball takes off what it hits, for
+   *  `loadout.chain.seconds` — Palanqueta. 0 is no chain shot at all. */
+  chainSlow: number;
+  /** The broadside fires a fan instead of a ball — Metralla. More of them,
+   *  each for less; see `sea.loadout.spread` for the trade. */
+  spread: boolean;
+  /** 0 to 1: added to the share of the hold that survives a sinking, capped by
+   *  `sea.loadout.guardMax` — Bodega falsa. */
+  holdGuard: number;
+}
+
+/** The identity element. An empty loadout changes NOTHING, which is the
+ *  property that lets this land before the module that fills it. */
+export const NEUTRAL_LOADOUT: Loadout = {
+  reload: 1, range: 1, arc: 1, speed: 1, turn: 1, tideRate: 1,
+  chainSlow: 0, spread: false, holdGuard: 0,
+};
+
+/** A loadout with any subset of the fields set, defaulted to neutral. What the
+ *  pertrechos module hands in, and the one place a partial becomes whole. */
+export function loadoutOf(partial: Partial<Loadout> = {}): Loadout {
+  return { ...NEUTRAL_LOADOUT, ...partial };
+}
+
+/** How full the hold is, 0 to 1. The one input the weight rule has. */
+export function holdLoad(v: Voyage): number {
+  const spec = SHIPS[v.shipType];
+  return Math.max(0, Math.min(1, holdUsed(v) / spec.hold));
+}
+
+/**
+ * THE SHIP AS SHE IS RIGHT NOW: her rating, her cargo and her pertrechos.
+ *
+ * Exported because the render layer draws the firing arc and the HUD prints the
+ * speed, and a ship that handles one way and is drawn another is worse than no
+ * feedback at all. Everything the hold and the loadout can move is moved here
+ * and nowhere else.
+ *
+ * What is NOT moved: hull, hold, radius, damage, repair and rated. Those are
+ * what the hull IS — the shipyard sold them, the end card reports them, and a
+ * cargo that changed the size of the hold it is sitting in would be a joke.
+ */
+export function effectiveShip(v: Voyage): ShipSpec {
+  const spec = SHIPS[v.shipType];
+  const load = holdLoad(v);
+  const gear = v.loadout;
+  return {
+    ...spec,
+    speed: spec.speed * (1 - load * WEIGHT.speed) * gear.speed,
+    turn: spec.turn * (1 - load * WEIGHT.turn) * gear.turn,
+    accel: spec.accel * (1 - load * WEIGHT.accel),
+    // Drag goes the other way: a laden hull gives up MORE way through a hard
+    // turn, which is what makes a full hold feel like a full hold on the stick.
+    turnDrag: Math.min(0.9, spec.turnDrag * (1 + load * WEIGHT.drag)),
+    reload: spec.reload * gear.reload,
+    range: spec.range * gear.range,
+    arc: spec.arc * gear.arc,
+  };
+}
 
 /**
  * How close to the origin, in cells, counts as being back in the harbour.
@@ -685,6 +942,33 @@ export interface Voyage {
    * re-lectured about water it has already been told about.
    */
   warnedRing: number;
+
+  // --- LA MAREA. The voyage's own clock, and what the sea does with it. -----
+  /**
+   * Seconds since ¡Zarpar!, accumulated a step at a time.
+   *
+   * `step` counts steps and is the determinism ledger; this is the number a
+   * PERSON is in, and it is separate because `dt` is an argument. A voyage that
+   * has ended stops adding to it, like everything else here.
+   */
+  atSea: number;
+  /** The tide, 0 to 1 — `tideAt(atSea, loadout.tideRate)`, kept on the voyage
+   *  so the HUD can draw it without recomputing the rule. */
+  tide: number;
+  /** The last stage the voyage was TOLD about. The same latch `warnedRing` is:
+   *  one 'tide-turn' per crossing, and the tide only ever makes. */
+  tideStage: number;
+  /** How many swells the sea has already sent. The swell's own clock, and the
+   *  index its seeded stream is forked on, so a replay sends the same ones. */
+  swells: number;
+
+  /**
+   * The pertrechos in the hold, as coefficients — see `Loadout`.
+   *
+   * Owned by another module and read by this one. Neutral by default, which is
+   * why this landed before that module exists.
+   */
+  loadout: Loadout;
 }
 
 export type SeaEvent =
@@ -711,6 +995,17 @@ export type SeaEvent =
    *  starter hull. Once per crossing, deterministic, and only ever deeper:
    *  the presentation layer draws it, the player still chooses. */
   | { kind: 'zone-warning'; ring: number; rated: number }
+  // --- the tide. The voyage's arc, said out loud. --------------------------
+  /** The tide has made into a new stage. Once per crossing, deterministic, and
+   *  only ever upward — the same latch the zone warning uses, for the same
+   *  reason. `level` is 0..1 and `stage` indexes TIDE_STAGES; the presentation
+   *  layer names it and the player decides whether to stay. */
+  | { kind: 'tide-turn'; stage: number; stageId: TideStage; level: number }
+  /** The sea has put something on the water near the ship, because it is late
+   *  rather than because the ship went anywhere. `count` surfaced at (x, y);
+   *  the renderer owes this a boil of foam, because a threat that simply
+   *  appears is a threat the player was not warned about. */
+  | { kind: 'swell'; x: number; y: number; count: number; level: number }
   // --- the boss's beats. Every one is a picture the scene owes the player. --
   /** Tentacles rise: the strike circles are on the water, and there are
    *  `seconds` left to not be inside one. */
@@ -732,7 +1027,8 @@ export type SeaEvent =
   | { kind: 'boarding-broken'; siteId: string };
 
 export function startVoyage(
-  seed: string, shipType = 'skiff', opts: { deepChest?: boolean } = {}
+  seed: string, shipType = 'skiff',
+  opts: { deepChest?: boolean; loadout?: Partial<Loadout> } = {}
 ): Voyage {
   const spec = SHIPS[shipType];
   return {
@@ -746,6 +1042,8 @@ export function startVoyage(
     deepChest: opts.deepChest ?? true,
     boarding: null,
     warnedRing: 0,
+    atSea: 0, tide: 0, tideStage: 0, swells: 0,
+    loadout: loadoutOf(opts.loadout),
   };
 }
 
@@ -990,7 +1288,29 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
   if (v.sunk || v.home || v.abandoned) return { voyage: v, events };
 
   v.step += 1;
-  const spec = SHIPS[v.shipType];
+  // THE HULL AS SHE IS, not as the shipyard sold her: what the hold weighs and
+  // what the pertrechos changed are already in these numbers. One read, at the
+  // top, so nothing below can be sailing a different ship from the guns.
+  //
+  // `rated`, `hull`, `hold` and `radius` are the same either way, so the few
+  // places that only want the rating (the zone warning, the boss's own reach)
+  // are free to keep asking SHIPS directly.
+  const spec = effectiveShip(v);
+
+  // --- the tide ------------------------------------------------------------
+  // SEA_PLAY.md item 1: the voyage's arc, and the only pressure in this file
+  // that is not a distance. It is read before anything spawns, because what the
+  // tide is at this instant is what the sea hands over at this instant.
+  v.atSea += dt;
+  v.tide = tideAt(v.atSea, v.loadout.tideRate);
+  const stage = tideStageOf(v.tide);
+  if (stage > v.tideStage) {
+    // Latched like the zone warning, and for the same reason: this is a thing
+    // said once, at a crossing, about water the player can still choose to
+    // leave. The tide never ebbs inside a voyage, so it can never un-say it.
+    v.tideStage = stage;
+    events.push({ kind: 'tide-turn', stage, stageId: TIDE_STAGES[stage], level: v.tide });
+  }
 
   // --- the ship ------------------------------------------------------------
   // Turning scales with speed. A ship dead in the water does not pivot, and
@@ -1145,16 +1465,76 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
       if (v.seen.includes(key)) continue;
       if (Math.hypot(cx * SEA_CELL - v.x, cy * SEA_CELL - v.y) > SEA_RANGE) continue;
       v.seen.push(key);
-      const born = mobsAt(v.seed, cx, cy, v.nextId);
+      // The tide is handed to the cell, not applied after it: how many it
+      // posts, how tough they are and which half of it they are standing in are
+      // all the cell's own answer, asked at the hour the ship arrived.
+      const born = mobsAt(v.seed, cx, cy, v.nextId, { tide: v.tide, toward: { x: v.x, y: v.y } });
       v.nextId += born.length;
       v.mobs.push(...born);
     }
+  }
+
+  // --- the swell -----------------------------------------------------------
+  // WHAT MAKES THE CLOCK BITE WHEN THE SHIP IS NOT MOVING.
+  //
+  // A cell hands over its patrol exactly once per voyage, which is the rule
+  // that stops a player farming one square by driving in and out of it — and it
+  // would also have made the tide a tax on EXPLORING rather than on STAYING.
+  // Park in swept water and no cell has anything left to give, so a rising tide
+  // that only multiplies spawns is a rising tide a player can wait out by
+  // stopping. That is the opposite of an arc.
+  //
+  // So the sea itself puts things on the water: on its own clock, faster and
+  // closer and in greater numbers the higher the tide, drawn from the pool of
+  // the ring the ship is standing in — the tide MULTIPLIES the ring here too,
+  // it does not overrule it, and ring 1 stays a ring-1 problem however late it
+  // gets. Never in home water, because the harbour is the one place a voyage
+  // can always end. Never past `maxLive`, which is the same readability budget
+  // `patrols` is written against: a fight nobody can count is weather.
+  const flood = v.tide;
+  if (flood > 0 && !v.sunk) {
+    const every = SWELL.every[0] + (SWELL.every[1] - SWELL.every[0]) * flood;
+    const due = Math.floor(v.atSea / every);
+    const here = ringOf(Math.round(v.x / SEA_CELL), Math.round(v.y / SEA_CELL));
+    if (due > v.swells && here > 0 && v.mobs.length < SWELL.maxLive) {
+      const rng = new Rng(`${v.seed}:swell:${due}`);
+      const pool = byRing(PATROL_POOLS, here) as readonly MobKind[];
+      const wanted = Math.round(SWELL.count[0] + (SWELL.count[1] - SWELL.count[0]) * flood);
+      const reach = SEA_RANGE * (SWELL.range[0] + (SWELL.range[1] - SWELL.range[0]) * flood);
+      const bearing = rng.range(-Math.PI, Math.PI);
+      const sx = v.x + Math.cos(bearing) * reach;
+      const sy = v.y + Math.sin(bearing) * reach;
+      const count = Math.min(wanted, SWELL.maxLive - v.mobs.length);
+      for (let i = 0; i < count; i++) {
+        const spread = rng.range(-8, 8);
+        const x = sx + Math.cos(bearing + Math.PI / 2) * spread;
+        const y = sy + Math.sin(bearing + Math.PI / 2) * spread;
+        const mob = makeMob(rng.pick(pool), x, y, x, y, v.nextId + i, `swell:${due}`, rng);
+        mob.tether = PATROL_ROAM;
+        mob.tough = 1 + flood * TIDE.toughPerLevel;
+        mob.hp = Math.round(MOBS[mob.kind].hp * mob.tough);
+        v.mobs.push(mob);
+      }
+      v.nextId += count;
+      events.push({ kind: 'swell', x: sx, y: sy, count, level: flood });
+    }
+    // Counted whether or not anything surfaced, so a crowded sea skips its turn
+    // rather than saving it up and emptying the whole tide at once the moment
+    // the guns clear a space.
+    if (due > v.swells) v.swells = due;
   }
 
   // --- mobs ----------------------------------------------------------------
   for (const mob of v.mobs) {
     const ms = MOBS[mob.kind];
     mob.cooldown = Math.max(0, mob.cooldown - dt);
+    // Palanqueta, running out. The DEPTH of the slow is read live off the
+    // loadout rather than stored on the creature, so a second chain pertrecho
+    // taken mid-voyage deepens what is already in the water instead of waiting
+    // for the next volley — and a voyage with no chain shot at all reads a 0
+    // here and does exactly what it always did.
+    if (mob.slow) mob.slow = Math.max(0, mob.slow - dt);
+    const chained = mob.slow ? 1 - v.loadout.chainSlow : 1;
 
     const toShipX = v.x - mob.x;
     const toShipY = v.y - mob.y;
@@ -1201,14 +1581,18 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
     const closing = mob.state === 'attack'
       ? (distance < keep ? -0.6 : 0.15)
       : mob.state === 'chase' ? 1 : 0.45;
-    mob.x += Math.cos(mob.heading) * ms.speed * closing * dt;
-    mob.y += Math.sin(mob.heading) * ms.speed * closing * dt;
+    mob.x += Math.cos(mob.heading) * ms.speed * chained * closing * dt;
+    mob.y += Math.sin(mob.heading) * ms.speed * chained * closing * dt;
 
     if (mob.state === 'attack' && mob.cooldown <= 0 && distance <= ms.reach) {
       mob.cooldown = ms.cadence;
-      v.hull -= ms.damage;
+      // The tide it was born under, on the bite as well as on the hp — so a
+      // late creature is not merely a longer job, it is a worse trade. Rounded,
+      // because a hull bar in fractions is a hull bar nobody can read.
+      const bite = Math.round(ms.damage * (mob.tough ?? 1));
+      v.hull -= bite;
       v.sinceHit = 0;
-      events.push({ kind: 'hit', x: v.x, y: v.y, damage: ms.damage, target: 'ship', by: 'mob' });
+      events.push({ kind: 'hit', x: v.x, y: v.y, damage: bite, target: 'ship', by: 'mob' });
     }
   }
 
@@ -1249,15 +1633,27 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
 
     if (side === 'port') v.reloadPort = spec.reload;
     else v.reloadStarboard = spec.reload;
-    v.shots.push({
-      id: v.nextId++,
-      x: v.x, y: v.y,
-      vx: Math.cos(shotHeading) * 70,
-      vy: Math.sin(shotHeading) * 70,
-      life: spec.range / 70 + 0.2,
-      damage: spec.damage,
-      from: 'ship',
-    });
+
+    // METRALLA, and it is a trade rather than an upgrade: the same broadside
+    // leaves the ship as a fan of balls, each for a fraction of the ball it
+    // replaced. Against a crowd on the beam every one of them finds something
+    // and the volley is worth more than it was; against a boss, one connects
+    // and it is worth less. Off, this is one ball at full damage — the
+    // arithmetic below reduces to exactly the line it replaced.
+    const balls = v.loadout.spread ? GEAR.spread.shots : 1;
+    const each = v.loadout.spread ? spec.damage * GEAR.spread.damage : spec.damage;
+    for (let i = 0; i < balls; i++) {
+      const fan = balls === 1 ? 0 : (i - (balls - 1) / 2) * GEAR.spread.arc;
+      v.shots.push({
+        id: v.nextId++,
+        x: v.x, y: v.y,
+        vx: Math.cos(shotHeading + fan) * 70,
+        vy: Math.sin(shotHeading + fan) * 70,
+        life: spec.range / 70 + 0.2,
+        damage: each,
+        from: 'ship',
+      });
+    }
     events.push({ kind: 'fired', side, x: v.x, y: v.y });
   }
 
@@ -1276,6 +1672,9 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
         if (mob.hp <= 0 || mob.dive) continue;
         if (Math.hypot(mob.x - shot.x, mob.y - shot.y) > MOBS[mob.kind].radius + 1.2) continue;
         mob.hp -= shot.damage;
+        // Palanqueta. A ball that connects leaves the thing it hit dragging,
+        // which is the pertrecho that answers a chase rather than a swarm.
+        if (v.loadout.chainSlow > 0) mob.slow = GEAR.chain.seconds;
         events.push({ kind: 'hit', x: shot.x, y: shot.y, damage: shot.damage, target: 'mob', by: 'cannon' });
         struck = true;
         break;
@@ -1289,7 +1688,12 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
   const alive: Mob[] = [];
   for (const mob of v.mobs) {
     if (mob.hp <= 0) {
-      const [cx, cy] = mob.cell.split(':').map(Number);
+      // Where it came from, in cells — except that a swell belongs to no cell
+      // (its key is `swell:<n>`), so the water it DIED in is the honest answer
+      // and it is the same answer for everything that has a cell of its own.
+      const [cx, cy] = mob.cell.startsWith('swell:')
+        ? [Math.round(mob.x / SEA_CELL), Math.round(mob.y / SEA_CELL)]
+        : mob.cell.split(':').map(Number);
       // Sinking something pays. It did not, and that was a hole under the whole
       // combat system: the guns are automatic, so the only reason to turn a
       // beam onto anything was to stop it biting you — and running was always
@@ -1348,8 +1752,14 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
     // repair and the reason sinking costs something beyond the hold's fraction
     // even when the fraction is small. Order matters and this is it — halve,
     // carry home, pay the carpenter out of what landed.
+    //
+    // BODEGA FALSA raises the half and nothing else — see `Loadout.holdGuard`.
+    // Capped below 1 on purpose: the landfall promise this file makes is that
+    // drowning is never better than quitting in the same water, and that holds
+    // for any guarded share strictly under 1 however many are stacked.
     const share = landfallShare(v.x, v.y);
-    const { kept, lost } = keepShare(v.cargo, SUNK_SHARE * share);
+    const saved = Math.min(GEAR.guardMax, SUNK_SHARE + v.loadout.holdGuard);
+    const { kept, lost } = keepShare(v.cargo, saved * share);
     v.cargo = kept;
     const careen = share < 1 ? chargeBill(v.cargo, careenBill(v.shipType)) : {};
     v.careened = Object.values(careen).reduce((a: number, b) => a + (b ?? 0), 0);

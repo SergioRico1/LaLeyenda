@@ -35,7 +35,9 @@ const result = await build({
 mkdirSync(path.dirname(outFile), { recursive: true });
 writeFileSync(outFile, result.outputFiles[0].text);
 
-const { SWEEP, playFleet, summarise, straightOut, timeToKill, breakOff } = await import(pathToFileURL(outFile).href);
+const {
+  SWEEP, playFleet, summarise, straightOut, timeToKill, breakOff, tideSweep, weightRun,
+} = await import(pathToFileURL(outFile).href);
 
 const runs = Number(process.argv[2] ?? 200);
 
@@ -77,6 +79,57 @@ table(rows, [
   { head: 'daño bicho', cell: (r) => Math.round(r.mobDamage) },
   { head: 'daño roca', cell: (r) => Math.round(r.reefDamage) },
 ]);
+
+/* ---------------------------------------------------------------------------
+ * LA MAREA — SEA_PLAY.md item 1, as a curve rather than as a claim.
+ *
+ * One ring, one pilot, one set of seeds. The only thing that moves down a
+ * column is how long the ship stays out before turning for home, so `vuelve`
+ * falling down the column IS the tide — except that staying out longer costs
+ * something in any sea, which is why `sin marea` runs the identical fleet with
+ * the tide switched off through the loadout (`tideRate: 0`). The gap between
+ * the two survival columns is the part the tide is responsible for.
+ */
+console.log(`\n${BOLD}La marea sube${OFF} ${DIM}— el mismo viaje, quedándose fuera más tiempo · «sin marea» es el mismo mar con el reloj parado${OFF}\n`);
+
+const LOITERS = [0, 60, 120, 180, 240];
+for (const [ring, skill] of [[1, 'novato'], [4, 'novato'], [4, 'veterano']]) {
+  console.log(`  ${DIM}anillo ${ring} · ${skill}${OFF}`);
+  table(tideSweep(runs, ring, skill, LOITERS), [
+    { head: 'fuera', cell: (r) => `${r.loiter}s` },
+    { head: 'marea', cell: (r) => r.tide.toFixed(2) },
+    { head: 'oleadas', cell: (r) => r.swells.toFixed(1) },
+    { head: 'vuelve', cell: (r) => pct(r.survived) },
+    { head: 'sin marea', cell: (r) => pct(r.flat) },
+    { head: 'diferencia', cell: (r) => `${((r.survived - r.flat) * 100).toFixed(0)}pp` },
+    { head: 't.viaje', cell: (r) => secs(r.seconds) },
+    { head: 'casco', cell: (r) => pct(r.hull) },
+    { head: 'carga', cell: (r) => Math.round(r.cargo) },
+    { head: 'bajas', cell: (r) => r.kills.toFixed(1) },
+  ]);
+  console.log('');
+}
+
+/* ---------------------------------------------------------------------------
+ * EL PESO — SEA_PLAY.md item 2. The same escape, run twice on the same seeds
+ * from the same water with the same hull: hold empty against hold full.
+ */
+console.log(`${BOLD}Volver a casa con la bodega llena o vacía${OFF} ${DIM}— mismas semillas, mismo casco, misma agua${OFF}\n`);
+
+table(
+  [[3, 1], [4, 1], [4, 0.4], [5, 0.4]].map(([ring, hull]) => weightRun(runs, ring, hull)),
+  [
+    { head: 'anillo', cell: (r) => r.ring },
+    { head: 'casco', cell: (r) => pct(r.hull) },
+    { head: 'vacía: llega', cell: (r) => pct(r.emptyHome) },
+    { head: 'vacía: seg', cell: (r) => r.emptySeconds.toFixed(1) },
+    { head: 'vacía: casco', cell: (r) => pct(r.emptyHull) },
+    { head: 'llena: llega', cell: (r) => pct(r.fullHome) },
+    { head: 'llena: seg', cell: (r) => r.fullSeconds.toFixed(1) },
+    { head: 'llena: casco', cell: (r) => pct(r.fullHull) },
+    { head: 'coste', cell: (r) => `+${(r.fullSeconds - r.emptySeconds).toFixed(1)}s` },
+  ]
+);
 
 console.log(`\n${BOLD}Todo a estribor y a ver qué pasa${OFF} ${DIM}— acelerador abierto, timón fijo, sin tocar nada${OFF}\n`);
 

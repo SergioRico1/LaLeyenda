@@ -4,10 +4,16 @@ import {
 } from '../../src/core/save';
 import { HOUR, MINUTE, startUpgrade, tick, type GameState } from '../../src/sim';
 import cssModule from '../../src/ui/panels/settings.css';
+import hudCssModule from '../../src/ui/hud.css';
+import buttonCssModule from '../../src/ui/components/button.css';
 import { describe, eq, ok, test } from './harness';
 import { T0, find, rich } from './fixtures';
 
 const CSS = cssModule as unknown as string;
+/** The other two stylesheets whose CASCADE ORDER is itself the defect — see the
+ *  Recoger Todo case in section 5. */
+const HUD_CSS = hudCssModule as unknown as string;
+const BUTTON_CSS = buttonCssModule as unknown as string;
 
 /**
  * resilience.test.ts — every way this game can meet a real phone and lose.
@@ -447,6 +453,37 @@ describe('a slow device being backgrounded', () => {
  * ======================================================================= */
 
 describe('a tiny screen and a rotated phone', () => {
+  test('Recoger Todo out-specifies .btn for POSITION, or it is not on the screen at all', () => {
+    // Round 15's gate found this by walking the tiny-screen path, and it turned
+    // out not to be about small screens at all.
+    //
+    // `.collect-all` (hud.css) sets `position:absolute`. `.btn`
+    // (components/button.css) sets `position:relative`. Both are (0,1,0) and
+    // button.css is imported LAST, so `.btn` won — and on a relative box
+    // `bottom:159px` does not mean "159px up from the bottom of the screen", it
+    // means "shift 159px up from where you would otherwise sit". Every sibling
+    // in `.hud` is absolute, so the pill's flow position is the TOP of the hud,
+    // and it was drawn at y=-159: entirely off the top edge, at every viewport
+    // measured — 320x568, 360x640, 390x844, 430x932 and all three landscapes.
+    // §3.9's four-bubble shortcut had never once been tappable.
+    //
+    // The neighbouring rule for `transform` documents the same hazard and was
+    // written by someone who knew about it; `position` was the property that
+    // got away. Asserted as a RELATIONSHIP rather than a string match, so it
+    // still holds if either file is reworded.
+    const pos = (css: string, sel: string): string | null => {
+      const block = new RegExp(`${sel}\\s*\\{[^}]*\\}`, 's').exec(css)?.[0];
+      return block ? (/position:\s*([a-z]+)/.exec(block)?.[1] ?? null) : null;
+    };
+    eq(pos(BUTTON_CSS, '\\.btn'), 'relative', 'the trap is still there: .btn positions itself');
+    eq(pos(HUD_CSS, '\\.collect-all\\.btn'), 'absolute',
+      'so hud.css must win it back on a two-class selector — a bare .collect-all cannot');
+    // And the offsets it needs that only mean anything on an absolute box.
+    const base = /\.collect-all\s*\{[^}]*\}/s.exec(HUD_CSS)?.[0] ?? '';
+    ok(/bottom:\s*calc\(/.test(base), 'the pill is still placed off the bottom edge');
+    ok(/left:\s*50%/.test(base), 'and centred in the channel');
+  });
+
   test('the sheet is sized against the viewport, never fixed wider than one', () => {
     ok(/\.settings__sheet\s*\{[^}]*width:\s*min\(/.test(CSS),
       'the sheet takes min(x, 100%) so a 320pt screen cannot be overflowed');

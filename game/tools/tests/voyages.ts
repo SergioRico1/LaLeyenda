@@ -1,6 +1,6 @@
 import {
   MOBS, SEA_CELL, SEA_RANGE, SEA_STEP, SHIPS, holdUsed, ringOf, sitesNear,
-  startVoyage, steer, stepVoyage, type Site, type Voyage,
+  startVoyage, steer, stepVoyage, tideAt, type Loadout, type Site, type Voyage,
 } from '../../src/sim/sea';
 import { Rng } from '../../src/core/rng';
 
@@ -61,6 +61,29 @@ export interface VoyagePlan {
   skill: Skill;
   /** Seconds before the run is abandoned as a timeout. */
   limit?: number;
+  /**
+   * Seconds to STAY OUT working the band before turning for home, whatever the
+   * hold and the quota say.
+   *
+   * The knob that measures LA MAREA. Everything else about a row is held fixed
+   * and only this moves, so the survival column is a function of time at sea and
+   * of nothing else — which is the claim SEA_PLAY.md item 1 makes and the one
+   * `tools/voyages.mjs` has to be able to print rather than assert.
+   *
+   * A loitering pilot does not turn round on a full hold either. That is the
+   * player the tide is for: the one who has what they came for and is still out
+   * there for one more site.
+   */
+  loiter?: number;
+  /**
+   * The pertrechos this fleet sails with — SEA_PLAY.md item 3's seam.
+   *
+   * Undefined is the neutral loadout, which is the shipped ship. Its first use
+   * is as the CONTROL for the tide: a fleet with `{ tideRate: 0 }` is the same
+   * fleet in a sea where the clock does nothing, so the gap between the two
+   * columns is the tide and not the ordinary cost of being out longer.
+   */
+  loadout?: Partial<Loadout>;
 }
 
 export interface VoyageResult {
@@ -80,6 +103,10 @@ export interface VoyageResult {
   distance: number;
   damageFromMobs: number;
   damageFromReefs: number;
+  /** The tide the voyage ended under, 0..1 — SEA_PLAY.md item 1. */
+  tide: number;
+  /** How many times the sea put something on the water beside her. */
+  swells: number;
 }
 
 const TAU = Math.PI * 2;
@@ -124,9 +151,16 @@ function helmFor(v: Voyage, plan: VoyagePlan, pilot: Pilot): { turn: number; thr
   // back", so BOTH halves have to be true before turning round — otherwise a
   // deep plan quietly becomes a shallow one, the quota fills in ring 2 and the
   // row measures water it never sailed in.
+  //
+  // A LOITERING pilot stays out until the clock says otherwise. It is the one
+  // model of a player the sweep did not have and the one SEA_PLAY.md is about:
+  // somebody who has what they came for and takes one more site anyway. Nothing
+  // else about the pilot changes, so a row's survival is a function of `loiter`
+  // and of nothing else.
+  const staying = plan.loiter !== undefined && v.atSea < plan.loiter;
   pilot.reached = Math.max(pilot.reached, ringAt(v));
-  if (pilot.looted >= plan.sites && pilot.reached >= plan.ring) pilot.home = true;
-  if (holdUsed(v) >= spec.hold) pilot.home = true;
+  if (pilot.looted >= plan.sites && pilot.reached >= plan.ring && !staying) pilot.home = true;
+  if (holdUsed(v) >= spec.hold && !staying) pilot.home = true;
   // A novice does not read the hull bar in time. That is the model.
   if (veteran && hullLeft < 0.45) pilot.home = true;
 
@@ -273,7 +307,7 @@ export function playVoyage(seed: string, plan: VoyagePlan): VoyageResult {
     reached: 0,
   };
 
-  let v = startVoyage(seed);
+  let v = startVoyage(seed, 'skiff', { loadout: plan.loadout });
   const limit = plan.limit ?? 240;
   const steps = Math.round(limit / SEA_STEP);
   let kills = 0;
@@ -312,6 +346,8 @@ export function playVoyage(seed: string, plan: VoyagePlan): VoyageResult {
     distance: Math.hypot(v.x, v.y),
     damageFromMobs,
     damageFromReefs,
+    tide: v.tide,
+    swells: v.swells,
   };
 }
 
@@ -349,6 +385,9 @@ export interface FleetSummary {
   mobDamage: number;
   reefDamage: number;
   reefShare: number;
+  /** Mean tide the voyages ended under, and mean swells they were sent. */
+  tide: number;
+  swells: number;
 }
 
 const median = (xs: number[]): number => {
@@ -381,6 +420,8 @@ export function summarise(runs: VoyageResult[]): FleetSummary {
     mobDamage: mobDamage / runs.length,
     reefDamage: reefDamage / runs.length,
     reefShare: mobDamage + reefDamage > 0 ? reefDamage / (mobDamage + reefDamage) : 0,
+    tide: mean(runs.map((r) => r.tide)),
+    swells: mean(runs.map((r) => r.swells)),
   };
 }
 
@@ -425,6 +466,7 @@ export function straightOut(seed: string, seconds: number): VoyageResult {
     seed, outcome, seconds: (taken + 1) * SEA_STEP, hull: v.hull / SHIPS.skiff.hull,
     cargo: holdUsed(v), looted: v.taken.length, kills, reached,
     distance: Math.hypot(v.x, v.y), damageFromMobs, damageFromReefs,
+    tide: v.tide, swells: v.swells,
   };
 }
 
@@ -436,10 +478,21 @@ export function straightOut(seed: string, seconds: number): VoyageResult {
  * for home and run. If this number is low, breaking off is theatre: the hull
  * bar is a countdown that started when the player left the harbour, nothing
  * they do changes the ending, and being sunk is something that happened to them.
+ *
+ * `opts` is what round 16 needed on top of it and nothing more. `load` is how
+ * full the hold is, 0 to 1 — SEA_PLAY.md item 2's whole claim is that running
+ * home rich is a different job from running home empty, and this is the same
+ * ship on the same seeds from the same water with only that changed. `atSea`
+ * puts the voyage clock forward before the run, so the same escape can be
+ * measured at slack water and at the flood. Both default to exactly the run
+ * that was measured before either existed: 400 units of gold and no tide.
  */
-export function breakOff(seed: string, ring: number, hullLeft: number): VoyageResult {
+export function breakOff(
+  seed: string, ring: number, hullLeft: number,
+  opts: { load?: number; atSea?: number; loadout?: Partial<Loadout> } = {}
+): VoyageResult {
   const spec = SHIPS.skiff;
-  let v = startVoyage(seed);
+  let v = startVoyage(seed, 'skiff', { loadout: opts.loadout });
   // Put her out there properly: on a bearing, in the band, and already hurt.
   const rng = new Rng(`${seed}:break`);
   const bearing = rng.range(-Math.PI, Math.PI);
@@ -450,7 +503,11 @@ export function breakOff(seed: string, ring: number, hullLeft: number): VoyageRe
   v.speed = spec.speed;
   v.heading = bearing + Math.PI;
   v.departed = true;
-  v.cargo = { oro: 400 };
+  v.cargo = { oro: Math.round((opts.load ?? 400 / spec.hold) * spec.hold) };
+  // The clock, set before the first step so the water she is running through
+  // was stocked at the hour she is actually running.
+  v.atSea = opts.atSea ?? 0;
+  v.tide = tideAt(v.atSea, v.loadout.tideRate);
   // One step to let every cell in range hand over its patrol, then run.
   v = stepVoyage(steer(v, { turn: 0, throttle: 1 })).voyage;
 
@@ -478,6 +535,93 @@ export function breakOff(seed: string, ring: number, hullLeft: number): VoyageRe
     seed, outcome, seconds: (taken + 1) * SEA_STEP, hull: v.hull / spec.hull,
     cargo: holdUsed(v), looted: 0, kills, reached: ring,
     distance: Math.hypot(v.x, v.y), damageFromMobs, damageFromReefs,
+    tide: v.tide, swells: v.swells,
+  };
+}
+
+/**
+ * THE TIDE, SWEPT. SEA_PLAY.md item 1's proof, and the shape of it.
+ *
+ * The same ring, the same pilot, the same seeds — the only thing that changes
+ * down a column is how long the ship stays out before turning for home. Run
+ * twice, once in the real sea and once with `tideRate: 0`, which is the same
+ * water on the same clock with the tide switched off through the loadout seam.
+ * The control is the honest half of this: staying out longer costs something
+ * even in a sea with no tide (more water crossed, more teeth met), so the only
+ * number that says the tide works is the GAP between the two columns.
+ */
+export interface TideRow {
+  loiter: number;
+  ring: number;
+  skill: Skill;
+  /** With the tide. */
+  survived: number;
+  seconds: number;
+  hull: number;
+  cargo: number;
+  tide: number;
+  swells: number;
+  kills: number;
+  /** The same fleet in a sea whose clock does nothing. */
+  flat: number;
+  flatSeconds: number;
+}
+
+export function tideSweep(
+  runs: number, ring: number, skill: Skill, loiters: readonly number[]
+): TideRow[] {
+  return loiters.map((loiter) => {
+    const base = { ring, skill, sites: Math.min(6, 1 + ring), limit: loiter + 240, loiter };
+    const wet = summarise(playFleet(runs, base, `tide-${skill}-${ring}-${loiter}-`));
+    const dry = summarise(
+      playFleet(runs, { ...base, loadout: { tideRate: 0 } }, `tide-${skill}-${ring}-${loiter}-`)
+    );
+    return {
+      loiter, ring, skill,
+      survived: wet.survived, seconds: wet.timeHome, hull: wet.hullHome,
+      cargo: wet.cargoHome, tide: wet.tide, swells: wet.swells, kills: wet.kills,
+      flat: dry.survived, flatSeconds: dry.timeHome,
+    };
+  });
+}
+
+/**
+ * THE HOLD HAS WEIGHT. SEA_PLAY.md item 2's proof.
+ *
+ * One escape, run twice: identical seeds, identical water, identical hull —
+ * empty hold against full hold. Everything the weight touches shows up in one
+ * of these three columns, and if all three read the same the rule is not in the
+ * game whatever the balance file says.
+ */
+export interface WeightRow {
+  ring: number;
+  hull: number;
+  emptyHome: number;
+  emptySeconds: number;
+  emptyHull: number;
+  fullHome: number;
+  fullSeconds: number;
+  fullHull: number;
+}
+
+export function weightRun(runs: number, ring: number, hullLeft: number): WeightRow {
+  const fleet = (load: number) =>
+    Array.from({ length: runs }, (_, i) => breakOff(`weight-${ring}-${hullLeft}-${i}`, ring, hullLeft, { load }));
+  const empty = fleet(0);
+  const full = fleet(1);
+  const home = (rs: VoyageResult[]) => rs.filter((r) => r.outcome === 'home').length / rs.length;
+  const secs = (rs: VoyageResult[]) => {
+    const got = rs.filter((r) => r.outcome === 'home');
+    return got.length ? got.reduce((a, r) => a + r.seconds, 0) / got.length : 0;
+  };
+  const hull = (rs: VoyageResult[]) => {
+    const got = rs.filter((r) => r.outcome === 'home');
+    return got.length ? got.reduce((a, r) => a + r.hull, 0) / got.length : 0;
+  };
+  return {
+    ring, hull: hullLeft,
+    emptyHome: home(empty), emptySeconds: secs(empty), emptyHull: hull(empty),
+    fullHome: home(full), fullSeconds: secs(full), fullHull: hull(full),
   };
 }
 

@@ -120,6 +120,21 @@
   animation:ui-pop-s 260ms cubic-bezier(.2,1.4,.4,1);
 }
 .collect-all[hidden]{ display:none; }
+/* AND THE POSITION HAS TO BE OUT-SPECIFIED TOO — the same trap as the one
+ * below, one property along, and this one cost the pill its whole existence.
+ *
+ * `.btn` sets `position:relative` (components/button.css). Both selectors are
+ * (0,1,0), `button.css` is imported after this file, so `.btn` won — and on a
+ * RELATIVE box `bottom:159px` does not mean "159px up from the bottom of the
+ * screen", it means "shift 159px up from where you would have sat". The pill
+ * sits at the top of `.hud` in normal flow (every one of its siblings is
+ * absolute, so nothing pushes it down), and it was therefore drawn at
+ * y = -159, entirely off the top edge, at EVERY viewport size measured:
+ * 320x568, 360x640, 390x844, 430x932 and all three landscapes.
+ *
+ * §3.9's shortcut for four or more pending bubbles has never been tappable.
+ * Found by walking the tiny-screen path, but it was never about small screens. */
+.collect-all.btn{ position:absolute; }
 /* Pressing it must still travel, and `transform` is spoken for by the centring.
  * `.btn:active` sets `transform:translateY(4px)`, which REPLACES that centring
  * — so the pill jumped half its own width to the left on every press. The
