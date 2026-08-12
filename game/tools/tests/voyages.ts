@@ -1,5 +1,5 @@
 import {
-  MOBS, SEA_CELL, SEA_RANGE, SEA_STEP, SHIPS, holdUsed, ringOf, sitesNear,
+  MOBS, SEA_CELL, SEA_RANGE, SEA_STEP, SHIPS, SONDEO_TIERS, holdUsed, ringOf, sitesNear,
   startVoyage, steer, stepVoyage, tideAt, type Loadout, type Site, type Voyage,
 } from '../../src/sim/sea';
 import { Rng } from '../../src/core/rng';
@@ -61,6 +61,19 @@ export interface VoyagePlan {
   skill: Skill;
   /** Seconds before the run is abandoned as a timeout. */
   limit?: number;
+  /**
+   * HOW MANY TIERS OF A SONDEO THIS PILOT HOLDS FOR — round 17's decision, as a
+   * dial the harness can sweep.
+   *
+   * A site is no longer taken by touching it: the survey turns its haul up in
+   * tiers and banks whatever is up when the ship breaks off. So "how greedy" is
+   * now a real strategy axis and the model needs it, or every row measures the
+   * single greediest way to play and the table can no longer answer whether the
+   * deep sea is playable at all — only whether STRIPPING it is.
+   *
+   * Defaults to the whole ladder, which is that greediest line.
+   */
+  greed?: number;
   /**
    * Seconds to STAY OUT working the band before turning for home, whatever the
    * hold and the quota say.
@@ -168,6 +181,21 @@ function helmFor(v: Voyage, plan: VoyagePlan, pilot: Pilot): { turn: number; thr
   let throttle = 1;
   let avoidExcept = '';
   const near = sitesNear(v.seed, v.x, v.y, SEA_RANGE);
+
+  // --- breaking off a survey ------------------------------------------------
+  // The round-17 decision, made by a thumb: hold station for `greed` tiers and
+  // then steer away, which is what banks. Everything about this is the helm —
+  // there is no button in the sondeo and the model does not pretend there is.
+  const greed = plan.greed ?? SONDEO_TIERS.length;
+  if (v.sondeo && v.sondeo.tier >= greed) {
+    const post = near.find((s) => s.id === v.sondeo?.siteId);
+    if (post) {
+      return {
+        turn: Math.max(-1, Math.min(1, angleDelta(v.heading, Math.atan2(v.y - post.y, v.x - post.x)) * HELM_GAIN)),
+        throttle: 1,
+      };
+    }
+  }
 
   if (pilot.home) {
     aim = Math.atan2(-v.y, -v.x);

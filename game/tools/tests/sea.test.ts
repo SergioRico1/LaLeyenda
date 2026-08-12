@@ -1,6 +1,6 @@
 import {
   HARBOUR, MOBS, NEUTRAL_LOADOUT, SEA_CELL, SEA_RANGE, SEA_STEP, SHIPS, SHIP_TYPES,
-  TIDE_STAGES, ZAFARRANCHO, abandonVoyageInPlace, bearingHome,
+  SONDEO_TIERS, TIDE_STAGES, TIDE_STAGE_AT, ZAFARRANCHO, abandonVoyageInPlace, bearingHome,
   careenBill, cellsInRing, effectiveShip, holdLoad, holdUsed, landfallShare, loadoutOf,
   mobsAt, previewAbandon,
   canDash, callDash, readDash, readTide, ringOf, siteAt, sitesNear, startVoyage, steer,
@@ -448,7 +448,7 @@ describe('mobs', () => {
 });
 
 describe('loot and the hold', () => {
-  test('sailing over a site takes it, once', () => {
+  test('a site is surveyed, and then it is spent', () => {
     const site = (() => {
       for (let cx = 1; cx <= 6; cx++) {
         for (let cy = -6; cy <= 6; cy++) {
@@ -464,13 +464,21 @@ describe('loot and the hold', () => {
     const v = startVoyage('la-leyenda');
     v.x = site.x;
     v.y = site.y;
-    const first = sail(v, 1, { throttle: 0 });
-    const looted = first.events.filter((e) => e.kind === 'looted');
+    v.departed = true;
+    // Round 17: a site is no longer taken by touching it — the sondeo surveys
+    // it, and the haul lands when the survey ends. Long enough for the whole
+    // ladder, so this is about a site paying ONCE rather than about the beat.
+    const first = sail(v, SONDEO_TIERS[SONDEO_TIERS.length - 1].at + 1, { throttle: 0 });
+    const looted = first.events.filter((e) => e.kind === 'looted' && e.x === site.x);
     eq(looted.length, 1, 'it paid out exactly once');
     ok(holdUsed(first.voyage) > 0, 'and the hold has something in it');
+    ok(first.voyage.taken.includes(site.id), 'and the site is spent');
 
-    const second = sail(first.voyage, 2, { throttle: 0 });
-    eq(second.events.filter((e) => e.kind === 'looted').length, 0, 'and it does not pay again');
+    const second = sail(first.voyage, 4, { throttle: 0 });
+    eq(
+      second.events.filter((e) => e.kind === 'looted' && e.x === site.x).length, 0,
+      'and it does not pay again'
+    );
   });
 
   test('the hold has a bottom, and says so', () => {
@@ -1143,8 +1151,19 @@ describe('finding the way home', () => {
  * lock on today's tuning. `node tools/voyages.mjs` prints the full table.
  */
 describe('somebody has played this', () => {
-  const fleet = (ring: number, skill: 'novato' | 'veterano', runs = 40) =>
-    summarise(playFleet(runs, { ring, skill, sites: Math.min(6, 1 + ring), limit: 240 }, `t-${skill}-${ring}-`));
+  /**
+   * `greed` is round 17's axis: how many tiers of a sondeo this pilot holds for
+   * before steering away and banking. It defaults to the whole ladder, which is
+   * the greediest line there is — and since round 17 that is a STRATEGY rather
+   * than the only way to take a site, so several of the claims below are about
+   * the difference between two of them.
+   */
+  const fleet = (ring: number, skill: 'novato' | 'veterano', greed?: number, runs = 40) =>
+    summarise(playFleet(
+      runs,
+      { ring, skill, sites: Math.min(6, 1 + ring), limit: 240, greed },
+      `t-${skill}-${ring}-${greed ?? 'all'}-`
+    ));
 
   test('a first voyage ends in cargo, not on the bottom', () => {
     const first = fleet(1, 'novato');
@@ -1163,11 +1182,75 @@ describe('somebody has played this', () => {
     const four = fleet(4, 'novato');
     const five = fleet(5, 'novato');
     ok(three.survived >= four.survived, 'ring 4 is never kinder than ring 3');
-    ok(four.survived > five.survived, 'and ring 5 is worse than ring 4');
+    ok(four.survived >= five.survived, 'and ring 5 is never kinder than ring 4');
     ok(five.survived < 0.85, `the far sea is a real gamble (${(five.survived * 100).toFixed(0)}% come back)`);
-    ok(five.survived > 0.2, `but not a foregone conclusion (${(five.survived * 100).toFixed(0)}%)`);
-    ok(four.hullHome < 0.85, 'and you come back from ring 4 knowing you were there');
-    ok(three.hullHome > four.hullHome, 'the hull bar reads the depth you went to');
+    ok(four.hullHome < 0.9, 'and you come back from ring 4 knowing you were there');
+  });
+
+  /**
+   * WHAT ROUND 17 CHANGED, SAID OUT LOUD.
+   *
+   * Before el sondeo a site was taken by touching it, so the far sea was a
+   * gamble anybody could take: a beginner stripping ring 5 came home 57% of the
+   * time. It no longer is. A survey is eight seconds on station per prize, and
+   * six of those at ring 5 is nearly a minute of a starter hull parked in water
+   * it is three zones under-rated for, with the tide making the whole time and
+   * the survey's own noise calling things in.
+   *
+   * That is a deliberate change and it is the better game: the far sea is now a
+   * gamble for A PILOT WHO KNOWS WHAT THEY ARE DOING, which is what the zone
+   * warning has been saying since round 12 and what the shipyard exists to sell
+   * the answer to. What must NOT be true is that it is a wall — that skill and
+   * restraint buy nothing out there — and that is what this measures.
+   */
+  test('the far sea is a gamble for somebody who can sail, not a wall', () => {
+    const salt = fleet(5, 'veterano');
+    ok(salt.survived > 0.2, `a pilot who can sail still gets home from ring 5 (${(salt.survived * 100).toFixed(0)}%)`);
+    ok(salt.survived < 0.85, `and it is still a gamble (${(salt.survived * 100).toFixed(0)}%)`);
+    ok(
+      salt.survived > fleet(5, 'novato').survived,
+      'and out there, unlike the shallows, skill is what survival is made of'
+    );
+  });
+
+  /**
+   * THE DECISION EL SONDEO EXISTS TO POSE, measured.
+   *
+   * SEA_PLAY.md §5: "the question is never 'loot or not' — it is 'is the next
+   * tier worth another twenty seconds', asked again every few seconds." That is
+   * only true if BOTH answers are live: if holding for the last tier were free
+   * the ladder would be a formality, and if it were suicide nobody would ever
+   * climb it. So the trade has to show up as more cargo bought with a worse
+   * return rate, in the same water, on the same seeds.
+   */
+  test('holding for the last tier buys cargo and costs hulls', () => {
+    const skim = fleet(3, 'novato', 1);
+    const strip = fleet(3, 'novato', SONDEO_TIERS.length);
+    ok(
+      strip.cargoHome > skim.cargoHome * 1.4,
+      `stripping a site is worth far more (${strip.cargoHome.toFixed(0)} against ${skim.cargoHome.toFixed(0)})`
+    );
+    ok(
+      skim.survived > strip.survived,
+      `and it is paid for in hulls (${(skim.survived * 100).toFixed(0)}% home against ${(strip.survived * 100).toFixed(0)}%)`
+    );
+    // And the trade is still LIVE in bad water rather than collapsing into one
+    // answer: at ring 4 restraint is worth twenty points of return, which is
+    // what makes it a decision the player re-takes at every site instead of a
+    // habit they formed in the shallows.
+    //
+    // Measured rather than assumed, and it corrected me: I expected the gap to
+    // WIDEN with depth and on these seeds it does not (28pp at ring 3 against
+    // 20pp at ring 4). The reason is that a ring-4 skimmer needs more sites to
+    // fill the same hold, so restraint buys fewer seconds out there than it
+    // does in the shallows — a real property of the design, and not the one I
+    // would have written down.
+    const deepSkim = fleet(4, 'novato', 1);
+    const deepStrip = fleet(4, 'novato', SONDEO_TIERS.length);
+    ok(
+      deepSkim.survived > deepStrip.survived + 0.1,
+      `and in ring 4 water it is worth ${((deepSkim.survived - deepStrip.survived) * 100).toFixed(0)} points of return`
+    );
   });
 
   test('sailing further out pays more', () => {
@@ -1204,9 +1287,17 @@ describe('somebody has played this', () => {
   test('and being reckless is a real answer too, not just a worse one', () => {
     // If the fast, careless line were strictly dominated there would be one way
     // to play. It is not: it is out and back in half the time.
-    const green = fleet(4, 'novato');
-    const salt = fleet(4, 'veterano');
-    ok(green.timeHome < salt.timeHome, 'the reckless line is much the quicker trip');
+    // MEASURED AT RING 2, and the move from ring 4 is a finding rather than a
+    // convenience. Since round 17 the careful line pays better per minute from
+    // ring 3 out — a survey is eight seconds whoever is holding the helm, so the
+    // time a veteran spends standing off is no longer the whole difference
+    // between the two trips, while the hull they save is. Skill dominating in
+    // deep water is the design; what has to stay true is that the fast careless
+    // line is a REAL ANSWER somewhere, and in the water a new player is actually
+    // in, it is.
+    const green = fleet(2, 'novato');
+    const salt = fleet(2, 'veterano');
+    ok(green.timeHome < salt.timeHome, 'the reckless line is the quicker trip');
     ok(green.cargoPerMinute > salt.cargoPerMinute, 'and pays better per minute at sea');
   });
 
@@ -1424,94 +1515,242 @@ describe('the giant squid has a fight', () => {
 });
 
 /**
- * Boarding — the other half of ROADMAP round 10's "a site is taken by sailing
- * over it, which is the placeholder, not the design". Wrecks only: the party
- * rows over, the sea keeps happening, and the loot lands as a burst or not at
- * all. Everything else in the sea still pays on touch.
+ * EL SONDEO — the owner's own idea, SEA_PLAY.md §5, and the round that finally
+ * answers ROADMAP round 10's "a site is taken by sailing over it, which is the
+ * placeholder, not the design".
+ *
+ * Four properties make it a game rather than a timer, and three of them are the
+ * design rather than the feature:
+ *
+ *   PARTIAL EXTRACTION IS ALWAYS ALLOWED. The question is never "loot or not",
+ *     it is "is the next tier worth another few seconds", asked again every few
+ *     seconds. One decision at the start would be a menu.
+ *   THE ATTENTION IS CAUSED, NOT ROLLED. The survey makes noise and the noise
+ *     brings something. A player who dies at 90% must be able to blame
+ *     themselves.
+ *   IT SPENDS THE ROUND'S OWN CURRENCY. Time on station ages the tide faster
+ *     than time sailing, so looting is never free even when nothing comes.
+ *   THE VERB IS THE HELM. There is no button in any of this — staying is
+ *     steering to stay and leaving is steering away.
  */
-describe('boarding a wreck is a beat, not a touch', () => {
-  /** The nearest wreck in a seeded sea, and a voyage parked on it. */
-  function atWreck(seed: string) {
-    let wreck = null as ReturnType<typeof siteAt>;
-    for (let cx = -8; cx <= 8 && !wreck; cx++) {
-      for (let cy = -8; cy <= 8 && !wreck; cy++) {
+describe('el sondeo: the loot is revealed, and only banks when you break off', () => {
+  /** The nearest site of `kind` in a seeded sea, and a voyage parked on it. */
+  function atSite(seed: string, want: (s: NonNullable<ReturnType<typeof siteAt>>) => boolean) {
+    let found = null as ReturnType<typeof siteAt>;
+    for (let cx = -8; cx <= 8 && !found; cx++) {
+      for (let cy = -8; cy <= 8 && !found; cy++) {
         const s = siteAt(seed, cx, cy);
-        if (s?.kind === 'wreck') wreck = s;
+        if (s && want(s)) found = s;
       }
     }
-    ok(wreck !== null, `${seed} has a wreck to board`);
+    ok(found !== null, `${seed} has a site to survey`);
     const v = startVoyage(seed);
-    v.x = wreck!.x;
-    v.y = wreck!.y;
+    v.x = found!.x;
+    v.y = found!.y;
+    v.departed = true;
     for (let cx = -9; cx <= 9; cx++) for (let cy = -9; cy <= 9; cy++) v.seen.push(`${cx}:${cy}`);
-    return { v, wreck: wreck! };
+    return { v, site: found! };
   }
 
-  test('the party rows over, and the loot lands only when they are back', () => {
+  const atWreck = (seed: string) => atSite(seed, (s) => s.kind === 'wreck');
+
+  test('coming inside the reach starts a survey, and nothing is aboard yet', () => {
+    const { v, site } = atWreck('la-leyenda');
+    const first = sail(v, 0.5, { throttle: 0 });
+    const started = first.events.find((e) => e.kind === 'sondeo-started');
+    ok(started?.kind === 'sondeo-started', 'the survey began');
+    eq(started?.kind === 'sondeo-started' && started.site, 'wreck', 'and it knows what it is on');
+    eq(
+      started?.kind === 'sondeo-started' && started.tiers.length, SONDEO_TIERS.length,
+      'and hands over the whole ladder, so the screen can name the next rung'
+    );
+    ok(!first.events.some((e) => e.kind === 'looted'), 'nothing has paid');
+    eq(holdUsed(first.voyage), 0, 'and the hold is empty');
+    ok(first.voyage.sondeo !== null, 'the voyage knows the boats are away');
+    eq(first.voyage.sondeo?.siteId, site.id, 'on this site');
+  });
+
+  test('the tiers come up in order, each worth more than the last', () => {
     const { v } = atWreck('la-leyenda');
-    const first = sail(v, 1, { throttle: 0 });
-    ok(first.events.some((e) => e.kind === 'boarding-started'), 'the party goes over the side');
-    ok(!first.events.some((e) => e.kind === 'looted'), 'and nothing has paid yet');
-    ok(first.voyage.boarding !== null, 'the voyage knows they are away');
-    eq(holdUsed(first.voyage), 0, 'the hold is still empty');
-
-    const done = sail(first.voyage, 5, { throttle: 0 });
-    const looted = done.events.find((e) => e.kind === 'looted');
-    ok(looted?.kind === 'looted' && looted.site === 'wreck', 'they come back with the wreck\'s cargo');
-    ok(holdUsed(done.voyage) > 0, 'which is really in the hold');
-    eq(done.voyage.boarding, null, 'and everyone is back aboard');
+    const out = sail(v, SONDEO_TIERS[SONDEO_TIERS.length - 1].at + 1, { throttle: 0 });
+    const tiers = out.events.filter((e) => e.kind === 'sondeo-tier');
+    eq(tiers.length, SONDEO_TIERS.length, 'every rung of the ladder was climbed');
+    for (let i = 0; i < tiers.length; i++) {
+      const tier = tiers[i];
+      if (tier.kind !== 'sondeo-tier') continue;
+      eq(tier.tier, i + 1, `tier ${i + 1} announced itself in order`);
+      eq(tier.share, SONDEO_TIERS[i].share, 'at the share the table says');
+      const gained = Object.values(tier.gained).reduce((a, b) => a + (b ?? 0), 0);
+      ok(gained > 0, `tier ${i + 1} turned something up`);
+    }
+    // The last rung is worth more than the first: that is where the intriga is.
+    const first = tiers[0];
+    const last = tiers[tiers.length - 1];
+    if (first.kind === 'sondeo-tier' && last.kind === 'sondeo-tier') {
+      const a = Object.values(first.gained).reduce((x, y) => x + (y ?? 0), 0);
+      const b = Object.values(last.gained).reduce((x, y) => x + (y ?? 0), 0);
+      ok(b > a, `the last tier pays ${b} against the first's ${a}`);
+    }
   });
 
-  test('sailing off mid-boarding pays nothing, and coming back starts over', () => {
-    const { v, wreck } = atWreck('la-leyenda');
-    const started = sail(v, 1, { throttle: 0 });
-    ok(started.voyage.boarding !== null, 'the party is away');
+  test('breaking off banks what was turned up, and never more', () => {
+    const { v } = atWreck('la-leyenda');
+    // Long enough for exactly one rung, then away.
+    const early = sail(v, SONDEO_TIERS[0].at + 0.2, { throttle: 0 });
+    eq(early.voyage.sondeo?.tier, 1, 'one tier up');
+    const secured = Object.values(early.voyage.sondeo?.revealed ?? {})
+      .reduce((a, b) => a + (b ?? 0), 0);
+    ok(secured > 0, 'and it is holding something');
 
-    // Open the throttle and leave. The wreck pays nothing.
-    const fled = sail(started.voyage, 3, { throttle: 1 });
-    ok(fled.events.some((e) => e.kind === 'boarding-broken'), 'the party rows back empty');
-    ok(!fled.events.some((e) => e.kind === 'looted'), 'no drive-by looting');
-    eq(holdUsed(fled.voyage), 0, 'the hold says so too');
-
-    // Come round again: the clock starts from zero, and serving it pays.
-    const back = { ...fled.voyage, x: wreck.x, y: wreck.y };
-    const second = sail(back, 1, { throttle: 0 });
-    ok(second.events.some((e) => e.kind === 'boarding-started'), 'a fresh party, a fresh clock');
-    const done = sail(second.voyage, 5, { throttle: 0 });
-    ok(done.events.some((e) => e.kind === 'looted'), 'commitment is what pays');
+    const gone = sail(early.voyage, 4, { throttle: 1 });
+    const ended = gone.events.find((e) => e.kind === 'sondeo-ended');
+    ok(ended?.kind === 'sondeo-ended', 'the survey ended');
+    eq(ended?.kind === 'sondeo-ended' && ended.whole, false, 'and it says it was not finished');
+    const looted = gone.events.find((e) => e.kind === 'looted');
+    ok(looted?.kind === 'looted', 'BAILING PAYS — that is the whole mechanic');
+    eq(holdUsed(gone.voyage), secured, 'exactly what was turned up, and not a unit more');
+    eq(gone.voyage.sondeo, null, 'and the boats are back');
   });
 
-  test('everything that is not a wreck still pays on touch', () => {
-    const islet = (() => {
-      for (let cx = -8; cx <= 8; cx++) {
-        for (let cy = -8; cy <= 8; cy++) {
-          const s = siteAt('la-leyenda', cx, cy);
-          if (s && (s.kind === 'islet' || s.kind === 'harvest')) return s;
-        }
-      }
-      return null;
-    })();
-    ok(islet !== null, 'the sea has something instant to take');
-    const v = startVoyage('la-leyenda');
-    v.x = islet!.x;
-    v.y = islet!.y;
-    for (let cx = -9; cx <= 9; cx++) for (let cy = -9; cy <= 9; cy++) v.seen.push(`${cx}:${cy}`);
-    const { events } = sail(v, 0.5, { throttle: 0 });
-    ok(events.some((e) => e.kind === 'looted'), 'picked clean from the deck, no party, no wait');
+  test('a survey run to the end pays the whole site without sailing away', () => {
+    const { v, site } = atWreck('la-leyenda');
+    const out = sail(v, SONDEO_TIERS[SONDEO_TIERS.length - 1].at + 1, { throttle: 0 });
+    const ended = out.events.find((e) => e.kind === 'sondeo-ended');
+    ok(ended?.kind === 'sondeo-ended' && ended.whole, 'it finished rather than being broken off');
+    const whole = Object.values(site.loot).reduce((a, b) => a + (b ?? 0), 0);
+    // Measured off the 'looted' for THIS site rather than off the hold: a ship
+    // parked where two prizes overlap starts surveying the neighbour the moment
+    // this one ends, and the hold would then be carrying both.
+    const paid = out.events
+      .filter((e) => e.kind === 'looted' && e.x === site.x && e.y === site.y)
+      .reduce((sum, e) => sum + (e.kind === 'looted'
+        ? Object.values(e.loot).reduce((a, b) => a + (b ?? 0), 0) : 0), 0);
+    eq(paid, whole, 'and the last tier pays the site out exactly');
   });
 
-  test('the wait has teeth: the sea keeps biting while the party is away', () => {
+  test('breaking off SPENDS the site: no coming back for the rest', () => {
+    const { v, site } = atWreck('la-leyenda');
+    const early = sail(v, SONDEO_TIERS[0].at + 0.2, { throttle: 0 });
+    const gone = sail(early.voyage, 4, { throttle: 1 });
+    ok(gone.voyage.taken.includes(site.id), 'the site is spent');
+    const banked = holdUsed(gone.voyage);
+
+    // Come round again and park on it. Nothing.
+    const back = sail({ ...gone.voyage, x: site.x, y: site.y }, 3, { throttle: 0 });
+    ok(!back.events.some((e) => e.kind === 'sondeo-started'), 'no second survey');
+    eq(holdUsed(back.voyage), banked, 'and not a unit more in the hold');
+  });
+
+  test('the survey makes NOISE, and the noise is what comes', () => {
+    const { v, site } = atWreck('la-leyenda');
+    const quiet = v.mobs.length;
+    const out = sail(v, SONDEO_TIERS[SONDEO_TIERS.length - 1].at, { throttle: 0 });
+    const heard = out.events.filter((e) => e.kind === 'sondeo-noise');
+    ok(heard.length > 0, `staying drew ${heard.length} of them`);
+    ok(out.voyage.mobs.length > quiet, 'and they are really on the water');
+    // CAUSED, not rolled: every one of them is tagged with the site that made
+    // the noise, so nothing here is a creature that happened to be passing.
+    const drawn = out.voyage.mobs.filter((m) => m.cell.startsWith(`sondeo:${site.id}:`));
+    ok(drawn.length > 0, 'and they are tagged with the survey that called them');
+    // At most, because the broadsides fire themselves: some of what the noise
+    // drew is already on the bottom by the time the survey ends, which is the
+    // fight the mechanic is for.
+    ok(drawn.length <= heard.length, 'and nothing arrived that this survey did not call');
+    // Close enough to matter. A threat that surfaces outside its own sight is
+    // scenery — the swell learned that the hard way in round 16.
+    for (const mob of drawn) {
+      const gap = Math.hypot(mob.x - site.x, mob.y - site.y);
+      ok(gap <= MOBS[mob.kind].sight, `${mob.kind} surfaced inside its own sight (${gap.toFixed(0)})`);
+    }
+  });
+
+  test('a short survey draws less than a long one — the danger is the CHOICE', () => {
+    const drew = (seconds: number): number => {
+      const { v, site } = atWreck('la-leyenda');
+      const out = sail(v, seconds, { throttle: 0 });
+      return out.voyage.mobs.filter((m) => m.cell.startsWith(`sondeo:${site.id}:`)).length;
+    };
+    ok(
+      drew(SONDEO_TIERS[SONDEO_TIERS.length - 1].at) > drew(SONDEO_TIERS[0].at + 0.2),
+      'staying for the good stuff is what brings the sea'
+    );
+  });
+
+  test('time on station spends the tide, and faster than time sailing', () => {
+    // The same seconds, one of them spent surveying and one spent sailing in
+    // open water. SEA_PLAY.md §5: "looting raises the tide" is the sentence
+    // that makes this a cost rather than a free timer.
+    // Both start past `grace`, or the tide is flat at zero on both sides and
+    // the comparison measures nothing at all.
+    const { v } = atWreck('la-leyenda');
+    v.atSea = 60;
+    const control = underWayFar('la-leyenda');
+    control.atSea = 60;
+    const surveyed = sail(v, 12, { throttle: 0 }).voyage;
+    const sailing = sail(control, 12, { throttle: 0 }).voyage;
+    near(surveyed.atSea, sailing.atSea, 0.001, 'the same wall clock either way');
+    ok(surveyed.surveyed > 0, 'the survey was counted');
+    ok(
+      surveyed.tide > sailing.tide,
+      `the tide is further in after a survey (${surveyed.tide.toFixed(3)} against ${sailing.tide.toFixed(3)})`
+    );
+  });
+
+  /** Open water far from any site, for the control above: the same seconds with
+   *  nothing to survey. */
+  function underWayFar(seed: string): Voyage {
+    const v = startVoyage(seed);
+    const at = openWater(seed);
+    v.x = at.x;
+    v.y = at.y;
+    v.departed = true;
+    sweep(v);
+    return v;
+  }
+
+  test('a full hold refuses to start one rather than spending the site', () => {
+    const { v, site } = atWreck('la-leyenda');
+    v.cargo = { oro: SHIPS.skiff.hold };
+    const out = sail(v, 3, { throttle: 0 });
+    ok(!out.events.some((e) => e.kind === 'sondeo-started'), 'no survey on a full hold');
+    ok(out.events.some((e) => e.kind === 'hold-full'), 'and it says why');
+    ok(!out.voyage.taken.includes(site.id), 'the site is NOT spent for nothing');
+  });
+
+  test('sinking mid-survey loses every unbanked unit of it', () => {
+    const { v } = atWreck('la-leyenda');
+    v.hull = 1;
+    v.mobs.push({
+      id: 77, kind: 'hammerdead', x: v.x + 4, y: v.y, heading: Math.PI, hp: 999,
+      state: 'attack', cooldown: 0, homeX: v.x + 4, homeY: v.y, tether: 0, cell: '9:9',
+    });
+    const out = sail(v, SONDEO_TIERS[0].at + 1, { throttle: 0 });
+    ok(out.voyage.sunk, 'she went down with the boats away');
+    eq(holdUsed(out.voyage), 0, 'and every unbanked unit went with her');
+    ok(!out.events.some((e) => e.kind === 'looted'), 'nothing was ever banked');
+  });
+
+  test('the wait has teeth: the sea keeps biting while the boats are away', () => {
     const { v } = atWreck('la-leyenda');
     v.mobs.push({
       id: 77, kind: 'kelpling', x: v.x + 5, y: v.y, heading: Math.PI, hp: 999,
       state: 'attack', cooldown: 0, homeX: v.x + 5, homeY: v.y, tether: 0, cell: '9:9',
     });
-    const { events } = sail(v, 5, { throttle: 0 });
-    ok(events.some((e) => e.kind === 'looted'), 'the boarding still completes');
+    const { events } = sail(v, SONDEO_TIERS[SONDEO_TIERS.length - 1].at + 1, { throttle: 0 });
+    ok(events.some((e) => e.kind === 'looted'), 'the survey still completes');
     ok(
       events.some((e) => e.kind === 'hit' && e.target === 'ship' && e.by === 'mob'),
-      'but the hull paid for the wait — boarding under fire is a choice'
+      'but the hull paid for the wait — surveying under fire is a choice'
     );
+  });
+
+  test('a survey replays exactly, noise and all', () => {
+    const run = () => sail(atWreck('replay-sondeo').v, 12, { throttle: 0 }).voyage;
+    const a = run();
+    const b = run();
+    eq(a.mobs.length, b.mobs.length, 'the same creatures were drawn');
+    eq(holdUsed(a), holdUsed(b), 'the same cargo turned up');
+    eq(a.hull, b.hull, 'and the same damage taken');
   });
 });
 
@@ -1610,15 +1849,27 @@ describe('the tide is the voyage clock', () => {
     }
   });
 
-  test('a first voyage is over before the tide has started', () => {
-    // The fleet table says a beginner's ring-1 trip is home in about fifteen
-    // seconds and a ring-2 trip in about thirty. Both have to finish inside the
-    // grace or round 12's measured sea is not the sea a new player meets.
+  test('a first voyage never leaves slack water', () => {
+    // ROUND 17 MOVED THIS, and the change is worth writing down rather than
+    // quietly weakening. Before el sondeo a ring-1 trip finished inside `grace`
+    // with the tide at EXACTLY zero, and the promise was that a beginner sails
+    // the sea the fleet table measured, roll for roll. A survey now costs its
+    // seconds twice — once on the wall clock and again through `sondeo.tide` —
+    // so two prizes stripped to the last rung push a first voyage a little past
+    // the grace and the tide reads about 0.035.
+    //
+    // The promise that actually matters is the one the PLAYER can be told, and
+    // it is unchanged: a first voyage never leaves slack water. `tideStageOf`
+    // is what the HUD prints, what the plate announces and what decides whether
+    // the sea has a new name — and at 0.035 the answer is still Calma, with the
+    // first named stage three tenths away. The beginner is not lied to and is
+    // not hunted; they are just no longer at a hard zero.
     const first = summarise(playFleet(24, { ring: 1, skill: 'novato', sites: 2, limit: 240 }, 't-tide-first-'));
     ok(first.survived >= 0.95, `a beginner still comes home from ring 1 (${(first.survived * 100).toFixed(0)}%)`);
-    eq(first.tide, 0, 'and does it in water the tide has not touched');
+    eq(tideStageOf(first.tide), 0, `and does it in slack water (level ${first.tide.toFixed(3)})`);
+    ok(first.tide < TIDE_STAGE_AT[1] * 0.5, 'and not even halfway to the first stage that has a name');
     const second = summarise(playFleet(24, { ring: 2, skill: 'novato', sites: 3, limit: 240 }, 't-tide-second-'));
-    ok(second.tide < 0.05, `ring 2 is barely into it either (${second.tide.toFixed(3)})`);
+    eq(tideStageOf(second.tide), 0, `ring 2 is still slack water too (${second.tide.toFixed(3)})`);
   });
 
   /** More of them, and it is the RING's own draw that is multiplied. */

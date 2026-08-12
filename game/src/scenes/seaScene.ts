@@ -12,8 +12,8 @@ import {
 } from '../sim/pertrechos';
 import { sfx } from '../ui/sfx';
 import {
-  HARBOUR, MOBS, SEA_CELL, SEA_RANGE, SEA_STEP, SHIPS, SQUID_STRIKE_RADIUS, callDash, sitesNear,
-  startVoyage, steer, stepVoyage,
+  HARBOUR, MOBS, SEA_CELL, SEA_RANGE, SEA_STEP, SHIPS, SONDEO_TIERS, SQUID_STRIKE_RADIUS,
+  callDash, sitesNear, startVoyage, steer, stepVoyage,
   type Mob, type MobKind, type SeaEvent, type Site, type Voyage,
 } from '../sim/sea';
 import { shipForVoyage } from '../sim/shipyard';
@@ -2158,19 +2158,34 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
         hud?.warnZone(event.ring, event.rated);
         break;
 
-      // --- the boss ---------------------------------------------------------
-      case 'boarding-started':
-        // The party goes over the side: a thud of oars and a ring on the
-        // water. The countdown itself is drawn every frame from the sim's own
-        // clock — see drawRings.
+      // --- el sondeo --------------------------------------------------------
+      case 'sondeo-started':
+        // The boats go over the side: a thud of oars and a ring on the water.
+        // The clock itself is drawn every frame from the sim's own numbers —
+        // see drawRings.
         sfx('land', -3);
         shockAt(event.x, event.y, 2, 8, 0.4, 1, 0.78, 0.3);
         break;
-      case 'boarding-broken':
-        // Rowed back empty. The two-note "no", quiet — the player did this on
-        // purpose more often than not, and a loud refusal for a chosen retreat
-        // reads as the game arguing.
-        sfx('refuse', -5);
+      case 'sondeo-tier':
+        // A tier came up: a coin note and a bloom on the site. It rises with
+        // the ladder, because the last tier is worth more than the first and
+        // the player should HEAR that before they read it.
+        sfx('coin', -6 + event.tier * 2);
+        break;
+      case 'sondeo-noise':
+        // SOMETHING HEARD IT. This is the cue the whole mechanic turns on, and
+        // it is deliberately the loudest thing in this list: the player has to
+        // know that staying is what caused it, and they have to know NOW while
+        // there is still a decision in it. A boil of foam where it surfaced,
+        // and the refusal note — the sea saying no to the choice they made.
+        sfx('refuse', -2);
+        shockAt(event.x, event.y, 1.6, 10, 0.34, 0.9, 0.5, 0.4);
+        break;
+      case 'sondeo-ended':
+        // Quiet when the player chose it: breaking off is a decision, not a
+        // failure, and a loud refusal for a chosen retreat reads as the game
+        // arguing with them. The 'looted' that follows carries the reward.
+        if (!event.whole) sfx('refuse', -6);
         break;
       case 'squid-tell':
         // A dry rattle, pitched down: the warning has a sound as well as a
@@ -2516,20 +2531,30 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
       place(markMesh, marks++, mob.x, mob.y, MOBS[mob.kind].radius * 1.6 * beat, 1, 0.74, 0.2);
     }
 
-    // The boarding party's clock, on the wreck it is aboard: a gold ring at
-    // the site's edge and a second one closing onto it as the wait runs out.
-    // Gold, not red — this is the player's own action ripening, the same hue
+    // THE SURVEY, on the water it is happening in: a gold ring standing at the
+    // site's edge and a second one closing onto it as the next tier ripens.
+    // Gold, not red — this is the player's own action coming good, the same hue
     // as the loot it ends in — and painted, because gold added to this water
     // goes white.
-    if (voyage.boarding && marks < RING_CAP - 1) {
-      const [bcx, bcy] = voyage.boarding.siteId.split(':').map(Number);
-      const site = sitesNear(seed, bcx * SEA_CELL, bcy * SEA_CELL, SEA_CELL)
-        .find((s) => s.id === voyage.boarding?.siteId);
+    //
+    // The closing ring resets at every tier rather than running once, which is
+    // the whole read the sondeo needs on the water: it is not a wait with a
+    // reward at the end, it is a LADDER, and the ring arriving again says
+    // "another one just landed, and here comes the next".
+    if (voyage.sondeo && marks < RING_CAP - 1) {
+      const [scx, scy] = voyage.sondeo.siteId.split(':').map(Number);
+      const site = sitesNear(seed, scx * SEA_CELL, scy * SEA_CELL, SEA_CELL)
+        .find((s) => s.id === voyage.sondeo?.siteId);
       if (site) {
-        const progress = 1 - voyage.boarding.left / voyage.boarding.span;
+        const done = voyage.sondeo.tier;
+        const from = done > 0 ? SONDEO_TIERS[done - 1].at : 0;
+        const next = SONDEO_TIERS[done] ?? null;
+        const ripe = next && next.at > from
+          ? Math.min(1, Math.max(0, (voyage.sondeo.seconds - from) / (next.at - from)))
+          : 1;
         place(markMesh, marks++, site.x, site.y, site.radius + 2.2, 1, 0.78, 0.24);
         place(markMesh, marks++, site.x, site.y,
-          (site.radius + 2.2) * (2 - progress), 1, 0.62, 0.12);
+          (site.radius + 2.2) * (2 - ripe), 1, 0.62, 0.12);
       }
     }
 

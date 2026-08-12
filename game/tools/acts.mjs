@@ -660,6 +660,40 @@ export const ACTS = {
   },
 
   /**
+   * A survey in progress, with whatever its noise drew already on the water.
+   *
+   *   npm run shoot -- sea --mobile --at 220,0 --act sondeo
+   *
+   * Hunting is what gets there: guards stand ON the thing they guard (see
+   * `sea.patrols.$post`), so a ship that chases the nearest creature arrives at
+   * a prize. Then it holds station — the survey's whole verb is the helm — and
+   * the capture waits for the real panel rather than posing one.
+   */
+  async sondeo(page) {
+    await page.evaluate(() => window.__sail?.('hunt'));
+    for (let i = 0; i < 60; i++) {
+      await step(page, 10);
+      const survey = await page.$eval('.sea__sondeo', (el) => !el.hidden).catch(() => false);
+      // Wait for a tier or two so the panel has something to say, and give the
+      // noise time to arrive — an empty ladder is not what this photographs.
+      if (survey) {
+        // The helm is LEFT ALONE here, and that is the act's one trap. Every
+        // `__sail` mode is full throttle — there is no "hold" — so pointing the
+        // ship anywhere sails it off the site and banks the survey, which is
+        // the one state this act cannot photograph. Hunting keeps her on
+        // station because the noise keeps putting things there to hunt.
+        //
+        // 205 frames is 6.8s against a ladder of 1.5/4/8 and a noise every 6:
+        // the second rung is up, the first thing the noise drew is on the water,
+        // and the last rung at 8s has not yet ended the survey.
+        await step(page, 205);
+        return;
+      }
+    }
+    throw new Error('act: sondeo — a minute of hunting and never reached a site to survey');
+  },
+
+  /**
    * The choice of three, EARNED rather than posed.
    *
    *   npm run shoot -- sea --mobile --at 220,0 --act pertrechos

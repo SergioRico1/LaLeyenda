@@ -2,7 +2,7 @@ import './seaHud.css';
 import type { ResourceId } from '../sim';
 import {
   HARBOUR, MOBS, SHIPS, abandonVoyageInPlace, bearingHome, canDash, effectiveShip, holdUsed,
-  previewAbandon, readDash, readTide, ringOf, SEA_CELL, TIDE_STAGE_AT,
+  previewAbandon, readDash, readTide, ringOf, SEA_CELL, SONDEO_TIERS, TIDE_STAGE_AT,
   type TideStage, type Voyage,
 } from '../sim/sea';
 import { progress, type PertrechosState } from '../sim/pertrechos';
@@ -80,6 +80,13 @@ function chips(entries: Partial<Record<string, number>>): string {
       `<span class="sea__endItem">${RESOURCE_LABEL[res] ?? res} ${Math.round(amount ?? 0)}</span>`)
     .join('');
 }
+
+/** What the sea's prizes are called, in Spanish. Same rule as the hulls: the
+ *  sim speaks ids and this screen owns the words. */
+const SITE_LABEL: Record<string, string> = {
+  islet: 'Islote', grove: 'Arboleda', vein: 'Veta', wreck: 'Pecio', lair: 'Guarida',
+  reef: 'Arrecife',
+};
 
 /** The hulls, named for the player. Lives here because this HUD is the screen
  *  that says them; the sim speaks only ids. */
@@ -405,6 +412,27 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
       </div>
     </div>
 
+    <!-- EL SONDEO. The one panel on this screen that exists to be DECIDED on,
+         so it is the one that is allowed to be four numbers: what is already
+         secured, what the next tier would add, how long that is, and — the one
+         that matters most — how many things the noise has drawn. A player who
+         is surprised at 90% learns nothing; a player who sees three sails at
+         60% and stays has played a game. -->
+    <div class="sea__sondeo" data-sondeo hidden>
+      <div class="sea__sondeoHead">
+        <span class="sea__sondeoTitle" data-sondeotitle>Sondeo</span>
+        <span class="sea__sondeoPips" data-sondeopips aria-hidden="true"></span>
+      </div>
+      <div class="sea__sondeoTrack">
+        <div class="sea__sondeoFill" data-sondeofill style="width:0%"></div>
+      </div>
+      <div class="sea__sondeoRow">
+        <span class="sea__sondeoSecured num" data-sondeosecured>0</span>
+        <span class="sea__sondeoNext" data-sondeonext></span>
+      </div>
+      <div class="sea__sondeoHeard" data-sondeoheard hidden></div>
+    </div>
+
     <div class="sea__alert" data-alert hidden></div>
 
     <!-- The boss bar. One creature in this sea has phases, and a fight whose
@@ -494,7 +522,22 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
   const dashBtn = root.querySelector('[data-dash]') as HTMLButtonElement;
   const dashSweep = root.querySelector('[data-dashsweep]') as HTMLElement;
   const dashWait = root.querySelector('[data-dashwait]') as HTMLElement;
+  const sondeoEl = root.querySelector('[data-sondeo]') as HTMLElement;
+  const sondeoTitle = root.querySelector('[data-sondeotitle]') as HTMLElement;
+  const sondeoPips = root.querySelector('[data-sondeopips]') as HTMLElement;
+  const sondeoFill = root.querySelector('[data-sondeofill]') as HTMLElement;
+  const sondeoSecured = root.querySelector('[data-sondeosecured]') as HTMLElement;
+  const sondeoNext = root.querySelector('[data-sondeonext]') as HTMLElement;
+  const sondeoHeard = root.querySelector('[data-sondeoheard]') as HTMLElement;
   const strip = root.querySelector('[data-strip]') as HTMLElement;
+
+  // One pip per tier, built from the sim's own ladder so the panel cannot be
+  // drawing a different number of rungs from the one being climbed.
+  for (let i = 0; i < SONDEO_TIERS.length; i++) {
+    const pip = document.createElement('span');
+    pip.className = 'sea__sondeoPip';
+    sondeoPips.append(pip);
+  }
   const tideTrack = root.querySelector('[data-tidetrack]') as HTMLElement;
   const tideFill = root.querySelector('[data-tidefill]') as HTMLElement;
   const tideOut = root.querySelector('[data-tideout]') as HTMLElement;
@@ -756,6 +799,80 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
     });
   }
 
+  /**
+   * THE SURVEY, as a decision rather than as a progress bar.
+   *
+   * Four things, and every one of them is there because the choice is not
+   * answerable without it:
+   *
+   *   SECURED   what breaking off RIGHT NOW would bank. The bar and the number
+   *             are the same fact twice — the bar for the glance, the number
+   *             for the arithmetic — because "is this worth another eight
+   *             seconds" cannot be answered against a percentage.
+   *   NEXT      what the next tier would add, and in how long. A ladder whose
+   *             next rung is unnamed is a wait, and a wait is not a decision.
+   *   PIPS      how far up the ladder, so the shape of the run is legible at a
+   *             glance: one lit of three is a drive-by, three is a stripped
+   *             site.
+   *   HEARD     how many the noise has drawn. THIS IS THE ONE THE MECHANIC
+   *             TURNS ON. Everything above is bookkeeping; this is the reason
+   *             to leave, and it has to arrive early enough to leave ON.
+   */
+  function drawSondeo(voyage: Voyage): void {
+    const survey = voyage.sondeo;
+    const over = voyage.sunk || voyage.home || voyage.abandoned;
+    if (!survey || over) {
+      if (!sondeoEl.hidden) sondeoEl.hidden = true;
+      return;
+    }
+    if (sondeoEl.hidden) sondeoEl.hidden = false;
+
+    setText(sondeoTitle, SITE_LABEL[survey.siteKind] ?? 'Sondeo');
+
+    const done = survey.tier;
+    const from = done > 0 ? SONDEO_TIERS[done - 1].at : 0;
+    const next = SONDEO_TIERS[done] ?? null;
+    // The bar runs to the NEXT rung rather than to the end of the ladder: what
+    // the player is waiting for is the next tier, and a bar that crawls across
+    // a whole survey says nothing about the only wait they are in.
+    const ripe = next && next.at > from
+      ? Math.min(1, Math.max(0, (survey.seconds - from) / (next.at - from)))
+      : 1;
+    const width = `${(ripe * 100).toFixed(1)}%`;
+    if (sondeoFill.style.width !== width) sondeoFill.style.width = width;
+
+    const pips = sondeoPips.children;
+    for (let i = 0; i < pips.length; i++) {
+      (pips[i] as HTMLElement).classList.toggle('is-on', i < done);
+    }
+
+    const secured = Object.values(survey.revealed).reduce((a, b) => a + (b ?? 0), 0);
+    setHtml(sondeoSecured, `${Math.round(secured)}<u> asegurado</u>`);
+    // What the next rung would ADD, from the survey's own copy of the site's
+    // whole haul — the same cumulative-share arithmetic the sim does, on the
+    // same numbers, so the promise on screen is the promise that will be kept.
+    const whole = Object.values(survey.whole).reduce((a, b) => a + (b ?? 0), 0);
+    const adds = next ? Math.floor(whole * next.share) - Math.floor(whole * survey.share) : 0;
+    setText(
+      sondeoNext,
+      next
+        ? `+${Math.max(0, adds)} en ${Math.ceil(Math.max(0, next.at - survey.seconds))}s`
+        : 'Todo a bordo'
+    );
+    sondeoEl.classList.toggle('is-full', !next);
+
+    // WHAT THE NOISE DREW, counted off the water rather than off the events —
+    // a count of things that arrived is a count that can be wrong by the time
+    // it is read, and the only honest answer to "how many are coming" is how
+    // many are actually out there hunting this ship right now.
+    const heard = voyage.mobs.filter((m) => m.cell.startsWith(`sondeo:${survey.siteId}:`)).length;
+    if (sondeoHeard.hidden !== (heard === 0)) sondeoHeard.hidden = heard === 0;
+    if (heard > 0) {
+      setText(sondeoHeard, heard === 1 ? 'Algo lo ha oído' : `${heard} lo han oído`);
+    }
+    sondeoEl.classList.toggle('is-heard', heard > 0);
+  }
+
   leave.addEventListener('click', askToLeave);
 
   // ZAFARRANCHO, on POINTERDOWN rather than click.
@@ -943,23 +1060,25 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
       setData(bar, 'hull', hullState);
 
       // --- the one line that names the remedy -------------------------------
-      // A dying hull outranks everything; the boarding wait outranks the full
-      // hold, because it is the one state where "stay right here" is the
-      // remedy and the compass, the mobs and every instinct say leave.
+      // A dying hull outranks everything else. The sondeo does NOT appear here
+      // any more: it has a panel of its own now, because "how much is secured,
+      // what would the next tier add, and how long is it" is four numbers and a
+      // one-line chip cannot carry a decision.
       const alert = hullState === 'crit'
         ? 'Casco crítico · vuelve a puerto'
-        : voyage.boarding
-          ? `Abordando el pecio… ${Math.ceil(voyage.boarding.left)}s`
-          : holdFull
-            ? 'Bodega llena · vuelve a puerto'
-            : '';
+        : holdFull
+          ? 'Bodega llena · vuelve a puerto'
+          : '';
       if (alert) {
         setText(alertOut, alert);
-        setData(alertOut, 'kind', hullState === 'crit' ? 'hull' : voyage.boarding ? 'board' : 'hold');
+        setData(alertOut, 'kind', hullState === 'crit' ? 'hull' : 'hold');
         if (alertOut.hidden) alertOut.hidden = false;
       } else if (!alertOut.hidden) {
         alertOut.hidden = true;
       }
+
+      // --- el sondeo ---------------------------------------------------------
+      drawSondeo(voyage);
 
       // --- the compass -------------------------------------------------------
       const heading = `${needleDegrees(bearingHome(voyage.x, voyage.y)).toFixed(1)}deg`;

@@ -205,3 +205,78 @@ The owner's own idea and the best decision-per-second the sea can buy;
 SEA_PLAY.md §5 has the design and the three properties that make it a game
 rather than a timer. It waits for the tide deliberately, because *"looting
 raises the tide"* is the sentence that makes it a cost rather than a free wait.
+
+---
+
+# Round 17 — el sondeo, and the two verbs the sea now has
+
+The owner's own idea, 12 Aug: *"al acercarte a una isla vas descubriendo por
+tiempo el botín y dices si cogerlo o no, así en ese tiempo tienes la intriga de
+si te vienen a atacar."* SEA_PLAY.md §5 is the design; this is what it measured.
+
+## What shipped
+
+**EL SONDEO.** Come inside a site's reach and a survey begins. The haul is
+revealed in three tiers — 30% at 1.5s, 65% at 4s, all of it at 8s — and it only
+BANKS when the ship breaks off. Bailing is always allowed, so the question is
+never "loot or not", it is *"is the next tier worth another few seconds"*, asked
+again every few seconds. It replaces both taking a site by touching it and the
+wreck-only boarding beat: one mechanic for every prize.
+
+**THE NOISE.** A survey is loud. Every six seconds it puts one creature in the
+water at 0.8 of its own sight — inside it, so the thing turns and comes on the
+step it arrives and the player has seconds to spend on the answer. At most three
+alive at once, counted live, so clearing what came buys the right to be sent
+more. The danger is CAUSED by the choice to stay, never rolled while the player
+happens to be standing there.
+
+**IT SPENDS THE TIDE.** A second on station ages the tide by two, so looting is
+never free even when nothing attacks.
+
+**ZAFARRANCHO**, round 16's missing fourth leg: three seconds of a ship handled
+harder than she can be handled for long, on a twelve-second cycle. Speed and
+helm up, and turn-drag DOWN — which is what makes it a manoeuvre rather than a
+straight-line boost.
+
+## What the harness says — 40 seeded voyages a row, `greed` = tiers held for
+
+`tools/tests/voyages.ts` gained a `greed` dial, because since round 17 "how much
+of a site to take" is a strategy rather than a fact, and without it every row
+measures the single greediest way to play.
+
+    home% / cargo landed        tier 1        tier 2        tier 3
+    ring 3 · novato            100% / 359     98% / 703     75% / 884
+    ring 3 · veterano          100% / 418     93% / 644     95% / 839
+    ring 4 · novato             50% / 649     33% / 900     10% / 900
+    ring 4 · veterano           85% / 578     68% / 757     73% / 553
+    ring 5 · novato              8% / 900     23% / 900     10% / 900
+    ring 5 · veterano           38% / 434     48% / 616     43% / 523
+
+Ring 3 is the round in one line: the same water, the same seeds, and holding for
+the last rung buys two and a half times the cargo for twenty-five points of
+return. That is a decision.
+
+## WHAT ROUND 17 CHANGED THAT WAS NOT ASKED FOR, said plainly
+
+**The far sea is no longer a gamble anybody can take.** Before el sondeo a
+beginner stripping ring 5 came home 57% of the time; now it is 10%. Eight
+seconds on station per prize, six prizes, in water a starter hull is three zones
+under-rated for — with the tide making the whole time and the survey calling
+things in. A *veteran* still gets home from ring 5 at 38–48%, so it is a gamble
+for somebody who can sail rather than a wall, and the tests now say exactly
+that. It is the better game, and it is what the zone warning has been saying
+since round 12 and what the shipyard exists to sell the answer to.
+
+**A first voyage is no longer at a hard tide of zero.** Two prizes stripped to
+the last rung push it to about 0.035. It never leaves SLACK WATER — the stage
+the HUD prints and the plate announces is still Calma, with the first named
+stage three tenths away — so the promise the player can be told is unchanged.
+The promise that a beginner sails the fleet table's sea roll-for-roll is not.
+
+## What round 17 did NOT do
+
+- **No captain at sea, no island defence, no store submission package.** All
+  three are still ahead of everything else in this file.
+- **The sondeo has no sound of its own** beyond the borrowed cues, and the tier
+  bloom is a shock ring rather than a treasure moment. It should be the best
+  thirty frames in the game and it is currently adequate.

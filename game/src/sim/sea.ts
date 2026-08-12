@@ -181,6 +181,20 @@ export function tideAt(seconds: number, rate = 1): number {
   return t <= 0 ? 0 : t >= 1 ? 1 : t;
 }
 
+/**
+ * THE CLOCK THE TIDE IS ACTUALLY READ FROM.
+ *
+ * `atSea` is the wall clock and stays honest — a player asked how long they
+ * have been out is owed the real number. This is that plus what the surveys
+ * cost: every second on station at a site ages the tide by `1 + sondeo.tide`
+ * seconds instead of one, which is SEA_PLAY.md §5's third property — looting
+ * SPENDS the round's own currency, so stripping a site makes the rest of the
+ * voyage harder even when nothing came for it.
+ */
+export function tideClockOf(v: Voyage): number {
+  return v.atSea + v.surveyed * SONDEO.tide;
+}
+
 /** The inverse: the voyage clock at which the tide reaches `level`. What the
  *  HUD counts down to, and what the harness sweeps by. */
 export function tideClock(level: number, rate = 1): number {
@@ -224,7 +238,7 @@ export function readTide(v: Voyage): TideRead {
   const stage = tideStageOf(level);
   const rate = v.loadout.tideRate;
   const next = stage + 1 < TIDE_STAGE_AT.length
-    ? Math.max(0, tideClock(TIDE_STAGE_AT[stage + 1], rate) - v.atSea)
+    ? Math.max(0, tideClock(TIDE_STAGE_AT[stage + 1], rate) - tideClockOf(v))
     : 0;
   return {
     level,
@@ -637,6 +651,34 @@ const CALM: number = SEA.ships.calm;
 const WEIGHT = SEA.weight;
 const GEAR = SEA.loadout;
 /**
+ * EL SONDEO — see balance.json `sea.$sondeo`. SEA_PLAY.md §5 is the design.
+ */
+const SONDEO = SEA.sondeo;
+/** The ladder, cumulative: `at` seconds on station turns up `share` of a site. */
+export const SONDEO_TIERS: readonly { at: number; share: number }[] = SONDEO.tiers;
+
+/**
+ * A fraction of a haul, in whole units.
+ *
+ * FLOORED, and the rounding is the design rather than an implementation detail:
+ * a tier must never turn up more than its share, because three tiers that each
+ * rounded up would hand out a site and a bit. Nothing is lost to it — the shares
+ * are cumulative, so whatever a floor shaves off is still inside the next tier's
+ * slice, and the last tier's share is 1, which pays the whole site out exactly.
+ * A resource with less than a unit in a tier simply arrives in a later one.
+ */
+function shareOf(
+  haul: Partial<Record<ResourceId, number>>, fraction: number
+): Partial<Record<ResourceId, number>> {
+  const cut: Partial<Record<ResourceId, number>> = {};
+  for (const [res, amount] of Object.entries(haul) as [ResourceId, number][]) {
+    const units = Math.floor(amount * fraction);
+    if (units > 0) cut[res] = units;
+  }
+  return cut;
+}
+
+/**
  * Zafarrancho — see balance.json `sea.$zafarrancho` for the whole argument.
  *
  * Exported because the HUD counts the same seconds the sim does and the suite
@@ -994,13 +1036,46 @@ export interface Voyage {
    */
   deepChest: boolean;
   /**
-   * A boarding party away at a wreck — see balance.json `sea.boarding`.
+   * The survey under way at a site — EL SONDEO, SEA_PLAY.md §5.
    *
-   * Wrecks are not taken by touch: the party rows over for `span` seconds and
-   * the loot only lands if the ship is still on station when they return.
-   * Null whenever nobody is over the side.
+   * Null whenever the ship is not on station. `revealed` is what the survey has
+   * turned up and is NOT in the hold: it banks when the ship breaks off, which
+   * is the property the whole mechanic is built on — partial extraction is
+   * always allowed, so the question renews every few seconds instead of being
+   * asked once. Sink with a sondeo open and every unbanked unit of it is gone,
+   * because it was never aboard.
    */
-  boarding: { siteId: string; left: number; span: number } | null;
+  sondeo: {
+    siteId: string;
+    /** What kind of prize it is, so the screen can name it without going back
+     *  to the world for a fact the survey already knows. */
+    siteKind: SiteKind;
+    /** Everything the site would pay if it were stripped to the last tier.
+     *  Carried so the HUD can say what the NEXT tier is worth — a ladder whose
+     *  next rung is unnamed is a wait, and a wait is not a decision. */
+    whole: Partial<Record<ResourceId, number>>;
+    /** Seconds on station. */
+    seconds: number;
+    /** Tiers turned up so far, 0 to `SONDEO.tiers.length`. */
+    tier: number;
+    /** The share of the site already revealed, 0 to 1. */
+    share: number;
+    /** The next whole second at which the survey will make its noise. */
+    noise: number;
+    /** What has been turned up and is waiting to be banked. */
+    revealed: Partial<Record<ResourceId, number>>;
+  } | null;
+
+  /**
+   * Seconds this voyage has spent on station in sondeos.
+   *
+   * The tide is read from `atSea + surveyed * SONDEO.tide` rather than from
+   * `atSea` alone, which is how looting SPENDS the round's own currency: every
+   * site you strip makes the rest of the voyage harder. Kept separate so
+   * `atSea` stays an honest wall clock — a player asked "how long have I been
+   * out?" is owed the real number.
+   */
+  surveyed: number;
   /**
    * The deepest ring this voyage has already been warned about — 0 until the
    * first 'zone-warning'. The latch that makes the warning ONE event per
@@ -1101,11 +1176,33 @@ export type SeaEvent =
   | { kind: 'squid-phase'; x: number; y: number }
   /** The guaranteed reward, through the same stow() everything else pays. */
   | { kind: 'deep-chest'; x: number; y: number; loot: Partial<Record<ResourceId, number>> }
-  // --- boarding a wreck. The loot itself still arrives as 'looted'. ---------
-  | { kind: 'boarding-started'; siteId: string; x: number; y: number; seconds: number }
-  /** The ship left the wreck with the party still aboard it: nothing pays,
-   *  and coming back starts the clock from zero. */
-  | { kind: 'boarding-broken'; siteId: string };
+  // --- EL SONDEO. The loot itself still arrives as 'looted', at the end. ----
+  /** The ship came inside a site's reach and the survey began. Carries the
+   *  whole ladder, so the HUD can draw what the next tiers WOULD be worth
+   *  without knowing the rule — the decision is the ladder. */
+  | {
+    kind: 'sondeo-started'; siteId: string; site: SiteKind; x: number; y: number;
+    tiers: readonly { at: number; share: number }[];
+    /** What the whole site would pay if it were stripped to the last tier. */
+    whole: Partial<Record<ResourceId, number>>;
+  }
+  /** A tier came up. `gained` is what this one added, `secured` is everything
+   *  the survey is holding — which is what breaking off right now would bank. */
+  | {
+    kind: 'sondeo-tier'; siteId: string; tier: number; of: number; share: number;
+    gained: Partial<Record<ResourceId, number>>;
+    secured: Partial<Record<ResourceId, number>>;
+    /** Seconds until the next tier, or null once there is nothing left. */
+    toNext: number | null;
+  }
+  /** The survey made a noise and something is coming for it. Raised BEFORE the
+   *  creature is close enough to bite, because a danger the player cannot see
+   *  in time is bad luck rather than tension. */
+  | { kind: 'sondeo-noise'; siteId: string; x: number; y: number }
+  /** Station broken, or the last tier turned up. Either way what was secured is
+   *  banked in the same breath, as a 'looted' — so there is exactly one event in
+   *  the whole sim that means "cargo went into the hold". */
+  | { kind: 'sondeo-ended'; siteId: string; tier: number; of: number; whole: boolean };
 
 export function startVoyage(
   seed: string, shipType = 'skiff',
@@ -1121,7 +1218,7 @@ export function startVoyage(
     sinceHit: CALM, aground: 0,
     sunk: false, careened: 0, abandoned: false, departed: false, home: false,
     deepChest: opts.deepChest ?? true,
-    boarding: null,
+    sondeo: null, surveyed: 0,
     warnedRing: 0,
     atSea: 0, tide: 0, tideStage: 0, swells: 0,
     dash: 0, dashCooldown: 0,
@@ -1405,7 +1502,7 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
   // that is not a distance. It is read before anything spawns, because what the
   // tide is at this instant is what the sea hands over at this instant.
   v.atSea += dt;
-  v.tide = tideAt(v.atSea, v.loadout.tideRate);
+  v.tide = tideAt(tideClockOf(v), v.loadout.tideRate);
   const stage = tideStageOf(v.tide);
   if (stage > v.tideStage) {
     // Latched like the zone warning, and for the same reason: this is a thing
@@ -1451,12 +1548,13 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
     v.y -= ny * gap;
 
     // A ship boarding THIS site is moored to it, not ramming it. Without the
-    // exemption the boarding beat punished exactly the thing it asks for —
-    // holding station against the wreck for the length of the wait cost a
-    // scrape every grace period, and the fleet table read reef damage TRIPLED
-    // at every ring. The hull still cannot clip through (the push-out above
-    // has already run); it just stops being charged for staying.
-    const moored = v.boarding !== null && v.boarding.siteId === site.id;
+    // exemption the beat punished exactly the thing it asks for — holding
+    // station against the site for the length of the survey cost a scrape every
+    // grace period, and the fleet table read reef damage TRIPLED at every ring.
+    // The hull still cannot clip through (the push-out above has already run);
+    // it just stops being charged for staying, which is now every site rather
+    // than only a wreck.
+    const moored = v.sondeo !== null && v.sondeo.siteId === site.id;
 
     // How much of the ship's way was aimed AT the rock: 1 is head-on, 0 is a
     // touch along its face, below 0 is already leaving.
@@ -1496,63 +1594,137 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
   // the guns keep firing, the hull keeps taking bites — so boarding under
   // fire is a choice with a price, which is the whole point of the wait.
   const grabRange = (site: Site) => site.radius + spec.radius + SEA.loot.reach;
-  const payOut = (site: Site): void => {
-    const taken = stow(v, spec, site.loot);
-    const used = Object.values(taken).reduce((a, b) => a + b, 0);
+
+  /**
+   * Banks what a survey has turned up, and SPENDS the site.
+   *
+   * Spending it is the commitment, and it is what stops the whole mechanic from
+   * declining to happen: without it a player strips every prize in safe
+   * two-second bursts, breaking off before the noise brings anything, and never
+   * once meets the decision the sondeo exists to pose.
+   */
+  const bankSondeo = (site: Site, whole: boolean): void => {
+    const survey = v.sondeo;
+    if (!survey) return;
+    const taken = stow(v, spec, survey.revealed);
+    const got = Object.values(taken).reduce((a, b) => a + (b ?? 0), 0);
+    const had = Object.values(survey.revealed).reduce((a, b) => a + (b ?? 0), 0);
     v.taken.push(site.id);
+    events.push({
+      kind: 'sondeo-ended', siteId: site.id, tier: survey.tier, of: SONDEO_TIERS.length, whole,
+    });
+    // ONE event in the whole sim means "cargo went into the hold", and it is
+    // this one. The scene, the quest ledger and the end-of-voyage card all read
+    // `looted` and none of them has to know a sondeo exists.
     events.push({ kind: 'looted', site: site.kind, loot: taken, x: site.x, y: site.y });
-    if (used < Object.values(site.loot).reduce((a, b) => a + b, 0)) events.push({ kind: 'hold-full' });
+    if (got < had) events.push({ kind: 'hold-full' });
+    v.sondeo = null;
   };
 
-  // The party that is already over the side. Drift out past the slack and
-  // they row back empty — coming round again starts the clock from zero, so
-  // a wreck is a commitment rather than a drive-by.
-  if (v.boarding) {
-    const [bcx, bcy] = v.boarding.siteId.split(':').map(Number);
-    const site = siteAt(v.seed, bcx, bcy);
-    if (!site || v.taken.includes(site.id)) {
-      v.boarding = null;
-    } else if (Math.hypot(v.x - site.x, v.y - site.y) > grabRange(site) + SEA.boarding.slack) {
-      events.push({ kind: 'boarding-broken', siteId: site.id });
-      v.boarding = null;
+  // --- the survey on station ------------------------------------------------
+  if (v.sondeo) {
+    const [scx, scy] = v.sondeo.siteId.split(':').map(Number);
+    const site = siteAt(v.seed, scx, scy);
+    const gone = Math.hypot(v.x - (site?.x ?? 0), v.y - (site?.y ?? 0))
+      > grabRange(site ?? { radius: 0 } as Site) + SONDEO.slack;
+    if (!site) {
+      v.sondeo = null;
+    } else if (gone) {
+      // BREAKING OFF IS ALWAYS ALLOWED, and it banks. That is the whole design:
+      // the question is never "loot or not", it is "is the next tier worth
+      // another few seconds", asked again every few seconds.
+      bankSondeo(site, false);
     } else {
-      const left = v.boarding.left - dt;
-      if (left > 0) {
-        v.boarding = { ...v.boarding, left };
-      } else if (spec.hold - holdUsed(v) <= 0) {
-        // The party is back and the hold is full: the wreck is NOT consumed
-        // for nothing — same refusal the instant path gives, said every step
-        // the ship stays parked on an unclaimable prize.
-        v.boarding = { ...v.boarding, left: 0 };
-        events.push({ kind: 'hold-full' });
-      } else {
-        payOut(site);
-        v.boarding = null;
+      v.sondeo.seconds += dt;
+      // A SECOND ON STATION COSTS MORE THAN A SECOND. `surveyed` is what the
+      // tide is read from on top of the wall clock, so stripping a site makes
+      // the rest of the voyage harder even when nothing came for it.
+      v.surveyed += dt;
+
+      // The noise, and it is the reason this is tension rather than bad luck:
+      // the danger is CAUSED by the player's own choice to stay. Drawn from the
+      // ring's own pool and surfaced INSIDE its sight, so it turns and comes on
+      // the step it arrives and the player has seconds to spend on the answer.
+      // `most` counts what this survey has DRAWN AND IS STILL ALIVE, not what
+      // it has ever sent — so clearing the water buys the right to be sent
+      // more, and a survey is a fight the player can win rather than a queue
+      // they cannot empty.
+      const alive = v.mobs.filter((m) => m.cell.startsWith(`sondeo:${site.id}:`)).length;
+      if (v.sondeo.seconds >= v.sondeo.noise && !v.sunk
+          && alive < SONDEO.noise.most && v.mobs.length < SEA_MAX_LIVE) {
+        const heard = Math.round(v.sondeo.noise / SONDEO.noise.every);
+        const rng = new Rng(`${v.seed}:sondeo:${site.id}:${heard}`);
+        const ring = Math.max(1, ringOf(scx, scy));
+        const kind = rng.pick(byRing(PATROL_POOLS, ring) as readonly MobKind[]);
+        const bearing = rng.range(-Math.PI, Math.PI);
+        const gap = MOBS[kind].sight * SONDEO.noise.range;
+        const mx = site.x + Math.cos(bearing) * gap;
+        const my = site.y + Math.sin(bearing) * gap;
+        const mob = makeMob(kind, mx, my, mx, my, v.nextId, `sondeo:${site.id}:${heard}`, rng);
+        mob.tether = PATROL_ROAM;
+        mob.tough = 1 + v.tide * TIDE.toughPerLevel;
+        mob.hp = Math.round(MOBS[kind].hp * mob.tough);
+        v.mobs.push(mob);
+        v.nextId += 1;
+        events.push({ kind: 'sondeo-noise', siteId: site.id, x: mx, y: my });
+        v.sondeo.noise += SONDEO.noise.every;
+      }
+
+      // The ladder. Cumulative shares, so a tier adds the DIFFERENCE — which is
+      // what makes the last one worth more than the first and the wait worth
+      // sitting through.
+      const reached = SONDEO_TIERS.filter((t) => v.sondeo!.seconds >= t.at).length;
+      if (reached > v.sondeo.tier) {
+        const share = SONDEO_TIERS[reached - 1].share;
+        // CUMULATIVE, and this is not a style choice. `floor(A × 0.3) +
+        // floor(A × 0.35) + floor(A × 0.35)` is not `A` — three floored slices
+        // lose up to two units of every resource, so a survey run to the last
+        // rung paid 301 of a 305-unit wreck and the player was quietly short-
+        // changed for holding station the whole way. Flooring the RUNNING TOTAL
+        // and subtracting what is already up makes the last tier, whose share
+        // is 1, pay the site out exactly.
+        const upTo = shareOf(site.loot, share);
+        const gained: Partial<Record<ResourceId, number>> = {};
+        for (const [res, amount] of Object.entries(upTo) as [ResourceId, number][]) {
+          const add = amount - (v.sondeo.revealed[res] ?? 0);
+          if (add > 0) gained[res] = add;
+        }
+        v.sondeo.revealed = { ...upTo };
+        v.sondeo.tier = reached;
+        v.sondeo.share = share;
+        const next = SONDEO_TIERS[reached] ?? null;
+        events.push({
+          kind: 'sondeo-tier', siteId: site.id, tier: reached, of: SONDEO_TIERS.length,
+          share, gained, secured: { ...v.sondeo.revealed },
+          toNext: next ? Math.max(0, next.at - v.sondeo.seconds) : null,
+        });
+        // Nothing left to turn up: banking now rather than making the player
+        // sail away from a finished survey, which would be a dead wait with a
+        // reward on the other side of it.
+        if (!next) bankSondeo(site, true);
       }
     }
   }
 
   for (const site of sitesNear(v.seed, v.x, v.y, 60)) {
     if (site.kind === 'reef' || v.taken.includes(site.id)) continue;
+    if (v.sondeo) break;   // one survey at a time; the ship has one crew
     if (Math.hypot(v.x - site.x, v.y - site.y) > grabRange(site)) continue;
     // A lair does not give up its cargo while its guardian is alive.
     if (site.kind === 'lair' && v.mobs.some((m) => m.cell === site.id && m.kind === 'squid')) continue;
 
+    // A full hold refuses to START one, rather than spending the site on a
+    // survey that could not bank a unit of what it found.
     if (spec.hold - holdUsed(v) <= 0) { events.push({ kind: 'hold-full' }); continue; }
 
-    // A wreck has an inside: the party rows over instead of the ship grabbing.
-    if (site.kind === 'wreck') {
-      if (!v.boarding) {
-        v.boarding = { siteId: site.id, left: SEA.boarding.seconds, span: SEA.boarding.seconds };
-        events.push({
-          kind: 'boarding-started', siteId: site.id, x: site.x, y: site.y,
-          seconds: SEA.boarding.seconds,
-        });
-      }
-      continue;
-    }
-
-    payOut(site);
+    v.sondeo = {
+      siteId: site.id, siteKind: site.kind, whole: { ...site.loot },
+      seconds: 0, tier: 0, share: 0, noise: SONDEO.noise.every, revealed: {},
+    };
+    events.push({
+      kind: 'sondeo-started', siteId: site.id, site: site.kind, x: site.x, y: site.y,
+      tiers: SONDEO_TIERS, whole: { ...site.loot },
+    });
   }
 
   // --- spawning ------------------------------------------------------------

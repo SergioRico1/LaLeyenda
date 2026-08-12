@@ -823,6 +823,170 @@
  * seam, which is the one interaction a player never has to be taught.
  * ======================================================================== */
 
+/* --- el sondeo: the one panel that exists to be decided on ---------------- */
+/* SEA_PLAY.md §5. Everything else on this screen reports; this one asks. It sits
+   under the voyage strip on the left, clear of the abandon button, and it is the
+   only readout allowed to be four numbers — because "is the next tier worth
+   another few seconds" is not answerable against a percentage.
+
+   It appears when a survey starts and leaves when it ends. It is never
+   summonable, has no controls, and takes no pointer events: the verb is the
+   helm, and a panel that could be tapped would be a second one. */
+
+.sea__sondeo {
+  position: absolute;
+  /* BELOW the zone/hull plate rather than beside it. The plate is transient and
+     centred in the space the abandon button leaves; a survey lives for eight
+     seconds and would sit under it. Stacked, both are readable and neither has
+     to know the other exists. */
+  top: calc(var(--ui-safe-t) + 148px);
+  left: var(--ui-edge);
+  width: min(212px, 58%);
+  padding: 7px 10px 8px;
+  border-radius: 14px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0 50%, rgba(0, 0, 0, 0.14) 50% 100%),
+    rgba(10, 22, 34, 0.8);
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim-low),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.34),
+    var(--ui-drop-xs);
+  backdrop-filter: blur(3px);
+  animation: sea-alert-in 0.22s ease-out;
+  transition: border-color 0.25s linear, box-shadow 0.25s linear;
+}
+
+.sea__sondeo[hidden] { display: none; }
+
+.sea__sondeoHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.sea__sondeoTitle {
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--ui-gold-text);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* One pip per rung, so the shape of the run is legible without reading: one lit
+   of three is a drive-by, three is a stripped site. */
+.sea__sondeoPips { display: flex; gap: 3px; flex: 0 0 auto; }
+
+.sea__sondeoPip {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  background: rgba(255, 255, 255, 0.16);
+  transition: background 0.2s linear, box-shadow 0.2s linear;
+}
+
+.sea__sondeoPip.is-on {
+  background: linear-gradient(180deg, var(--ui-gold-a) 0 50%, var(--ui-gold-b) 50% 100%);
+  box-shadow: 0 0 0 1px rgba(245, 213, 70, 0.4);
+}
+
+.sea__sondeoTrack {
+  position: relative;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--ui-track-well);
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+/* The bar runs to the NEXT rung, not across the whole ladder: what the player
+   is waiting for is the next tier, and a bar that crawls across a whole survey
+   says nothing about the only wait they are actually in. */
+.sea__sondeoFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background:
+    var(--ui-fill-gloss),
+    linear-gradient(180deg, var(--ui-gold-a) 0 50%, var(--ui-gold-b) 50% 100%);
+  transition: width 0.16s linear;
+}
+
+.sea__sondeoRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 5px;
+}
+
+.sea__sondeoSecured {
+  font-size: 15px;
+  line-height: 1;
+  -webkit-text-stroke-width: 1.8px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.8);
+  color: var(--ui-res-gold);
+}
+
+.sea__sondeoSecured u {
+  font-size: 9px;
+  text-decoration: none;
+  opacity: 0.66;
+  letter-spacing: 0.5px;
+  -webkit-text-stroke-width: 0;
+  margin-left: 3px;
+}
+
+.sea__sondeoNext {
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.82;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
+
+.sea__sondeo.is-full .sea__sondeoNext { color: var(--ui-gold-text); opacity: 1; }
+
+/* WHAT THE NOISE DREW, and it is the loudest thing in the panel because it is
+   the reason to leave. Everything above is bookkeeping. */
+.sea__sondeoHeard {
+  margin-top: 6px;
+  padding: 3px 8px 4px;
+  border-radius: 999px;
+  border: var(--ui-ink-w-sm) solid var(--ui-red-lip);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0 50%, rgba(0, 0, 0, 0.12) 50% 100%),
+              rgba(86, 12, 14, 0.88);
+  color: #FFD9D6;
+  font-size: 11px;
+  line-height: 1.1;
+  text-align: center;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+  animation: sea-alert-in 0.2s ease-out, sea-pulse 0.9s ease-in-out 0.2s infinite;
+}
+
+.sea__sondeoHeard[hidden] { display: none; }
+
+.sea__sondeo.is-heard {
+  border-color: var(--ui-red-lip);
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim-low),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.34),
+    var(--ui-drop-xs),
+    0 0 0 2px rgba(212, 20, 26, 0.26);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sea__sondeoHeard { animation: sea-alert-in 0.2s ease-out; }
+}
+
 /* --- zafarrancho: the one button on this screen ---------------------------- */
 /* Inboard of the helm, on the arc the same right thumb already sweeps, and
    deliberately the ONLY button out here — SEA_PLAY.md refuses a fire button and
