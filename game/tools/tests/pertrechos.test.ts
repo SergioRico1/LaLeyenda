@@ -1,14 +1,32 @@
 import { describe, eq, near, ok, test } from './harness';
 import { Rng } from '../../src/core/rng';
 import {
-  SEA_CELL, SEA_RANGE, SEA_STEP, SHIPS, holdUsed, ringOf, sitesNear,
-  startVoyage, steer, stepVoyage, type Site, type Voyage,
+  NEUTRAL_LOADOUT, SEA_CELL, SEA_RANGE, SEA_STEP, SHIPS, effectiveShip, holdUsed, ringOf,
+  sitesNear, startVoyage, steer, stepVoyage,
+  type Loadout, type ShipSpec, type Site, type Voyage,
 } from '../../src/sim/sea';
 import {
-  KILL_VALUE, PERTRECHOS, POOL_LEVELS, SITE_VALUE, canTake, earn, earnedBy, emptyLoadout,
-  levelOf, loadoutOf, noteEvents, offerFor, pertrechoById, progress, riggedShip, startPertrechos,
-  taken as takenList, takeOffer, threshold, type Loadout, type PertrechoId, type PertrechosState,
+  KILL_VALUE, PERTRECHOS, POOL_LEVELS, SITE_VALUE, canTake, earn, earnedBy,
+  levelOf, loadoutOf, noteEvents, offerFor, pertrechoById, progress, startPertrechos,
+  taken as takenList, takeOffer, threshold, type PertrechoId, type PertrechosState,
 } from '../../src/sim/pertrechos';
+
+/** A fresh neutral loadout — the identity, copied so a test cannot scribble on
+ *  the shared constant. */
+const emptyLoadout = (): Loadout => ({ ...NEUTRAL_LOADOUT });
+
+/**
+ * The ship a loadout actually sails.
+ *
+ * `effectiveShip` is the sim's own answer and the only one that counts — it is
+ * what `stepVoyage` reads at the top of every step. The hold is empty, so the
+ * weight rule contributes exactly nothing and what is left in the difference is
+ * the pertrechos. Before the two Loadouts were made one this file had its own
+ * `riggedShip`, which was the problem: a second implementation of the seam,
+ * agreeing with itself and with nothing else.
+ */
+const rigged = (shipType: string, loadout: Loadout): ShipSpec =>
+  effectiveShip(startVoyage('rigged', shipType, { loadout }));
 
 /**
  * pertrechos.test.ts — SEA_PLAY.md item 3, held to its five promises.
@@ -49,7 +67,9 @@ function takeAll(seed: string, upTo = threshold(POOL_LEVELS)): PertrechosState {
 describe('pertrechos · the pool', () => {
   test('every entry maps onto a loadout field, and moves it', () => {
     for (const spec of PERTRECHOS) {
-      const fields = [...Object.keys(spec.mul ?? {}), ...Object.keys(spec.add ?? {})];
+      const fields = [
+        ...Object.keys(spec.mul ?? {}), ...Object.keys(spec.add ?? {}), ...Object.keys(spec.set ?? {}),
+      ];
       ok(fields.length > 0, `${spec.id} changes nothing at all`);
       const neutral = emptyLoadout();
       const one = loadoutOf([spec.id]);
@@ -68,11 +88,9 @@ describe('pertrechos · the pool', () => {
     for (const spec of PERTRECHOS) {
       const cost = spec.mul ?? {};
       if (cost.reload !== undefined) ok(cost.reload < 1, `${spec.id} makes reloading slower`);
-      if (cost.ballast !== undefined) ok(cost.ballast < 1, `${spec.id} makes the ship heavier`);
       if (cost.tideRate !== undefined) ok(cost.tideRate < 1, `${spec.id} makes the tide rise faster`);
       for (const [field, factor] of Object.entries(cost)) {
-        if (field === 'reload' || field === 'ballast' || field === 'tideRate') continue;
-        if (field === 'damage') continue;   // metralla trades bite for three balls
+        if (field === 'reload' || field === 'tideRate') continue;
         ok(factor > 1, `${spec.id} multiplies ${field} by ${factor}`);
       }
     }
@@ -241,25 +259,27 @@ describe('pertrechos · taking one changes the loadout it claims to', () => {
   test('a voyage with nothing taken sails exactly the ship balance.json describes', () => {
     const empty = emptyLoadout();
     for (const type of Object.keys(SHIPS)) {
-      eq(JSON.stringify(riggedShip(SHIPS[type], empty)), JSON.stringify(SHIPS[type]), `${type} moved`);
+      eq(JSON.stringify(rigged(type, empty)), JSON.stringify(SHIPS[type]), `${type} moved`);
     }
     eq(JSON.stringify(loadoutOf([])), JSON.stringify(empty), 'an empty build is not neutral');
   });
 
-  test('metralla: three balls, each biting less', () => {
+  test('metralla opens the broadside, and the trade is the sea\'s to measure', () => {
     const l = loadoutOf(['metralla']);
-    eq(l.balls, 3, 'metralla did not open the broadside');
-    ok(l.spread > 0, 'three balls with no spread is one ball drawn three times');
-    const skiff = riggedShip(SHIPS.skiff, l);
-    ok(skiff.damage < SHIPS.skiff.damage, 'the cards say each bites less');
-    ok(skiff.damage * l.balls > SHIPS.skiff.damage, 'a full volley must beat the single ball');
-    near(skiff.damage, 17 * 0.46, 0.001, 'skiff ball damage');
+    eq(l.spread, true, 'metralla did not open the broadside');
+    // How many balls, across what fan, for what fraction of a ball's bite is
+    // `sea.loadout.spread` in balance.json and is asserted where it is applied
+    // — sea.test.ts, "grape spreads the broadside: more balls, each for less".
+    // A second copy of those numbers here is exactly the duplication that made
+    // this module ship a loadout nothing read.
+    eq(JSON.stringify(rigged('skiff', l)), JSON.stringify(SHIPS.skiff), 'and moves no hull number');
+    eq(levelOf(['metralla'], 'metralla'), 1, 'a flag has one level and no more');
   });
 
   test('brigada de artilleros stacks three times, and each one is faster', () => {
-    const one = riggedShip(SHIPS.skiff, loadoutOf(['artilleros']));
-    const two = riggedShip(SHIPS.skiff, loadoutOf(['artilleros', 'artilleros']));
-    const three = riggedShip(SHIPS.skiff, loadoutOf(['artilleros', 'artilleros', 'artilleros']));
+    const one = rigged('skiff', loadoutOf(['artilleros']));
+    const two = rigged('skiff', loadoutOf(['artilleros', 'artilleros']));
+    const three = rigged('skiff', loadoutOf(['artilleros', 'artilleros', 'artilleros']));
     ok(one.reload < SHIPS.skiff.reload, 'level I did not speed the reload');
     ok(two.reload < one.reload && three.reload < two.reload, 'the stack stopped paying');
     near(three.reload, 1.7 * 0.84 ** 3, 1e-9, 'three levels of artilleros');
@@ -269,24 +289,24 @@ describe('pertrechos · taking one changes the loadout it claims to', () => {
 
   test('the other seven land on the fields their line promises', () => {
     const skiff = SHIPS.skiff;
-    ok(riggedShip(skiff, loadoutOf(['polvora'])).range > skiff.range, 'pólvora fina: reach');
-    ok(riggedShip(skiff, loadoutOf(['cobre'])).speed > skiff.speed, 'fondo de cobre: speed');
-    ok(loadoutOf(['cobre']).ballast < 1, 'fondo de cobre: lastre');
-    ok(riggedShip(skiff, loadoutOf(['carpintero'])).repair > skiff.repair, 'carpintero: patching');
-    ok(riggedShip(skiff, loadoutOf(['estiba'])).hold > skiff.hold, 'estiba: hold');
-    ok(loadoutOf(['palanqueta']).chainSlow > 0 && loadoutOf(['palanqueta']).chainSeconds > 0, 'palanqueta');
+    ok(rigged('skiff', loadoutOf(['polvora'])).range > skiff.range, 'pólvora fina: reach');
+    ok(rigged('skiff', loadoutOf(['cobre'])).speed > skiff.speed, 'fondo de cobre: speed');
+    ok(rigged('skiff', loadoutOf(['cobre'])).turn > skiff.turn, 'fondo de cobre: gobierno');
+    ok(rigged('skiff', loadoutOf(['carpintero'])).repair > skiff.repair, 'carpintero: patching');
+    ok(rigged('skiff', loadoutOf(['estiba'])).hold > skiff.hold, 'estiba: hold');
+    ok(loadoutOf(['palanqueta']).chainSlow > 0, 'palanqueta: the slow');
     ok(loadoutOf(['arpon']).harpoon > 0, 'arpón: pull');
     ok(loadoutOf(['contramaestre']).tideRate < 1, 'contramaestre: tide');
-    ok(loadoutOf(['bodega']).strongbox > 0, 'bodega falsa: what comes up with the crew');
-    // The strongbox is a share ADDED to sea.landfall.sunk (0.5) and must not be
+    ok(loadoutOf(['bodega']).holdGuard > 0, 'bodega falsa: what comes up with the crew');
+    // The guard is a share ADDED to sea.landfall.sunk (0.5) and must not be
     // able to carry that past a whole hold on its own.
-    ok(0.5 + loadoutOf(['bodega']).strongbox <= 1, 'bodega falsa banks more than the hold');
+    ok(0.5 + loadoutOf(['bodega']).holdGuard <= 1, 'bodega falsa banks more than the hold');
   });
 
   test('the hold is a whole number of units, because cargo is counted in them', () => {
-    const rigged = riggedShip(SHIPS.skiff, loadoutOf(['estiba', 'estiba']));
-    eq(rigged.hold, Math.round(rigged.hold), 'a fractional hold');
-    eq(rigged.hold, Math.round(900 * 1.22 * 1.22), 'two levels of estiba');
+    const stowed = rigged('skiff', loadoutOf(['estiba', 'estiba']));
+    eq(stowed.hold, Math.round(stowed.hold), 'a fractional hold');
+    eq(stowed.hold, Math.round(900 * 1.22 * 1.22), 'two levels of estiba');
   });
 
   test('the cached loadout is never out of step with what was taken', () => {

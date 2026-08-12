@@ -158,7 +158,9 @@ export function cellsInRing(ring: number): [number, number][] {
 // rather than infer it. `sea.tide` in balance.json is where the shape is argued.
 
 const TIDE = SEA.tide;
-const TIDE_STAGE_AT: readonly number[] = TIDE.stages;
+/** The level each named stage begins at. Exported so the HUD can put its ticks
+ *  where the sim's stages actually are rather than at eyeballed percentages. */
+export const TIDE_STAGE_AT: readonly number[] = TIDE.stages;
 const SWELL = TIDE.swell;
 
 /** What the sea is called at each step of the flood, outermost id first used by
@@ -672,6 +674,18 @@ export interface Loadout {
   /** 0 to 1: added to the share of the hold that survives a sinking, capped by
    *  `sea.loadout.guardMax` — Bodega falsa. */
   holdGuard: number;
+  /** Multiplier on the hold — Estiba maestra. Rounded where it is applied,
+   *  because `stow` counts cargo in whole units. It argues with the weight
+   *  rule on purpose: more capacity is more to carry. */
+  hold: number;
+  /** Multiplier on the carpenter's rate — Carpintero de ribera. The eight in
+   *  SEA_PLAY.md are seven guns and a hull-speed bonus, with no answer at all
+   *  to "the hull is going"; this is that answer. */
+  repair: number;
+  /** World units a second a target already inside the firing arc is dragged
+   *  toward the beam — Arpón. 0 is no harpoon. It pulls the TARGET, never the
+   *  ship, so it can never be used to swim. */
+  harpoon: number;
 }
 
 /** The identity element. An empty loadout changes NOTHING, which is the
@@ -679,6 +693,7 @@ export interface Loadout {
 export const NEUTRAL_LOADOUT: Loadout = {
   reload: 1, range: 1, arc: 1, speed: 1, turn: 1, tideRate: 1,
   chainSlow: 0, spread: false, holdGuard: 0,
+  hold: 1, repair: 1, harpoon: 0,
 };
 
 /** A loadout with any subset of the fields set, defaulted to neutral. What the
@@ -687,10 +702,30 @@ export function loadoutOf(partial: Partial<Loadout> = {}): Loadout {
   return { ...NEUTRAL_LOADOUT, ...partial };
 }
 
-/** How full the hold is, 0 to 1. The one input the weight rule has. */
+/**
+ * The hold this voyage actually has, in whole units.
+ *
+ * ONE expression, because two would drift. `effectiveShip` needs it and so does
+ * `holdLoad`, and `effectiveShip` cannot ask `holdLoad` for it without going
+ * round in a circle — the weight rule's input is the hold, and the hold is one
+ * of the things the loadout moves. Rounded, because `stow` counts cargo in
+ * whole units and a hold of 1097.99 is a hold that can never quite be filled.
+ */
+export function ratedHold(v: Voyage): number {
+  return Math.round(SHIPS[v.shipType].hold * v.loadout.hold);
+}
+
+/**
+ * How full the hold is, 0 to 1. The one input the weight rule has.
+ *
+ * Measured against the hold the ship HAS rather than the one the shipyard sold,
+ * which is what makes Estiba maestra a trade rather than a straight upgrade in
+ * one direction or the other: a bigger hold carrying the same cargo is a
+ * lighter ship, and a bigger hold filled to the brim is a heavier one.
+ */
 export function holdLoad(v: Voyage): number {
-  const spec = SHIPS[v.shipType];
-  return Math.max(0, Math.min(1, holdUsed(v) / spec.hold));
+  const hold = ratedHold(v);
+  return hold > 0 ? Math.max(0, Math.min(1, holdUsed(v) / hold)) : 0;
 }
 
 /**
@@ -720,6 +755,8 @@ export function effectiveShip(v: Voyage): ShipSpec {
     reload: spec.reload * gear.reload,
     range: spec.range * gear.range,
     arc: spec.arc * gear.arc,
+    hold: ratedHold(v),
+    repair: spec.repair * gear.repair,
   };
 }
 
@@ -1073,8 +1110,12 @@ const BOUNTY: Record<MobKind, Partial<Record<ResourceId, number>>> = SEA.bounty;
  * One place, so a boarded island and a sunk shark cannot disagree about what a
  * full hold means. Mutates `v.cargo`, which is fine — `stepVoyage` has already
  * copied it.
+ *
+ * Exported for the suite, which has to be able to prove that a hold made bigger
+ * by Estiba maestra actually TAKES more rather than merely reporting a larger
+ * number — and this is the one function that decides that.
  */
-function stow(
+export function stow(
   v: Voyage, spec: ShipSpec, haul: Partial<Record<ResourceId, number>>
 ): Partial<Record<ResourceId, number>> {
   const taken: Partial<Record<ResourceId, number>> = {};
@@ -1639,6 +1680,26 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
       : mob.state === 'chase' ? 1 : 0.45;
     mob.x += Math.cos(mob.heading) * ms.speed * chained * closing * dt;
     mob.y += Math.sin(mob.heading) * ms.speed * chained * closing * dt;
+
+    // EL ARPÓN. Anything already standing in a firing arc is hauled toward the
+    // ship, which is the pertrecho's whole promise: what tries to run does not
+    // get to. It pulls the TARGET and never the hull — a harpoon that moved the
+    // ship would be a grappling hook, and a grappling hook is a way to swim.
+    //
+    // Gated on the arcs rather than on range alone on purpose. It is the answer
+    // to a creature leaving the guns, so it has to be a reason to KEEP a beam
+    // presented rather than a free tractor beam that makes presenting one
+    // pointless — which is the same skill the whole fight is about. Clamped to
+    // the step's own distance so nothing can ever be pulled past the hull.
+    if (v.loadout.harpoon > 0 && distance > spec.radius * 2 && distance <= spec.range) {
+      const bearing = Math.atan2(mob.y - v.y, mob.x - v.x);
+      const inArc = Math.abs(Math.abs(angleDelta(v.heading, bearing)) - Math.PI / 2) <= spec.arc;
+      if (inArc) {
+        const pull = Math.min(v.loadout.harpoon * dt, distance - spec.radius * 2);
+        mob.x -= Math.cos(bearing) * pull;
+        mob.y -= Math.sin(bearing) * pull;
+      }
+    }
 
     if (mob.state === 'attack' && mob.cooldown <= 0 && distance <= ms.reach) {
       mob.cooldown = ms.cadence;

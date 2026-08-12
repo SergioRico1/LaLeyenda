@@ -633,4 +633,38 @@ export const ACTS = {
     // everything they light up land where they would land in play.
     for (let i = 0; i < 16; i++) await step(page, 5);
   },
+
+  /**
+   * The choice of three, EARNED rather than posed.
+   *
+   *   npm run shoot -- sea --mobile --at 220,0 --act pertrechos
+   *
+   * There is no hook that opens this tray, on purpose: it appears when a
+   * threshold is crossed and at no other time (see src/ui/panels/pertrechos.ts),
+   * so the only honest way to photograph it is to go and earn it. The ship hunts
+   * on the same `__sail` helm `fight` uses and the capture waits for the real
+   * panel — which also makes this act a live check on the calibration. If it
+   * ever stops arriving inside a minute of hunting, the ladder has drifted and
+   * this fails loudly instead of shooting an empty sea.
+   */
+  async pertrechos(page) {
+    const helm = await page.evaluate(() => {
+      window.__sail?.('hunt');
+      return typeof window.__sail === 'function';
+    });
+    if (!helm) throw new Error('act: pertrechos — no helm to drive. Is this a sea capture?');
+    // `__step` is a FRAME at 1/30s, not a second: the sim's own measurement puts
+    // the first offer 7.3s into a hunting voyage, which is 220 of these. Sixty
+    // blocks of twenty is forty seconds of sea — five times the budget the
+    // calibration table says it needs, and still bounded.
+    for (let i = 0; i < 60; i++) {
+      await step(page, 20);
+      if (await page.$('.pertrechos__tray')) return;
+    }
+    throw new Error(
+      'act: pertrechos — forty seconds of hunting and no offer. The ladder in '
+      + 'src/sim/pertrechos.ts (FIRST/STEP), what a kill pays, or the scene wiring '
+      + 'in seaScene.ts has drifted.'
+    );
+  },
 };

@@ -6,6 +6,10 @@ import { Rng } from '../core/rng';
 import { peekSavedGame } from '../core/save';
 import { createStick, type Stick } from '../ui/stick';
 import { createSeaHud, type SeaHud } from '../ui/seaHud';
+import { createPertrechosPanel, type PertrechosPanel } from '../ui/panels/pertrechos';
+import {
+  noteEvents, startPertrechos, takeOffer, type PertrechosState,
+} from '../sim/pertrechos';
 import { sfx } from '../ui/sfx';
 import {
   HARBOUR, MOBS, SEA_CELL, SEA_RANGE, SEA_STEP, SHIPS, SQUID_STRIKE_RADIUS, sitesNear,
@@ -606,10 +610,43 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
     // save peeked at boot is the honest source — nothing at sea can touch the
     // island's stores while the voyage runs.
     const preview = islandSave ? previewLanding(islandSave, voyage.cargo) : null;
+    // A voyage that has ended must not leave a card on the water for the
+    // end-of-voyage sheet to sit under.
+    choice?.hide();
     void hud?.finish(voyage, reason, preview).then(() => opts.onEnd?.(voyage, reason));
   }
 
   let voyage = startVoyage(seed, shipType, { deepChest: deepChestOwed });
+
+  // --- pertrechos ----------------------------------------------------------
+  // SEA_PLAY.md item 3, and the leg of the survivors design the sea was missing:
+  // kills and sites pay into a ladder, and at each rung the voyage stops and
+  // offers one of three upgrades that die with the run.
+  //
+  // The state lives HERE rather than on the Voyage on purpose. `stepVoyage`
+  // shallow-copies its input every step; a choice the player is halfway through
+  // making is not a property of the sea, and the only thing the sim needs to
+  // know is the LOADOUT, which is one field it already carries. So the scene
+  // owns the ladder, folds each step's events into it, and hands the sim the
+  // coefficients — which keeps sim/sea.ts's contract exactly where it was.
+  let pertrechos: PertrechosState = startPertrechos(seed);
+  const choice: PertrechosPanel | null = uiRoot && hudEnabled
+    ? createPertrechosPanel(uiRoot, {
+      onTake: (id) => {
+        const { pertrechos: next } = takeOffer(pertrechos, id);
+        pertrechos = next;
+        // The one line the sim reads. `takeOffer` has already rebuilt the
+        // loadout from everything taken, so this is a hand-over rather than an
+        // accumulation — and a refused id comes back as the same loadout,
+        // which is why it is safe to assign unconditionally.
+        voyage.loadout = next.loadout;
+        hud?.setPertrechos?.(pertrechos);
+        // The queue: earning past the next rung while deciding raises another
+        // offer immediately, and the player answers both before sailing on.
+        if (next.offer) choice?.show(next.offer);
+      },
+    })
+    : null;
   // `?at=x,y` drops the ship somewhere specific. A capture of the open sea is
   // otherwise a capture of home water, which is empty by design — there is
   // nothing out there to photograph until you have sailed for a minute.
@@ -1822,11 +1859,30 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
   // own combat screen does it (reference/sea_combat.png): nothing over a
   // creature at full health, so the bars appearing IS the fight starting.
   const BAR_CAP = 14;
-  const BAR_WIDTH = 5.2;
-  const BAR_HEIGHT = 0.72;
+  // Was 5.2 x 0.72 with a 0.34 ink margin — over a 2-unit kelpling that is a
+  // strip nearly three times the width of the creature it belongs to, and read
+  // off a capture it looked like a black slab hanging in the water rather than
+  // like anything the fish was wearing. Pirate Nation's own combat screen keeps
+  // the bar INSIDE the creature's silhouette; so does this now.
+  const BAR_WIDTH = 3.4;
+  const BAR_HEIGHT = 0.58;
+  /** The ink contour, in world units. UI_SPEC §0.2 layer 1, on a quad. */
+  const BAR_INK = 0.26;
   const barBack = new THREE.InstancedMesh(
     new THREE.PlaneGeometry(1, 1),
-    new THREE.MeshBasicMaterial({ color: 0x17130e, transparent: true, opacity: 0.9, depthTest: false, fog: false }),
+    // 0.9 opacity of near-black over bright turquoise is a HOLE, and a hole is
+    // the one thing a readout must not look like. The plate is the ink contour
+    // and it is opaque — a contour that lets the water through is not a
+    // contour — and the well inside it is what carries the translucency.
+    new THREE.MeshBasicMaterial({ color: 0x17130e, transparent: true, opacity: 0.96, depthTest: false, fog: false }),
+    BAR_CAP
+  );
+  // The WELL: the empty part of the bar, dark but not ink, so a bar at 10% still
+  // reads as a bar with something left in it rather than as a black rectangle
+  // with a chip of colour on the end.
+  const barWell = new THREE.InstancedMesh(
+    new THREE.PlaneGeometry(1, 1),
+    new THREE.MeshBasicMaterial({ color: 0x2E2A22, transparent: true, opacity: 0.92, depthTest: false, fog: false }),
     BAR_CAP
   );
   // Origin at the left edge, so a scale on x empties the bar from the right.
@@ -1835,7 +1891,15 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 1, depthTest: false, fog: false }),
     BAR_CAP
   );
-  for (const mesh of [barBack, barFill]) {
+  // The warm top rim — layer 3, and the thing that lifts the whole readout off
+  // the water. A thin bright quad along the top of the plate, alpha only.
+  const barRim = new THREE.InstancedMesh(
+    // Left-origin like the fill it sits on, so the two shrink together.
+    new THREE.PlaneGeometry(1, 1).translate(0.5, 0, 0),
+    new THREE.MeshBasicMaterial({ color: 0xFFF3C8, transparent: true, opacity: 0.4, depthTest: false, fog: false }),
+    BAR_CAP
+  );
+  for (const mesh of [barBack, barWell, barFill, barRim]) {
     mesh.frustumCulled = false;
     mesh.count = 0;
     stage.scene.add(mesh);
@@ -1847,7 +1911,9 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
   // came back with every bar painted over its own contents: dark, empty, and
   // indistinguishable from a creature at nought hull.
   barBack.renderOrder = 8;
-  barFill.renderOrder = 9;
+  barWell.renderOrder = 9;
+  barFill.renderOrder = 10;
+  barRim.renderOrder = 11;
 
   // --- the horizon ----------------------------------------------------------
   // A site the player could go and take, seen from three cells out.
@@ -2573,29 +2639,51 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
       const width = mob.kind === 'squid' ? BAR_WIDTH * 1.7 : BAR_WIDTH;
       const height = SEA_Y + water.surfaceAt(mob.x, mob.y, elapsed).height + ms.radius * 1.7 + 1.1;
 
-      pose.position.set(mob.x, height, mob.y);
-      pose.quaternion.copy(stage.camera.quaternion);
-      pose.scale.set(width + 0.34, BAR_HEIGHT + 0.34, 1);
-      pose.updateMatrix();
+      // FOUR QUADS, ONE OBJECT, and they are laid down in the order UI_SPEC
+      // §0.2 lays down the four layers: contour, well, fill, rim. Every one is
+      // posed from the SAME centre so they cannot come apart — the previous
+      // version walked `pose` from the plate's centre to the fill's left edge
+      // and never walked back, which is how a gold bar ended up hanging off the
+      // corner of its own black plate in a store-page frame.
+      const centre = { x: mob.x, y: height, z: mob.y };
+      const place = (w: number, h: number, offsetX: number, offsetY: number): void => {
+        pose.position.set(centre.x, centre.y, centre.z);
+        pose.quaternion.copy(stage.camera.quaternion);
+        pose.scale.set(1, 1, 1);
+        // In the CAMERA's frame, so the bar reads the same way whatever heading
+        // the ship is on. `translateX`/`Y` walk the object's own axes, which
+        // the quaternion above has just made the camera's.
+        if (offsetX) pose.translateX(offsetX);
+        if (offsetY) pose.translateY(offsetY);
+        pose.scale.set(w, h, 1);
+        pose.updateMatrix();
+      };
+
+      place(width + BAR_INK, BAR_HEIGHT + BAR_INK, 0, 0);
       barBack.setMatrixAt(n, pose.matrix);
 
-      // The fill hangs off the bar's left edge, in the camera's own frame, so
-      // it empties the way a bar is read whatever the ship is doing.
-      pose.translateX(-width / 2);
-      pose.scale.set(width * fraction, BAR_HEIGHT, 1);
-      pose.updateMatrix();
+      place(width, BAR_HEIGHT, 0, 0);
+      barWell.setMatrixAt(n, pose.matrix);
+
+      // Origin at the left edge (the geometry is pre-translated), so scaling x
+      // empties the bar from the right the way a bar is read.
+      place(width * fraction, BAR_HEIGHT, -width / 2, 0);
       barFill.setMatrixAt(n, pose.matrix);
       barFill.setColorAt(n, fraction > 0.45
         ? tint.setRGB(0.42, 0.88, 0.36)
         : fraction > 0.2 ? tint.setRGB(1, 0.74, 0.2) : tint.setRGB(1, 0.34, 0.26));
+
+      // The warm rim, on the top third of the well and only as wide as what is
+      // left in it: the gloss belongs to the FILL, so it shrinks with it.
+      place(Math.max(0.001, width * fraction), BAR_HEIGHT * 0.34, -width / 2, BAR_HEIGHT * 0.28);
+      barRim.setMatrixAt(n, pose.matrix);
       n++;
     }
-    barBack.count = n;
-    barFill.count = n;
-    barBack.visible = n > 0;
-    barFill.visible = n > 0;
-    barBack.instanceMatrix.needsUpdate = true;
-    barFill.instanceMatrix.needsUpdate = true;
+    for (const mesh of [barBack, barWell, barFill, barRim]) {
+      mesh.count = n;
+      mesh.visible = n > 0;
+      mesh.instanceMatrix.needsUpdate = true;
+    }
     if (barFill.instanceColor) barFill.instanceColor.needsUpdate = true;
   }
 
@@ -2776,12 +2864,28 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
       sail(elapsed);
       applyStick();
 
-      owed += Math.min(dt, 0.25);
+      // THE PAUSE, and it is one conditional. src/ui/panels/pertrechos.ts
+      // argues it at length: the player has one verb and it lives under the
+      // same thumb that has to answer the cards, so a live choice is not
+      // "choose while playing", it is "stop playing, or do not read them".
+      //
+      // The bank is DROPPED rather than kept. Time banked behind a card would
+      // come out as eight steps of sea the instant one was tapped — a punish
+      // for reading, which is the exact opposite of the trade being offered.
+      // Everything else in this callback keeps running, so the water, the
+      // swell and the thing that was chasing you all stay on screen: the
+      // choice is made in context, which is what pays the pause down.
+      if (choice?.open) owed = 0;
+      else owed += Math.min(dt, 0.25);
       let guard = 0;
-      while (owed >= SEA_STEP && guard++ < 8) {
+      while (owed >= SEA_STEP && guard++ < 8 && !choice?.open) {
         owed -= SEA_STEP;
         const out = stepVoyage(voyage);
         voyage = out.voyage;
+        // The ladder is fed the whole step at once — `earnedBy` knows which
+        // events pay and every other one is worth nothing, so the scene never
+        // has to hold an opinion about what a kill is worth.
+        pertrechos = noteEvents(pertrechos, out.events);
         for (const event of out.events) {
           opts.onEvent?.(event);
           // Run in shot mode too. sfx() gates itself on SHOT, and the smoke
@@ -2792,8 +2896,14 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
           feedback(event);
           if (event.kind === 'sunk') end('sunk');
           if (event.kind === 'home') end('home');
+          if (event.kind === 'tide-turn') hud?.announceTide(event.stageId);
         }
+        // Raised INSIDE the loop and before the next step, so the sea a player
+        // is looking at while they decide is the sea the choice arrived in.
+        // The while condition catches it on the next turn and stops stepping.
+        if (pertrechos.offer && choice && !choice.open) choice.show(pertrechos.offer);
       }
+      hud?.setPertrechos(pertrechos);
 
       // The hull rides the swell, and heels into its turn.
       // surfaceAt, not swellAt: the bare function defaults to the ISLAND's
@@ -2934,6 +3044,7 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
     dispose() {
       stick?.dispose();
       hud?.dispose();
+      choice?.destroy();
       water.dispose();
       delete window.__sail;
       stage.scene.fog = null;
@@ -2943,7 +3054,7 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
       // drawn by two materials, and disposing it twice is a bug waiting for a
       // three.js release that starts caring.
       const spent = new Set<THREE.BufferGeometry>();
-      for (const mesh of [markMesh, shockMesh, shadeMesh, contactMesh, particleMesh, barBack, barFill, beaconMesh, chevronMesh, seaShadow, hullCollar]) {
+      for (const mesh of [markMesh, shockMesh, shadeMesh, contactMesh, particleMesh, barBack, barWell, barFill, barRim, beaconMesh, chevronMesh, seaShadow, hullCollar]) {
         if (!spent.has(mesh.geometry)) {
           spent.add(mesh.geometry);
           mesh.geometry.dispose();

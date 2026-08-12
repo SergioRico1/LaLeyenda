@@ -209,9 +209,167 @@
    only reason to spend a second line on a screen this busy. Right margin keeps
    it clear of the abandon button. */
 
+/* --- the voyage strip: the tide, and the ladder it is paying for ---------- */
+/* One capsule with a division rather than two objects, for the same reason the
+   bar above is one capsule: two floating readouts are two decisions, and the
+   sea already asks for enough of those. It hangs off the bottom of the bar so
+   the pair read as ONE instrument stack, which is also what keeps a 320px
+   phone from acquiring a third row of chrome. */
+
+.sea__strip {
+  position: absolute;
+  top: calc(var(--ui-safe-t) + 66px);
+  left: var(--ui-edge);
+  /* Clear of the abandon button, which owns this row's right-hand end. The
+     same 104px `.sea__alert` reserves, so the two things that live under the
+     capsule agree about where the screen stops. */
+  right: 104px;
+  display: flex;
+  align-items: stretch;
+  padding: 4px 6px 5px;
+  border-radius: 13px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0 50%, rgba(0, 0, 0, 0.14) 50% 100%),
+    rgba(10, 22, 34, 0.58);
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim-low),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.32),
+    var(--ui-drop-xs);
+  backdrop-filter: blur(3px);
+  transition: opacity 0.22s ease-out, border-color 0.25s linear;
+}
+
+/* Alongside there is no voyage clock yet and nothing has been earned, so the
+   strip is a caption on zero. It arrives with the departure the same way the
+   dock card leaves with it. */
+.sea:not(.is-departed) .sea__strip { opacity: 0; pointer-events: none; }
+
+.sea__gauge {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px;
+  min-width: 0;
+}
+
+.sea__gauge--tide { flex: 1 1 58%; }
+.sea__gauge--gear { flex: 1 1 42%; }
+
+.sea__gaugeLabel {
+  font-size: 9px;
+  line-height: 1;
+  opacity: 0.58;
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+}
+
+.sea__gaugeTrack {
+  position: relative;
+  flex: 1;
+  min-width: 22px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--ui-track-well);
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.sea__gaugeFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background:
+    var(--ui-fill-gloss),
+    linear-gradient(180deg, var(--ui-blue-rim) 0 50%, var(--ui-blue-b) 50% 100%);
+  /* Slow on purpose. The tide takes three minutes to come in and a fill that
+     eases like a health bar reads as something that just happened; this has to
+     read as something that is happening. */
+  transition: width 0.5s linear, background 0.4s linear;
+}
+
+/* Where the sea changes its name. Drawn as an ink notch rather than a light
+   line so it survives the fill passing under it — a tick that vanishes once
+   the bar reaches it is a tick that is missing exactly when it matters. */
+.sea__gaugeTick {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  width: 2px;
+  margin-left: -1px;
+  background: rgba(12, 10, 8, 0.62);
+  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.18);
+}
+
+.sea__gaugeValue {
+  font-size: 11px;
+  line-height: 1;
+  min-width: 30px;
+  text-align: right;
+  -webkit-text-stroke-width: 1.5px;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+  transition: color 0.25s linear;
+}
+
+/* The pertrechos side stays grey until something has actually been taken —
+   an empty ladder is a promise, and a gold one is a run. */
+.sea__gauge--gear .sea__gaugeFill {
+  background:
+    var(--ui-fill-gloss),
+    linear-gradient(180deg, var(--ui-grey-gloss-b) 0 50%, var(--ui-grey2-gloss-b) 50% 100%);
+}
+
+.sea__strip.is-geared .sea__gauge--gear .sea__gaugeFill {
+  background:
+    var(--ui-fill-gloss),
+    linear-gradient(180deg, var(--ui-gold-a) 0 50%, var(--ui-gold-b) 50% 100%);
+}
+
+.sea__strip.is-geared .sea__gauge--gear .sea__gaugeValue { color: var(--ui-gold-text); }
+
+/* THE FOUR NAMED WATERS, and the ramp is the whole warning. Cyan is the sea
+   the fleet table measured; it walks through gold to red as the tide makes, so
+   a player who never reads the caption still learns what colour means "go
+   home". Only the FILL changes — a strip that turned red entire would be a
+   third alarm competing with the hull bar and the zone plate. */
+.sea__strip[data-stage='1'] .sea__gauge--tide .sea__gaugeFill {
+  background:
+    var(--ui-fill-gloss),
+    linear-gradient(180deg, var(--ui-gold-a) 0 50%, var(--ui-gold-b) 50% 100%);
+}
+
+.sea__strip[data-stage='2'] .sea__gauge--tide .sea__gaugeFill {
+  background:
+    var(--ui-fill-gloss),
+    linear-gradient(180deg, var(--ui-orange-gloss-a) 0 50%, var(--ui-orange-gloss-b) 50% 100%);
+}
+
+.sea__strip[data-stage='2'] .sea__gauge--tide .sea__gaugeValue { color: #FFD9A8; }
+
+.sea__strip[data-stage='3'] .sea__gauge--tide .sea__gaugeFill {
+  background:
+    var(--ui-fill-gloss),
+    linear-gradient(180deg, var(--ui-red-gloss-a) 0 50%, var(--ui-red-a) 50% 100%);
+}
+
+.sea__strip[data-stage='3'] .sea__gauge--tide .sea__gaugeValue { color: #FFD9D6; }
+.sea__strip[data-stage='3'] { border-color: var(--ui-red-lip); }
+
+.sea__alert[data-kind='tide'] {
+  color: #FFE0C6;
+  border-color: var(--ui-orange-lip, var(--ui-gold-lip));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0 50%, rgba(0, 0, 0, 0.14) 50% 100%),
+              rgba(74, 34, 6, 0.86);
+}
+
 .sea__alert {
   position: absolute;
-  top: calc(var(--ui-safe-t) + 72px);
+  /* Under the voyage strip, not through it. */
+  top: calc(var(--ui-safe-t) + 106px);
   left: var(--ui-edge);
   right: 104px;
   /* A CHIP, not a second HUD bar. Stretched edge to edge it read as another

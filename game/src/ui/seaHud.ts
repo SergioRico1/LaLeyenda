@@ -1,9 +1,10 @@
 import './seaHud.css';
 import type { ResourceId } from '../sim';
 import {
-  HARBOUR, MOBS, SHIPS, abandonVoyageInPlace, bearingHome, holdUsed, previewAbandon,
-  ringOf, SEA_CELL, type Voyage,
+  HARBOUR, MOBS, SHIPS, abandonVoyageInPlace, bearingHome, effectiveShip, holdUsed,
+  previewAbandon, readTide, ringOf, SEA_CELL, TIDE_STAGE_AT, type TideStage, type Voyage,
 } from '../sim/sea';
+import { progress, type PertrechosState } from '../sim/pertrechos';
 import { CAPTURE } from './env';
 import { HELM_STEER } from './stick';
 
@@ -90,6 +91,25 @@ const BANNER_TEXT = {
   'deep-chest': '¡El Cofre de las Profundidades!',
   frenzy: '¡El kraken se enfurece!',
 } as const;
+
+/**
+ * The tide, in Spanish and in the tongue the rest of the game speaks.
+ *
+ * The sim ships ids ('calm', 'making', 'high', 'flood'); the names are this
+ * screen's job, and they are nautical rather than descriptive on purpose —
+ * *pleamar* is the word a sailor uses for high water, and the game has been
+ * calling a carpenter *el carpintero* since round 11.
+ *
+ * `shout` is what the plate says at the crossing. Calma never shouts: it is
+ * where every voyage starts, and a plate announcing the absence of a thing is
+ * chrome. The other three are the arc saying itself out loud.
+ */
+const TIDE_COPY: Record<TideStage, { name: string; shout: string | null }> = {
+  calm: { name: 'Calma', shout: null },
+  making: { name: 'Creciente', shout: 'La marea crece — el mar se llena' },
+  high: { name: 'Alta', shout: 'Marea alta — vienen más, y peores' },
+  flood: { name: 'Pleamar', shout: '¡Pleamar! El mar está en tu contra' },
+};
 
 export type SeaBanner = keyof typeof BANNER_TEXT;
 
@@ -225,6 +245,25 @@ export interface SeaHud {
    */
   warnZone(ring: number, rated: number): void;
   /**
+   * The pertrechos ladder, as it stands. Called whenever the scene folds a
+   * step's events in, which is the only place the number can change.
+   *
+   * A readout rather than a control: the choice itself is its own panel
+   * (src/ui/panels/pertrechos.ts), and this is the bar that says how close the
+   * next one is — the half of "an in-run build" that is visible while sailing.
+   */
+  setPertrechos(state: PertrechosState): void;
+  /**
+   * The tide has crossed into water with a new name. Once per crossing; the sim
+   * latches it, so this can never be said twice.
+   *
+   * Separate from `banner` because the two are different volumes. A banner is a
+   * MOMENT — a chest, a boss turning — and takes the middle of the screen. This
+   * is the voyage's clock ticking over, and it belongs in the plate the zone
+   * warning uses: important, glanceable, and gone.
+   */
+  announceTide(stage: TideStage): void;
+  /**
    * Shows the end-of-voyage card. Resolves when the player dismisses it.
    *
    * `preview` is what the island will actually BANK and REFUSE — the scene
@@ -306,6 +345,31 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
       </div>
     </div>
 
+    <!-- THE VOYAGE'S TWO CLOCKS, and the reason they share one capsule: the
+         bar above says where the ship IS, this says how the run is GOING. The
+         tide is pressure the player did not choose and cannot stop; the
+         pertrechos ladder is the reward it is being traded against. Reading one
+         without the other is what makes "one more site?" a shrug — see
+         SEA_PLAY.md, which is explicit that a rising threat nobody can see is
+         not an arc, it is a difficulty knob. -->
+    <div class="sea__strip" data-strip data-stage="0">
+      <div class="sea__gauge sea__gauge--tide">
+        <span class="sea__gaugeLabel">Marea</span>
+        <span class="sea__gaugeTrack" data-tidetrack>
+          <span class="sea__gaugeFill" data-tidefill style="width:0%"></span>
+        </span>
+        <span class="sea__gaugeValue" data-tideout>Calma</span>
+      </div>
+      <span class="sea__sep"></span>
+      <div class="sea__gauge sea__gauge--gear">
+        <span class="sea__gaugeLabel">Pertrechos</span>
+        <span class="sea__gaugeTrack">
+          <span class="sea__gaugeFill" data-gearfill style="width:0%"></span>
+        </span>
+        <span class="sea__gaugeValue num" data-gearout>0</span>
+      </div>
+    </div>
+
     <div class="sea__alert" data-alert hidden></div>
 
     <!-- The boss bar. One creature in this sea has phases, and a fight whose
@@ -376,7 +440,24 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
   const holdOut = root.querySelector('[data-hold]') as HTMLElement;
   const holdLabel = root.querySelector('[data-holdlabel]') as HTMLElement;
   const ringOut = root.querySelector('[data-ring]') as HTMLElement;
+  const strip = root.querySelector('[data-strip]') as HTMLElement;
+  const tideTrack = root.querySelector('[data-tidetrack]') as HTMLElement;
+  const tideFill = root.querySelector('[data-tidefill]') as HTMLElement;
+  const tideOut = root.querySelector('[data-tideout]') as HTMLElement;
+  const gearFill = root.querySelector('[data-gearfill]') as HTMLElement;
+  const gearOut = root.querySelector('[data-gearout]') as HTMLElement;
   const alertOut = root.querySelector('[data-alert]') as HTMLElement;
+
+  // The ticks stand where the SIM's stages are, read off the same table
+  // `tideStageOf` uses. Eyeballed percentages would drift the first time
+  // balance.json's `stages` moved, and a meter whose marks lie about where the
+  // sea changes is worse than a meter with no marks at all.
+  for (const at of TIDE_STAGE_AT.slice(1)) {
+    const tick = document.createElement('span');
+    tick.className = 'sea__gaugeTick';
+    tick.style.left = `${at * 100}%`;
+    tideTrack.append(tick);
+  }
   const bossEl = root.querySelector('[data-boss]') as HTMLElement;
   const bossFill = root.querySelector('[data-bossfill]') as HTMLElement;
   const bossPip2 = root.querySelector('[data-pip2]') as HTMLElement;
@@ -652,7 +733,14 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
     update(voyage) {
       // The scene's live object, latched for the tap handlers — see `seen`.
       seen = voyage;
-      const spec = SHIPS[voyage.shipType];
+      // THE SHIP AS SHE IS, which is the same read `stepVoyage` takes at the
+      // top of every step. A hold widened by Estiba maestra has to show the
+      // bigger number, or the meter fills to "900/900" and then keeps taking
+      // cargo — a readout the player would correctly call a bug.
+      const spec = effectiveShip(voyage);
+      // The shipyard's product, for the dock card only: what was bought, not
+      // what this voyage has made of it.
+      const sold = SHIPS[voyage.shipType];
       const shipName = SHIP_LABEL[voyage.shipType] ?? 'Casco';
 
       // --- the ship itself ---------------------------------------------------
@@ -662,7 +750,7 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
       // in home water; the moment the voyage is truly on it steps aside.
       setText(hullLabel, shipName);
       setText(dockName, shipName);
-      setText(dockStats, `Casco ${spec.hull} · Cañones ${spec.damage} · Bodega ${spec.hold}`);
+      setText(dockStats, `Casco ${sold.hull} · Cañones ${sold.damage} · Bodega ${sold.hold}`);
       const departed = voyage.departed || voyage.sunk;
       if (root.classList.contains('is-departed') !== departed) {
         root.classList.toggle('is-departed', departed);
@@ -704,6 +792,23 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
       // as a second hull bar. One word fixes it, and it is the same word the
       // confirmation uses, so the button and the sheet are telling one story.
       if (priced) setHtml(leaveShare, `llega ${Math.round(share * 100)}<u>%</u>`);
+
+      // --- the tide ----------------------------------------------------------
+      // SEA_PLAY.md item 1, made visible. The bar is the level and the ticks
+      // are where the sea gets a new name; the caption is that name, and — while
+      // there is one to give — the seconds until the next one.
+      //
+      // A COUNTDOWN IS THE WHOLE POINT. "Creciente" alone is a label; "Creciente
+      // · 38s" is a decision, because it is what turns *one more site?* from a
+      // shrug into arithmetic the player can actually do. The sim computes it
+      // (`readTide().toNext`) so the screen cannot disagree with the sea.
+      const tide = readTide(voyage);
+      const tideWidth = `${(tide.level * 100).toFixed(1)}%`;
+      if (tideFill.style.width !== tideWidth) tideFill.style.width = tideWidth;
+      const stageName = TIDE_COPY[tide.stageId].name;
+      setText(tideOut, tide.toNext > 0 ? `${stageName} · ${Math.ceil(tide.toNext)}s` : stageName);
+      const stageAttr = String(tide.stage);
+      if (strip.dataset.stage !== stageAttr) strip.dataset.stage = stageAttr;
 
       shownRing = ringOf(Math.round(voyage.x / SEA_CELL), Math.round(voyage.y / SEA_CELL));
       setText(ringOut, String(shownRing));
@@ -798,6 +903,30 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
 
     banner(kind) {
       shout(BANNER_TEXT[kind], kind);
+    },
+
+    setPertrechos(state) {
+      const bar = progress(state);
+      const width = `${(bar.fraction * 100).toFixed(1)}%`;
+      if (gearFill.style.width !== width) gearFill.style.width = width;
+      // The COUNT of choices made, not the earned total. The total is a number
+      // the player has no use for — they cannot spend it, only cross thresholds
+      // with it — while "you have taken three" is the run they are building,
+      // and it is the thing the meter beside it is filling toward a fourth.
+      setText(gearOut, String(bar.picks));
+      if (strip.classList.contains('is-geared') !== bar.picks > 0) {
+        strip.classList.toggle('is-geared', bar.picks > 0);
+      }
+    },
+
+    announceTide(stageId) {
+      const line = TIDE_COPY[stageId].shout;
+      // Calma has nothing to announce — it is where every voyage begins.
+      if (!line) return;
+      // Shorter than the zone plate, and deliberately: a zone warning is an
+      // instruction the player has to act on within a cell, while this is the
+      // run telling them what o'clock it is. Long enough to read twice.
+      shout(line, 'tide', 3400);
     },
 
     warnZone(ring, rated) {

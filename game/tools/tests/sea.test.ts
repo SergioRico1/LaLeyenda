@@ -3,7 +3,7 @@ import {
   TIDE_STAGES, abandonVoyageInPlace, bearingHome,
   careenBill, cellsInRing, effectiveShip, holdLoad, holdUsed, landfallShare, loadoutOf,
   mobsAt, previewAbandon,
-  readTide, ringOf, siteAt, sitesNear, startVoyage, steer, stepVoyage, tideAt, tideClock,
+  readTide, ringOf, siteAt, sitesNear, startVoyage, steer, stepVoyage, stow, tideAt, tideClock,
   tideStageOf, type Loadout, type SeaEvent, type Voyage,
 } from '../../src/sim/sea';
 import { landCargoInPlace, previewLanding, storeCap } from '../../src/sim';
@@ -2110,5 +2110,93 @@ describe('the pertrechos seam', () => {
       drowned(1) < (quit.cargo.oro ?? 0),
       `even a hold that is all false lands less by drowning (${drowned(1)}) than by turning for home (${quit.cargo.oro})`
     );
+  });
+
+  /**
+   * THE THREE THE SEA LEARNED THIS ROUND, and why they are here rather than in
+   * pertrechos.test.ts: that file can prove a card sets a field, but only this
+   * one can prove the sim does anything with it. Estiba, the carpenter and the
+   * harpoon were three cards whose fields nothing read.
+   */
+  test('estiba carries more, and the hold really holds it', () => {
+    // What the hull is RATED to carry...
+    const rated = (hold: number): number =>
+      effectiveShip(startVoyage('estiba', 'skiff', { loadout: { hold } })).hold;
+    eq(rated(1), SHIPS.skiff.hold, 'a stock skiff carries exactly what the table says');
+    eq(rated(1.22), Math.round(SHIPS.skiff.hold * 1.22), 'and a stowed one carries more, in whole units');
+
+    // ...and what it actually takes aboard, which is the half that matters:
+    // `stow` clamps against this same number, so a bigger hold is a bigger
+    // haul rather than a bigger label.
+    const filled = (hold: number): number => {
+      const v = startVoyage('estiba-carga', 'skiff', { loadout: { hold } });
+      v.departed = true;
+      const before = holdUsed(v);
+      const spec = effectiveShip(v);
+      // One site's worth, ten times over: far more than either hull can take,
+      // so what is left in the hold is the cap and nothing else.
+      for (let i = 0; i < 10; i++) stow(v, spec, { oro: 400, madera: 400 });
+      ok(holdUsed(v) > before, 'the fixture stowed something');
+      return holdUsed(v);
+    };
+    eq(filled(1), SHIPS.skiff.hold, 'a stock hold fills to exactly its own number');
+    ok(filled(1.22) > filled(1), `and estiba lands more of it (${filled(1.22)} against ${filled(1)})`);
+    // The argument the pertrecho is FOR: more capacity is more weight, so the
+    // ship it buys is a slower ship. A card that were pure upside would not be
+    // a choice.
+    const heavy = startVoyage('estiba-peso', 'skiff', { loadout: { hold: 1.22 } });
+    heavy.cargo = { oro: SHIPS.skiff.hold };
+    const light = startVoyage('estiba-peso', 'skiff', {});
+    light.cargo = { oro: SHIPS.skiff.hold };
+    ok(
+      effectiveShip(heavy).speed > effectiveShip(light).speed,
+      'the same cargo in a bigger hold is a lighter ship — that is the trade, not a bug'
+    );
+  });
+
+  test('the carpenter patches faster, and only when nothing is biting', () => {
+    const patched = (repair: number): number => {
+      const v = startVoyage('carpintero', 'skiff', { loadout: { repair } });
+      v.departed = true;
+      v.hull = 10;
+      v.sinceHit = 999;   // long past the calm the crew need before they start
+      sweep(v);
+      return sail(v, 6, { throttle: 0 }).voyage.hull;
+    };
+    const crew = patched(1);
+    const shipwright = patched(1.45);
+    ok(crew > 10, 'a stock crew patch at all');
+    ok(shipwright > crew, `the shipwright patches faster (${shipwright} against ${crew})`);
+  });
+
+  test('the harpoon drags what is in the arc, and never the ship', () => {
+    // Abeam and inside the guns, running flat out away from the ship.
+    const chase = (harpoon: number) => {
+      const v = startVoyage('arpon', 'skiff', { loadout: { harpoon } });
+      const here = openWater('arpon');
+      v.x = here.x;
+      v.y = here.y;
+      v.heading = here.heading;
+      v.departed = true;
+      const post = offBow(v, 0, 40);
+      v.mobs.push({
+        id: 1, kind: 'blowfish', x: post.x, y: post.y, heading: v.heading + Math.PI / 2, hp: 99999,
+        state: 'patrol', cooldown: 0, homeX: post.x, homeY: post.y, tether: 0, cell: '0:1',
+      });
+      sweep(v);
+      const out = sail(v, 3, { throttle: 0 }).voyage;
+      const mob = out.mobs.find((m) => m.id === 1);
+      return {
+        gap: mob ? Math.hypot(mob.x - out.x, mob.y - out.y) : Infinity,
+        ship: { x: out.x, y: out.y },
+      };
+    };
+    const free = chase(0);
+    const hauled = chase(9);
+    ok(hauled.gap < free.gap, `the harpoon holds it in (${hauled.gap.toFixed(1)} against ${free.gap.toFixed(1)})`);
+    // The hull does not move an inch toward what it hooked. A harpoon that
+    // pulled the ship would be a way to swim, and the sea has exactly one verb.
+    eq(hauled.ship.x, free.ship.x, 'the ship was dragged on x');
+    eq(hauled.ship.y, free.ship.y, 'the ship was dragged on y');
   });
 });

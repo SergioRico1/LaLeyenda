@@ -1,5 +1,5 @@
 import { Rng } from '../core/rng';
-import type { SeaEvent, ShipSpec } from './sea';
+import { NEUTRAL_LOADOUT, type Loadout, type SeaEvent } from './sea';
 
 /**
  * pertrechos.ts — the build inside the voyage. SEA_PLAY.md item 3.
@@ -30,11 +30,11 @@ import type { SeaEvent, ShipSpec } from './sea';
  *    at sea." Which is also why this module has no `GameState` in it anywhere —
  *    there is no field it could persist into even by accident.
  *
- * 3. EVERY EFFECT LANDS ON A NUMBER THE SEA ALREADY READS. See `Loadout` below.
- *    Eight of the fourteen are multipliers on `ShipSpec` members `stepVoyage`
- *    reads today, and `riggedShip` applies all eight in one call; the other six
- *    are the named seams for the behaviours SEA_PLAY.md's other three items own.
- *    An upgrade whose effect nothing reads is a lie printed on a card.
+ * 3. EVERY EFFECT LANDS ON A NUMBER THE SEA ALREADY READS. There is exactly one
+ *    `Loadout` and it lives in sim/sea.ts, where `effectiveShip` applies it at
+ *    the top of every step — see THE SEAM below for why that took a round to
+ *    become true. An upgrade whose effect nothing reads is a lie printed on a
+ *    card, and for one round every card in this table was one.
  *
  * 4. ONE DECISION ON THE TABLE AT A TIME. Crossing a threshold while a choice is
  *    already up does not stack a second card on top of it; the offers queue and
@@ -45,125 +45,31 @@ import type { SeaEvent, ShipSpec } from './sea';
  * THE SEAM — what a pertrecho is allowed to change
  * ======================================================================= */
 
-/**
- * The loadout: every number a pertrecho can move, and nothing else.
+/*
+ * THE LOADOUT LIVES IN sim/sea.ts, AND THIS IS THE FIX FOR THE ROUND'S ONE REAL
+ * COLLISION.
  *
- * This is the contract between this module and the sea. It is deliberately
- * FLAT and deliberately DUMB — no functions, no behaviour, just numbers — so
- * that the voyage can carry one of these, `stepVoyage` can read it, and a save
- * or a replay can serialise it without knowing what any of it means.
+ * This module and the sea were built in parallel against the same paragraph of
+ * SEA_PLAY.md, and each of them declared a `Loadout` — fourteen fields here,
+ * nine there, overlapping but not agreeing: `strongbox` against `holdGuard`,
+ * `balls`+`spread`(radians) against `spread`(boolean), plus `arc` and `turn`
+ * that only the sea had and `damage`, `hold`, `repair`, `harpoon`, `ballast`,
+ * `chainSeconds` that only this file had. Both were tested. Only ONE of them
+ * was read by `stepVoyage`, so this one was a table of numbers nothing applied
+ * — "an upgrade whose effect nothing reads is a lie printed on a card", which
+ * is rule 3 above, broken by the file that states it.
  *
- * The neutral loadout is `emptyLoadout()`: multipliers at 1, additives at 0. A
- * voyage with no pertrechos taken sails EXACTLY the ship balance.json describes,
- * which is the property that lets this whole system be added without moving a
- * single number in the fleet table.
+ * So there is one `Loadout` now and it is the sea's, because the sea is what
+ * reads it. Three fields moved there to carry the three pertrechos it could not
+ * yet express (`hold`, `repair`, `harpoon`); the rest of this file's vocabulary
+ * was a second name for something already implemented, and second names are how
+ * two halves of one feature stop agreeing.
  *
- * The first eight are multipliers on fields of `ShipSpec` that `stepVoyage`
- * reads today, and `riggedShip()` below applies them all in one line. They need
- * no new code in the sea at all:
- *
- *   damage  the ball's bite            reload  seconds between broadsides
- *   range   how far a side reaches     speed   top speed under full throttle
- *   hold    units of cargo             repair  hull a second the crew patch back
- *
- * ...and note the DIRECTION of two of them: `reload` and `ballast` multiply a
- * cost, so BELOW 1 is the improvement. A pertrecho that made reload 1.2 would be
- * a downgrade printed as an upgrade.
- *
- * The rest are the named fields for behaviour the sea does not have yet. Each
- * one belongs to a specific SEA_PLAY.md item, is stated here in the units its
- * owner needs, and is inert until that owner reads it — a `chainSlow` of 0.24
- * changes nothing at all until the mob step multiplies a speed by it.
+ * `NEUTRAL_LOADOUT` is the identity, and the sea's suite asserts that a voyage
+ * carrying it replays step for step against one carrying none — which is the
+ * property that let this system be added without moving a number in the fleet
+ * table.
  */
-export interface Loadout {
-  /** × `ShipSpec.damage` — per BALL, not per broadside. Metralla trades this
-   *  down for three of them. */
-  damage: number;
-  /** × `ShipSpec.reload`. Below 1 is faster. */
-  reload: number;
-  /** × `ShipSpec.range`. */
-  range: number;
-  /** × `ShipSpec.speed`. */
-  speed: number;
-  /** × `ShipSpec.hold`. Round it where you apply it; `riggedShip` does. */
-  hold: number;
-  /** × `ShipSpec.repair` — the carpenter's rate, not the calm before them. */
-  repair: number;
-
-  /** Balls per broadside, 1 at stock. The broadside block fires this many
-   *  shots instead of one, each doing the (already reduced) `damage`. */
-  balls: number;
-  /** Half-angle in radians the extra balls are fanned across, 0 at stock. With
-   *  `balls` at 1 this is meaningless and must be ignored. */
-  spread: number;
-
-  /** Fraction a struck creature's speed is taken down by, 0 at stock. The mob
-   *  step should CLAMP the product — a slow of 1 is a stopped sea. */
-  chainSlow: number;
-  /** How long that slow lasts, seconds. 0 at stock, and 0 means never. */
-  chainSeconds: number;
-
-  /** World units a second a target inside the firing arc is dragged toward the
-   *  beam, 0 at stock. The arpón: it pulls things INTO the guns rather than
-   *  pulling the ship, so it can never be used to swim. */
-  harpoon: number;
-
-  /** × whatever rate SEA_PLAY.md item 1's tide climbs at. Below 1 is slower.
-   *  Inert — and harmless — until la marea exists. */
-  tideRate: number;
-
-  /** ADDED to `sea.landfall.sunk` (0.5 today): the share of the hold that comes
-   *  up with the crew when she goes down. Clamp the sum at 1 where it is read. */
-  strongbox: number;
-
-  /** × however much SEA_PLAY.md item 2's full hold slows and widens the ship.
-   *  Below 1 is a lighter-feeling ship. Inert until the weight exists. */
-  ballast: number;
-}
-
-export function emptyLoadout(): Loadout {
-  return {
-    damage: 1, reload: 1, range: 1, speed: 1, hold: 1, repair: 1,
-    balls: 1, spread: 0,
-    chainSlow: 0, chainSeconds: 0,
-    harpoon: 0,
-    tideRate: 1,
-    strongbox: 0,
-    ballast: 1,
-  };
-}
-
-/**
- * The ship this loadout actually sails, from the ship balance.json describes.
- *
- * THE ONE-LINE SEAM. `stepVoyage` reads its `spec` exactly once at the top of
- * the step; swapping that read for
- *
- *     const spec = riggedShip(SHIPS[v.shipType], v.loadout);
- *
- * gives metralla's weaker balls, the gunners' faster reload, the fine powder's
- * reach, the copper bottom's speed, the shipwright's patching and the master
- * stowage's hold — six of the ten pertrechos — with no other change to the sea
- * at all, because every one of those fields is already read where it matters.
- *
- * Returns a NEW spec; `SHIPS` is a shared table and writing to it would change
- * the ship for every voyage in the process, which in a test runner is every
- * voyage in the suite.
- *
- * `hold` is rounded because it is counted in whole units of cargo by `stow`.
- * Nothing else is: a reload of 1.428 seconds is a perfectly good reload.
- */
-export function riggedShip(spec: ShipSpec, loadout: Loadout): ShipSpec {
-  return {
-    ...spec,
-    damage: spec.damage * loadout.damage,
-    reload: spec.reload * loadout.reload,
-    range: spec.range * loadout.range,
-    speed: spec.speed * loadout.speed,
-    hold: Math.round(spec.hold * loadout.hold),
-    repair: spec.repair * loadout.repair,
-  };
-}
 
 /* ==========================================================================
  * THE POOL
@@ -188,10 +94,25 @@ export interface PertrechoSpec {
   line: string;
   /** How many times it can be taken. 1 means it is never offered again. */
   stacks: number;
-  /** Fields multiplied once per level taken. */
-  mul?: Partial<Loadout>;
-  /** Fields added once per level taken. */
-  add?: Partial<Loadout>;
+  /** Numeric fields multiplied once per level taken. */
+  mul?: Partial<Record<NumericField, number>>;
+  /** Numeric fields added once per level taken. */
+  add?: Partial<Record<NumericField, number>>;
+  /** Flags turned on. Not multiplied and not added — a boolean has no levels,
+   *  so every pertrecho with one of these is `stacks: 1` by construction. */
+  set?: { spread?: boolean };
+}
+
+/** Every field of the sea's `Loadout` that is a number, which is every field a
+ *  pertrecho can multiply or add to. `spread` is the one flag and it is set. */
+type NumericField = {
+  [K in keyof Loadout]: Loadout[K] extends number ? K : never;
+}[keyof Loadout];
+
+/** A fresh neutral loadout. `NEUTRAL_LOADOUT` is a shared constant and this
+ *  file mutates what it builds, so it is copied rather than handed out. */
+function emptyLoadout(): Loadout {
+  return { ...NEUTRAL_LOADOUT };
 }
 
 /**
@@ -236,15 +157,21 @@ export const PERTRECHOS: readonly PertrechoSpec[] = [
     name: 'Metralla',
     line: 'La andanada se abre en tres. Cada bola muerde menos.',
     stacks: 1,
-    mul: { damage: 0.46 },
-    add: { balls: 2, spread: 0.17 },
+    // A FLAG, not three numbers. The trade itself — how many balls, across what
+    // fan, for what fraction of the damage — is measured in balance.json's
+    // `sea.loadout.spread` and applied by the broadside block, which is where a
+    // number that has to stay in step with the fleet table belongs. This table
+    // says WHICH pertrecho; that one says what it costs.
+    set: { spread: true },
   },
   {
     id: 'palanqueta',
     name: 'Palanqueta',
     line: 'Bala encadenada: lo que tocas se queda atrás.',
     stacks: 2,
-    add: { chainSlow: 0.24, chainSeconds: 1.8 },
+    // The DEPTH of the slow stacks; how long it lasts is the sea's own
+    // `loadout.chain.seconds`, one number for one rule at two strengths.
+    add: { chainSlow: 0.24 },
   },
   {
     id: 'polvora',
@@ -256,9 +183,12 @@ export const PERTRECHOS: readonly PertrechoSpec[] = [
   {
     id: 'cobre',
     name: 'Fondo de cobre',
-    line: 'Casco limpio: más velocidad y menos lastre.',
+    line: 'Casco limpio: más velocidad y mejor gobierno.',
     stacks: 2,
-    mul: { speed: 1.1, ballast: 0.78 },
+    // Speed AND helm, because the weight rule takes both and this is the
+    // pertrecho that answers it. A copper bottom that only bought top speed
+    // would be a straight-line upgrade in a game about turning.
+    mul: { speed: 1.1, turn: 1.08 },
   },
   {
     id: 'artilleros',
@@ -286,7 +216,10 @@ export const PERTRECHOS: readonly PertrechoSpec[] = [
     name: 'Bodega falsa',
     line: 'Si te hunden, parte de la carga sube contigo.',
     stacks: 1,
-    add: { strongbox: 0.2 },
+    // Added to `landfall.sunk` and capped by `loadout.guardMax`, which is below
+    // 1 on purpose: drowning must never become the better answer than quitting
+    // in the same water, however many false holds a voyage stacks.
+    add: { holdGuard: 0.2 },
   },
   {
     id: 'carpintero',
@@ -481,12 +414,13 @@ export function loadoutOf(taken: readonly PertrechoId[]): Loadout {
   for (const id of taken) {
     const spec = BY_ID.get(id);
     if (!spec) continue;   // an id this build does not carry changes nothing
-    for (const [field, factor] of Object.entries(spec.mul ?? {}) as [keyof Loadout, number][]) {
+    for (const [field, factor] of Object.entries(spec.mul ?? {}) as [NumericField, number][]) {
       loadout[field] *= factor;
     }
-    for (const [field, amount] of Object.entries(spec.add ?? {}) as [keyof Loadout, number][]) {
+    for (const [field, amount] of Object.entries(spec.add ?? {}) as [NumericField, number][]) {
       loadout[field] += amount;
     }
+    if (spec.set?.spread) loadout.spread = true;
   }
   return loadout;
 }
