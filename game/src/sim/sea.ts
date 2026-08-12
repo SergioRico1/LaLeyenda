@@ -387,6 +387,16 @@ const PATROL_POST: readonly number[] = SEA.patrols.post;
 const PATROL_ROAM: number = SEA.patrols.roam;
 /** Chance a cell with nothing worth guarding carries a lone patrol anyway. */
 const PATROL_OPEN: number = SEA.patrols.openChance;
+/**
+ * How many creatures may be on the water at once, counted across every source.
+ *
+ * The per-cell budget is a budget per cell, and fifteen cells are awake at a
+ * time — so the only place the crowd can actually be bounded is here. See
+ * `sea.$maxLive` in balance.json for why it is one number rather than one per
+ * spawner: the tide multiplies the cell budget, and two separate ceilings meant
+ * neither of them was the ceiling.
+ */
+const SEA_MAX_LIVE: number = SEA.maxLive;
 const byRing = <T>(table: readonly T[], ring: number): T => table[Math.min(ring, table.length) - 1];
 
 export interface Mob {
@@ -1464,11 +1474,19 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
       const key = `${cx}:${cy}`;
       if (v.seen.includes(key)) continue;
       if (Math.hypot(cx * SEA_CELL - v.x, cy * SEA_CELL - v.y) > SEA_RANGE) continue;
-      v.seen.push(key);
       // The tide is handed to the cell, not applied after it: how many it
       // posts, how tough they are and which half of it they are standing in are
       // all the cell's own answer, asked at the hour the ship arrived.
       const born = mobsAt(v.seed, cx, cy, v.nextId, { tide: v.tide, toward: { x: v.x, y: v.y } });
+      // THE CROWD CEILING, and it is deferral rather than deletion. A cell that
+      // does not fit is left UNSWEPT, so it hands over the moment the guns make
+      // room — the sea keeps a queue instead of a pile, and "a cell hands over
+      // its patrol once per voyage" still holds because it has not handed over
+      // anything yet. All-or-nothing per cell, so a brood arrives as the brood
+      // the cell drew; and admitted regardless on an empty sea, because a cell
+      // whose own draw is larger than the whole ceiling must never deadlock.
+      if (v.mobs.length > 0 && v.mobs.length + born.length > SEA_MAX_LIVE) continue;
+      v.seen.push(key);
       v.nextId += born.length;
       v.mobs.push(...born);
     }
@@ -1496,23 +1514,43 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
     const every = SWELL.every[0] + (SWELL.every[1] - SWELL.every[0]) * flood;
     const due = Math.floor(v.atSea / every);
     const here = ringOf(Math.round(v.x / SEA_CELL), Math.round(v.y / SEA_CELL));
-    if (due > v.swells && here > 0 && v.mobs.length < SWELL.maxLive) {
+    if (due > v.swells && here > 0 && v.mobs.length < SEA_MAX_LIVE) {
       const rng = new Rng(`${v.seed}:swell:${due}`);
       const pool = byRing(PATROL_POOLS, here) as readonly MobKind[];
       const wanted = Math.round(SWELL.count[0] + (SWELL.count[1] - SWELL.count[0]) * flood);
-      const reach = SEA_RANGE * (SWELL.range[0] + (SWELL.range[1] - SWELL.range[0]) * flood);
+      // ONE KIND PER SWELL. A shoal is a shoal — three of the same thing
+      // surfacing together is a readable event, three different things is
+      // weather, and the sim's own crowding note is that a fight nobody can
+      // count is not a fight.
+      const kind = rng.pick(pool);
+      // HOW CLOSE, measured against what the creature can SEE rather than in
+      // bare units, because the two are the same question. A swell at 1.35 of
+      // its own sight surfaces outside its notice: it is something the tide has
+      // put in the water for the ship to find. At 0.7 it surfaces already
+      // inside it and comes straight on. So an early tide gets in the way and a
+      // late one hunts, which is the escalation stated in one number.
+      //
+      // The first version of this measured `range` against SEA_RANGE — 82 units
+      // at three-quarter flood, past every sight radius in the game. The fleet
+      // table said it exactly: ring 1 at 0.78 tide, 13.7 swells sent, hull home
+      // 100%, kills unchanged. Twenty-seven creatures spawned and not one of
+      // them ever met the ship.
+      const gap = MOBS[kind].sight * (SWELL.range[0] + (SWELL.range[1] - SWELL.range[0]) * flood);
       const bearing = rng.range(-Math.PI, Math.PI);
-      const sx = v.x + Math.cos(bearing) * reach;
-      const sy = v.y + Math.sin(bearing) * reach;
-      const count = Math.min(wanted, SWELL.maxLive - v.mobs.length);
+      const sx = v.x + Math.cos(bearing) * gap;
+      const sy = v.y + Math.sin(bearing) * gap;
+      const count = Math.min(wanted, SEA_MAX_LIVE - v.mobs.length);
       for (let i = 0; i < count; i++) {
-        const spread = rng.range(-8, 8);
-        const x = sx + Math.cos(bearing + Math.PI / 2) * spread;
-        const y = sy + Math.sin(bearing + Math.PI / 2) * spread;
-        const mob = makeMob(rng.pick(pool), x, y, x, y, v.nextId + i, `swell:${due}`, rng);
+        const abeam = rng.range(-SWELL.spread, SWELL.spread);
+        const x = sx + Math.cos(bearing + Math.PI / 2) * abeam;
+        const y = sy + Math.sin(bearing + Math.PI / 2) * abeam;
+        const mob = makeMob(kind, x, y, x, y, v.nextId + i, `swell:${due}`, rng);
+        // A long leash, like every open-water patrol: the sea sent it, so it
+        // follows for a while and then gives up. Short enough that outrunning
+        // the tide is still the answer it has always been.
         mob.tether = PATROL_ROAM;
         mob.tough = 1 + flood * TIDE.toughPerLevel;
-        mob.hp = Math.round(MOBS[mob.kind].hp * mob.tough);
+        mob.hp = Math.round(MOBS[kind].hp * mob.tough);
         v.mobs.push(mob);
       }
       v.nextId += count;
@@ -1525,6 +1563,23 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
   }
 
   // --- mobs ----------------------------------------------------------------
+  // A SHIP THAT HAS NOT CAST OFF IS NOT UNDER WAY, and until she is the sea
+  // leaves her alone.
+  //
+  // The swell already says the harbour is "the one place a voyage can always
+  // end", but nothing stopped a ring-1 patrol from following a ship into it —
+  // and an open-water leash is 110 units against a 55-unit cell. So a player who
+  // tapped Zarpar and then looked away SANK AT THE SPAWN POINT: parked at (0,0),
+  // never departed, hull zero in seventy-two seconds, and charged the careen
+  // bill and half a hold for a voyage they had not begun.
+  //
+  // The latch is `departed`, not the position, and that distinction is the whole
+  // design. Home water is not a shield: the moment she has left, the harbour is
+  // a DESTINATION and the run back to it is a race — which is the only thing
+  // that makes the weight in the hold mean anything, and what round 14's tithe
+  // is priced against. What is protected is the ten seconds before the voyage
+  // starts, and nothing else.
+  const sheltered = !v.departed;
   for (const mob of v.mobs) {
     const ms = MOBS[mob.kind];
     mob.cooldown = Math.max(0, mob.cooldown - dt);
@@ -1539,7 +1594,8 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
     const toShipX = v.x - mob.x;
     const toShipY = v.y - mob.y;
     const distance = Math.hypot(toShipX, toShipY);
-    const tethered = mob.tether > 0 && Math.hypot(v.x - mob.homeX, v.y - mob.homeY) > mob.tether;
+    const tethered = sheltered
+      || (mob.tether > 0 && Math.hypot(v.x - mob.homeX, v.y - mob.homeY) > mob.tether);
 
     // The boss plays its own game — see `stepSquid`, which is the whole fight.
     if (mob.kind === 'squid') {

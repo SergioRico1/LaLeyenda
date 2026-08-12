@@ -1,13 +1,16 @@
 import {
-  HARBOUR, MOBS, SEA_CELL, SEA_RANGE, SEA_STEP, SHIPS, abandonVoyageInPlace, bearingHome,
-  careenBill, cellsInRing, holdUsed, landfallShare, mobsAt, previewAbandon,
-  ringOf, siteAt, sitesNear, startVoyage, steer, stepVoyage, type SeaEvent, type Voyage,
+  HARBOUR, MOBS, NEUTRAL_LOADOUT, SEA_CELL, SEA_RANGE, SEA_STEP, SHIPS, SHIP_TYPES,
+  TIDE_STAGES, abandonVoyageInPlace, bearingHome,
+  careenBill, cellsInRing, effectiveShip, holdLoad, holdUsed, landfallShare, loadoutOf,
+  mobsAt, previewAbandon,
+  readTide, ringOf, siteAt, sitesNear, startVoyage, steer, stepVoyage, tideAt, tideClock,
+  tideStageOf, type Loadout, type SeaEvent, type Voyage,
 } from '../../src/sim/sea';
 import { landCargoInPlace, previewLanding, storeCap } from '../../src/sim';
 import { clone } from '../../src/sim/economy';
 import { describe, eq, near, ok, test } from './harness';
 import { quiet } from './fixtures';
-import { breakOff, playFleet, straightOut, summarise } from './voyages';
+import { breakOff, playFleet, straightOut, summarise, weightRun } from './voyages';
 
 /**
  * The voyage is the half of the game PLAN.md calls Fase 2, and the half that
@@ -59,6 +62,96 @@ function outboundLaden(seed: string): Voyage {
   out.cargo = { oro: 300 };
   for (let cx = -3; cx <= 3; cx++) for (let cy = -3; cy <= 3; cy++) out.seen.push(`${cx}:${cy}`);
   return out;
+}
+
+/**
+ * A patch of water to stage a fight in, CHOSEN rather than assumed — the same
+ * discipline `laden()` above needs, and for the same reason.
+ *
+ * Two properties, both load-bearing. It is well outside the harbour, because a
+ * ship that has not cast off is one the sea leaves alone (`sheltered` in
+ * sea.ts) and one the `home` latch ends the voyage of the moment she is marked
+ * as departed — a fight staged at (0,0) is a fight that never happens. And
+ * neither the cell nor any of its neighbours carries a site, because a fixture
+ * parked on a wreck measures the loot table instead of the thing it is about.
+ *
+ * Everything a fixture puts on the water must be placed RELATIVE to what this
+ * returns, so the geometry each test argues for survives the move.
+ */
+const OPEN_WATER = new Map<string, { x: number; y: number; heading: number }>();
+
+function openWater(seed: string, runway = 0): { x: number; y: number; heading: number } {
+  const memo = OPEN_WATER.get(`${seed}|${runway}`);
+  if (memo) return memo;
+
+  // An empty CELL is the wrong thing to look for — two thirds of them carry a
+  // site, and an empty one next to a wreck moored on the boundary is not open
+  // water. Nor is a single point enough: a ship at a skiff's top speed covers a
+  // hundred units in six seconds, and a dodge case that grounds on a reef
+  // reports a hit it never took.
+  //
+  // So what is maximised is the worst clearance from any site's SHORE along the
+  // whole course the fixture will sail — a lattice of start points crossed with
+  // eight bearings, sampled every twenty units down the runway. The winner has
+  // to beat 40 units, comfortably outside `loot.reach` plus a site radius.
+  const clearance = (x: number, y: number): number => {
+    const cx = Math.round(x / SEA_CELL);
+    const cy = Math.round(y / SEA_CELL);
+    let gap = Infinity;
+    for (let dx = -2; dx <= 2; dx++) {
+      for (let dy = -2; dy <= 2; dy++) {
+        const s = siteAt(seed, cx + dx, cy + dy);
+        if (s) gap = Math.min(gap, Math.hypot(s.x - x, s.y - y) - s.radius);
+      }
+    }
+    return gap;
+  };
+
+  let best: { x: number; y: number; heading: number; gap: number } | null = null;
+  for (let x = SEA_CELL * 2; x <= SEA_CELL * 9; x += 20) {
+    for (let y = -SEA_CELL * 5; y <= SEA_CELL * 5; y += 20) {
+      const here = clearance(x, y);
+      if (best && here <= best.gap) continue;   // no bearing can beat the start
+      for (let b = 0; b < 8; b++) {
+        const heading = (b * Math.PI) / 4;
+        let gap = here;
+        for (let along = 20; along <= runway; along += 20) {
+          gap = Math.min(gap, clearance(x + Math.cos(heading) * along, y + Math.sin(heading) * along));
+        }
+        if (!best || gap > best.gap) best = { x, y, heading, gap };
+      }
+    }
+  }
+  if (!best || best.gap < 40) {
+    throw new Error(`no open water near the harbour for seed ${seed} (best ${best?.gap.toFixed(1)})`);
+  }
+  const found = { x: best.x, y: best.y, heading: best.heading };
+  OPEN_WATER.set(`${seed}|${runway}`, found);
+  return found;
+}
+
+/**
+ * A point in the SHIP'S OWN FRAME turned into world coordinates: `ahead` down
+ * her course, `abeam` off her starboard side (the sign the broadside code uses
+ * — `beam = heading + PI/2` is starboard).
+ *
+ * Every fixture that used to write absolute coordinates around a ship at the
+ * origin pointed along +x says the same thing through this instead, so the
+ * geometry each one argues for survives being moved into open water.
+ */
+function offBow(v: Voyage, ahead: number, abeam: number): { x: number; y: number } {
+  return {
+    x: v.x + Math.cos(v.heading) * ahead + Math.cos(v.heading + Math.PI / 2) * abeam,
+    y: v.y + Math.sin(v.heading) * ahead + Math.sin(v.heading + Math.PI / 2) * abeam,
+  };
+}
+
+/** Marks every cell within four of the ship as already swept, so the only
+ *  things on the water are the ones the fixture put there. */
+function sweep(v: Voyage): void {
+  const cx0 = Math.round(v.x / SEA_CELL);
+  const cy0 = Math.round(v.y / SEA_CELL);
+  for (let cx = -4; cx <= 4; cx++) for (let cy = -4; cy <= 4; cy++) v.seen.push(`${cx0 + cx}:${cy0 + cy}`);
 }
 
 /** Sinks a laden ship `cells` out along +x and hands back the wreck. Nothing
@@ -312,6 +405,9 @@ describe('mobs', () => {
   test('one that has not seen you patrols, and one that has gives chase', () => {
     const make = (distance: number) => {
       const v = startVoyage('ai');
+      // Under way, because the sea does not come for a ship still alongside —
+      // and this is a fixture about a creature noticing a VOYAGE.
+      v.departed = true;
       v.mobs.push({
         id: 1, kind: 'kelpling', x: distance, y: 0, heading: Math.PI, hp: 999,
         state: 'patrol', cooldown: 0, homeX: distance, homeY: 0, tether: 0, cell: '1:0',
@@ -390,6 +486,7 @@ describe('loot and the hold', () => {
 
   test('being sunk costs half the cargo and never more', () => {
     const v = startVoyage('sink');
+    v.departed = true;   // under way; the harbour itself is never fought in
     v.cargo = { oro: 101, madera: 40 };
     v.hull = 1;
     v.mobs.push({
@@ -1191,12 +1288,23 @@ describe('the giant squid has a fight', () => {
    */
   function bossVoyage(distance: number, opts: { hp?: number; deepChest?: boolean; ship?: string } = {}) {
     const v = startVoyage('kraken', opts.ship ?? 'skiff', { deepChest: opts.deepChest });
+    // A lair is deep water, and this fixture now sails in some: departed, so
+    // the sea comes for her, and clear of the harbour, so the `home` latch does
+    // not end the voyage under the fight.
+    // 200 units of runway: two of these cases put way on and hold it for ten
+    // seconds, and a hull that grounds mid-dodge reports a hit it never took.
+    const at = openWater('kraken', 200);
+    v.x = at.x;
+    v.y = at.y;
+    v.heading = at.heading;
+    v.departed = true;
+    const post = offBow(v, 0, distance);
     v.mobs.push({
-      id: 1, kind: 'squid', x: 0, y: distance, heading: -Math.PI / 2,
+      id: 1, kind: 'squid', x: post.x, y: post.y, heading: v.heading - Math.PI / 2,
       hp: opts.hp ?? MOBS.squid.hp, state: 'patrol', cooldown: 0,
-      homeX: 0, homeY: distance, tether: 400, cell: '1:0',
+      homeX: post.x, homeY: post.y, tether: 400, cell: '1:0',
     });
-    for (let cx = -4; cx <= 4; cx++) for (let cy = -4; cy <= 4; cy++) v.seen.push(`${cx}:${cy}`);
+    sweep(v);
     return v;
   }
 
@@ -1297,9 +1405,10 @@ describe('the giant squid has a fight', () => {
 
     // A second boss on the same voyage pays only its bounty.
     const again = first.voyage;
+    const post = offBow(again, 0, 14);
     again.mobs.push({
-      id: 99, kind: 'squid', x: 0, y: 14, heading: -Math.PI / 2, hp: 1,
-      state: 'patrol', cooldown: 0, homeX: 0, homeY: 14, tether: 400, cell: '2:0',
+      id: 99, kind: 'squid', x: post.x, y: post.y, heading: again.heading - Math.PI / 2, hp: 1,
+      state: 'patrol', cooldown: 0, homeX: post.x, homeY: post.y, tether: 400, cell: '2:0',
     });
     const second = sail(again, 8, { throttle: 0 });
     ok(second.events.some((e) => e.kind === 'mob-killed' && e.mob === 'squid'), 'second kill lands');
@@ -1429,5 +1538,577 @@ describe('a swarm is a swarm, not a pile', () => {
         `a kelpling is ${gap.toFixed(1)} out of a reach of ${MOBS.kelpling.reach}, not inside the boat`
       );
     }
+  });
+});
+
+/**
+ * LA MAREA — SEA_PLAY.md item 1, which is the voyage's arc.
+ *
+ * The diagnosis it answers, verbatim: "Minute ten is exactly as tense as minute
+ * one. Pressure is spatial only — it rises when you sail outward and falls when
+ * you sail back — so the only shape a voyage has is one the player draws by
+ * leaving." Distance was the whole difficulty curve and there was no clock.
+ *
+ * Four claims, and every one of them is asserted below rather than described:
+ * the tide MULTIPLIES the ring curve instead of replacing it; a first voyage
+ * sails in the sea the fleet table measured, unchanged, because the grace
+ * covers it; the sea gets worse in the three ways the design names — more,
+ * tougher, closer; and the player is TOLD, because a rising threat nobody can
+ * see is a difficulty knob and this file is not allowed to have one.
+ */
+describe('the tide is the voyage clock', () => {
+  test('slack water first, then it makes, and it never ebbs', () => {
+    eq(tideAt(0), 0, 'the harbour is slack water');
+    eq(tideAt(30), 0, 'and so is half a minute out — the grace is the whole point');
+    const walk = [0, 30, 60, 90, 150, 210, 300, 600, 3600].map((s) => tideAt(s));
+    for (let i = 1; i < walk.length; i++) {
+      ok(walk[i] >= walk[i - 1], `the tide at step ${i} is never below the one before it`);
+    }
+    ok(tideAt(180) > 0.3 && tideAt(180) < 0.8, `three minutes out is mid-flood (${tideAt(180).toFixed(2)})`);
+    eq(tideAt(600), 1, 'and ten minutes out is as bad as it gets');
+    eq(tideAt(6000), 1, 'which is a ceiling, not a ramp with no end');
+  });
+
+  test('the clock and its inverse agree, which is what the HUD counts down to', () => {
+    for (const level of [0, 0.25, 0.5, 0.75, 1]) {
+      near(tideAt(tideClock(level)), level, 1e-9, `the clock for ${level} reads back as ${level}`);
+    }
+    // Contramaestre: the whole clock later, grace included.
+    ok(tideClock(0.5, 0.6) > tideClock(0.5), 'a slower tide reaches half flood later');
+    eq(tideAt(200, 0), 0, 'and a tide rate of zero is a sea with no clock at all');
+  });
+
+  test('the stages are named, ordered, and a real player crosses all of them', () => {
+    eq(tideStageOf(0), 0, 'slack water is stage zero');
+    eq(tideStageOf(1), TIDE_STAGES.length - 1, 'and full flood is the last one');
+    let last = -1;
+    for (let level = 0; level <= 1.0001; level += 0.02) {
+      const stage = tideStageOf(Math.min(1, level));
+      ok(stage >= last, `the stage never goes backwards (at ${level.toFixed(2)})`);
+      last = stage;
+    }
+    eq(new Set(TIDE_STAGES).size, TIDE_STAGES.length, 'and every stage has its own name');
+  });
+
+  /**
+   * THE ONE THAT PROTECTS EVERYTHING ALREADY MEASURED.
+   *
+   * Round 12 measured ring 1 at 100% returns and the whole fleet table is
+   * written against a sea with no clock in it. That table stays true only if
+   * slack water is BYTE-IDENTICAL to the sea that shipped — same rolls, same
+   * order, same cell stream — so the tide is a coefficient that is exactly 1
+   * for the first `grace` seconds rather than a rewrite of the spawner.
+   */
+  test('slack water is the sea that was measured, exactly', () => {
+    for (let cx = -8; cx <= 8; cx++) {
+      for (let cy = -8; cy <= 8; cy++) {
+        const before = mobsAt('la-leyenda', cx, cy, 1);
+        const after = mobsAt('la-leyenda', cx, cy, 1, { tide: 0, toward: { x: 0, y: 0 } });
+        eq(JSON.stringify(after), JSON.stringify(before), `cell ${cx},${cy} is untouched at slack water`);
+      }
+    }
+  });
+
+  test('a first voyage is over before the tide has started', () => {
+    // The fleet table says a beginner's ring-1 trip is home in about fifteen
+    // seconds and a ring-2 trip in about thirty. Both have to finish inside the
+    // grace or round 12's measured sea is not the sea a new player meets.
+    const first = summarise(playFleet(24, { ring: 1, skill: 'novato', sites: 2, limit: 240 }, 't-tide-first-'));
+    ok(first.survived >= 0.95, `a beginner still comes home from ring 1 (${(first.survived * 100).toFixed(0)}%)`);
+    eq(first.tide, 0, 'and does it in water the tide has not touched');
+    const second = summarise(playFleet(24, { ring: 2, skill: 'novato', sites: 3, limit: 240 }, 't-tide-second-'));
+    ok(second.tide < 0.05, `ring 2 is barely into it either (${second.tide.toFixed(3)})`);
+  });
+
+  /** More of them, and it is the RING's own draw that is multiplied. */
+  test('the flood posts more than slack water does, at every ring', () => {
+    const count = (ring: number, tide: number) => {
+      let total = 0;
+      for (const [cx, cy] of cellsInRing(ring)) {
+        total += mobsAt('la-leyenda', cx, cy, 1, { tide }).length;
+      }
+      return total;
+    };
+    for (const ring of [1, 2, 3, 4]) {
+      const slack = count(ring, 0);
+      const flood = count(ring, 1);
+      ok(flood > slack, `ring ${ring} posts ${flood} at the flood against ${slack} at slack`);
+    }
+    // And it is still the ring that decides the SHAPE of the sea. Ring 1 at the
+    // worst hour it has must not out-post ring 4 at its best, or distance has
+    // stopped being difficulty and the tide has replaced the curve instead of
+    // multiplying it.
+    const perCell = (ring: number, tide: number) => count(ring, tide) / cellsInRing(ring).length;
+    ok(
+      perCell(1, 1) < perCell(4, 0),
+      `ring 1 flooded (${perCell(1, 1).toFixed(2)}/cell) is still thinner than ring 4 at slack (${perCell(4, 0).toFixed(2)}/cell)`
+    );
+  });
+
+  test('and what it posts is tougher, and posted closer in', () => {
+    let slackHp = 0;
+    let floodHp = 0;
+    let slackPost = 0;
+    let floodPost = 0;
+    let posts = 0;
+    for (const [cx, cy] of cellsInRing(3)) {
+      const site = siteAt('la-leyenda', cx, cy);
+      for (const mob of mobsAt('la-leyenda', cx, cy, 1, { tide: 0 })) slackHp += mob.hp / MOBS[mob.kind].hp;
+      for (const mob of mobsAt('la-leyenda', cx, cy, 1, { tide: 1 })) floodHp += mob.hp / MOBS[mob.kind].hp;
+      if (!site || site.kind === 'reef' || site.kind === 'lair') continue;
+      const gap = (tide: number) => mobsAt('la-leyenda', cx, cy, 1, { tide })
+        .map((m) => Math.hypot(m.homeX - site.x, m.homeY - site.y));
+      const a = gap(0);
+      const b = gap(1);
+      // Compared guard for guard on the same draws, so this is the POST
+      // shrinking rather than a different number of guards being averaged.
+      for (let i = 0; i < Math.min(a.length, b.length); i++) {
+        slackPost += a[i];
+        floodPost += b[i];
+        posts++;
+      }
+    }
+    ok(floodHp > slackHp * 1.2, `the flood's shoal carries ${(floodHp / slackHp).toFixed(2)}x the hit points`);
+    ok(posts > 10, `and there were guards to measure (${posts})`);
+    ok(floodPost < slackPost, `guards hug their site harder at the flood (${(floodPost / posts).toFixed(1)} against ${(slackPost / posts).toFixed(1)} units off)`);
+  });
+
+  test('a bite taken late is a worse bite than the same bite taken early', () => {
+    const bite = (tide: number): number => {
+      const v = startVoyage('bite');
+      v.departed = true;   // a tide this high is hours from the harbour
+      const [mob] = mobsAt('la-leyenda', 2, 0, 1, { tide: 1 });
+      v.mobs.push({
+        ...(mob ?? { id: 1, kind: 'kelpling' as const, heading: 0, state: 'attack' as const, cooldown: 0, tether: 0, cell: '0:0' }),
+        id: 1, kind: 'kelpling', x: 4, y: 0, homeX: 4, homeY: 0, hp: 9999,
+        state: 'attack', cooldown: 0, tether: 0, cell: '0:0', heading: Math.PI,
+        tough: tide > 0 ? 1 + tide * 0.5 : undefined,
+      });
+      for (let cx = -3; cx <= 3; cx++) for (let cy = -3; cy <= 3; cy++) v.seen.push(`${cx}:${cy}`);
+      const { events } = sail(v, 4, { throttle: 0 });
+      const hit = events.find((e) => e.kind === 'hit' && e.target === 'ship' && e.by === 'mob');
+      return hit?.kind === 'hit' ? hit.damage : 0;
+    };
+    const early = bite(0);
+    const late = bite(1);
+    eq(early, MOBS.kelpling.damage, 'at slack water a kelpling bites for exactly what the table says');
+    ok(late > early, `and the same creature born at the flood bites for ${late} instead of ${early}`);
+  });
+
+  /**
+   * The clock on its own, with the fight taken out of it: a ship still
+   * alongside, which the sea leaves alone (see `sheltered` in sea.ts), so what
+   * this measures is the TIDE and not how long a skiff survives ring 1.
+   */
+  test('the voyage carries the tide, and says so once per stage', () => {
+    let v = startVoyage('marea');
+    const stages: number[] = [];
+    const levels: number[] = [];
+    for (let i = 0; i < Math.round(330 / SEA_STEP); i++) {
+      const out = stepVoyage(v);
+      v = out.voyage;
+      levels.push(v.tide);
+      for (const e of out.events) if (e.kind === 'tide-turn') stages.push(e.stage);
+    }
+    for (let i = 1; i < levels.length; i++) ok(levels[i] >= levels[i - 1], 'the level on the voyage only rises');
+    eq(v.tide, 1, 'five and a half minutes out is full flood');
+    eq(JSON.stringify(stages), JSON.stringify([1, 2, 3]), 'and every stage announced itself exactly once, in order');
+    const read = readTide(v);
+    eq(read.stage, TIDE_STAGES.length - 1, 'the read agrees with the voyage');
+    eq(read.stageId, TIDE_STAGES[TIDE_STAGES.length - 1], 'and names it');
+    eq(read.toNext, 0, 'with nothing left to count down to');
+    ok(read.spawns > 1 && read.toughness > 1, 'and prints what the sea is doing, so the HUD can say it');
+  });
+
+  test('the countdown is a real countdown', () => {
+    let v = startVoyage('cuenta');
+    for (let i = 0; i < Math.round(90 / SEA_STEP); i++) v = stepVoyage(v).voyage;
+    const read = readTide(v);
+    ok(read.stage < TIDE_STAGES.length - 1, 'a minute and a half out is not the worst of it yet');
+    ok(read.toNext > 0, `and there is a stated number of seconds before it gets worse (${read.toNext.toFixed(0)}s)`);
+    let later = v;
+    for (let i = 0; i < Math.round((read.toNext + 0.2) / SEA_STEP); i++) later = stepVoyage(later).voyage;
+    ok(readTide(later).stage > read.stage, 'and waiting exactly that long is what it takes');
+  });
+
+  /**
+   * THE SWELL, and it is why the tide is an arc rather than an exploration tax.
+   *
+   * A cell hands over its patrol once per voyage, so a ship parked in swept
+   * water meets nothing however long it waits. Without this the whole system
+   * could be sat out by stopping, which is the opposite of rising action.
+   */
+  test('the sea comes to a ship that will not come to it', () => {
+    // Parked, throttle shut, in ring 2, for long enough for the tide to make.
+    const v = startVoyage('oleada');
+    v.x = SEA_CELL * 3.5;
+    v.departed = true;
+    for (let cx = -12; cx <= 12; cx++) for (let cy = -12; cy <= 12; cy++) v.seen.push(`${cx}:${cy}`);
+    const { voyage, events } = sail(v, 200, { throttle: 0 });
+    const swells = events.filter((e) => e.kind === 'swell');
+    ok(swells.length >= 3, `the tide sent something ${swells.length} times`);
+    ok(voyage.mobs.length > 0, 'and it is on the water beside her');
+    ok(
+      events.some((e) => e.kind === 'hit' && e.target === 'ship' && e.by === 'mob'),
+      'and it reached her — a swell that never arrives is scenery'
+    );
+    // Bigger, and nearer, as it goes on: the last swell of a voyage must not be
+    // the same event as the first or the tide is a metronome, not a threat.
+    const first = swells[0];
+    const last = swells[swells.length - 1];
+    ok(first.kind === 'swell' && last.kind === 'swell' && last.level > first.level, 'and the sea is worse by the end than it was at the start');
+  });
+
+  test('home water is never swollen — a voyage can always end', () => {
+    const v = startVoyage('puerto');
+    for (let cx = -6; cx <= 6; cx++) for (let cy = -6; cy <= 6; cy++) v.seen.push(`${cx}:${cy}`);
+    const { voyage, events } = sail(v, 240, { throttle: 0 });
+    ok(voyage.tide > 0.5, 'four minutes at the mooring is a made tide');
+    eq(events.filter((e) => e.kind === 'swell').length, 0, 'and the harbour is still empty water');
+    eq(voyage.mobs.length, 0, 'with nothing in it');
+  });
+
+  test('however high it gets, the fight stays countable', () => {
+    const v = startVoyage('gentio');
+    v.x = SEA_CELL * 12;              // ring 4, the busiest pool in the game
+    v.departed = true;
+    let worst = 0;
+    let cur = steer(v, { throttle: 0 });
+    for (let i = 0; i < Math.round(420 / SEA_STEP); i++) {
+      cur = stepVoyage(cur).voyage;
+      worst = Math.max(worst, cur.mobs.length);
+      if (cur.sunk) break;
+    }
+    // The same budget `patrols` is written against, and the same reason: a
+    // fight nobody can count is weather, and it is also a draw-call bill.
+    ok(worst <= 16, `the worst hour of the worst water put ${worst} creatures on the sea at once`);
+  });
+
+  test('a voyage with a tide in it still replays exactly', () => {
+    const run = () => {
+      let v = startVoyage('replay-marea');
+      for (let i = 0; i < Math.round(200 / SEA_STEP); i++) v = stepVoyage(steer(v, { turn: 0.2, throttle: 1 })).voyage;
+      return v;
+    };
+    const a = run();
+    const b = run();
+    eq(a.x, b.x, 'same seed, same helm, same position');
+    eq(a.hull, b.hull, 'the same damage taken');
+    eq(a.swells, b.swells, 'and the sea sent the same swells at the same moments');
+    eq(a.mobs.length, b.mobs.length, 'with the same creatures still afloat');
+  });
+
+  /**
+   * THE SHAPE, MEASURED. SEA_PLAY.md: "tools/voyages.mjs must show the tide
+   * producing a survival curve that falls with time at sea."
+   *
+   * The control is what makes this an assertion about the TIDE rather than
+   * about being out longer, which costs something in any sea: the same fleet,
+   * the same seeds, the same water, with the clock stopped through the loadout.
+   */
+  test('survival falls with time at sea, and the tide is why', () => {
+    const stay = (loiter: number, loadout?: Partial<Loadout>) => summarise(playFleet(
+      24, { ring: 2, skill: 'novato', sites: 3, limit: loiter + 240, loiter, loadout }, `t-marea-${loiter}-`
+    ));
+    const quick = stay(0);
+    const long = stay(240);
+    const control = stay(240, { tideRate: 0 });
+    ok(quick.survived >= 0.9, `a ring-2 trip that does not linger comes home (${(quick.survived * 100).toFixed(0)}%)`);
+    ok(
+      long.survived < quick.survived - 0.2,
+      `four minutes of one-more-site costs ${((quick.survived - long.survived) * 100).toFixed(0)} points of it (${(long.survived * 100).toFixed(0)}%)`
+    );
+    ok(
+      control.survived > long.survived + 0.15,
+      `and the same four minutes with the clock stopped comes home ${((control.survived - long.survived) * 100).toFixed(0)} points more often (${(control.survived * 100).toFixed(0)}%) — the fall is the tide`
+    );
+  });
+});
+
+/**
+ * THE HOLD HAS WEIGHT — SEA_PLAY.md item 2.
+ *
+ * "A full hold weighs nothing. Turning costs nothing. Fleeing is free. Every
+ * decision the sea offers is currently yes." The cheapest change that makes
+ * risk physical instead of numerical, and the one that gives the tide teeth:
+ * heavy and late is exactly when the sea should be frightening.
+ *
+ * The line the design draws, and every case here is on one side of it: the
+ * penalty falls on DODGING and barely on ESCAPE. A full hold must be a decision
+ * with a price, never a punishment for having succeeded.
+ */
+describe('the hold has weight', () => {
+  const laden = (ship: string, load: number): Voyage => {
+    const v = startVoyage('peso', ship);
+    v.cargo = { oro: Math.round(SHIPS[ship].hold * load) };
+    return v;
+  };
+
+  test('an empty hold is exactly the ship the shipyard sold', () => {
+    for (const ship of SHIP_TYPES) {
+      const spec = effectiveShip(startVoyage('vacio', ship));
+      eq(JSON.stringify(spec), JSON.stringify(SHIPS[ship]), `an empty ${ship} is the ${ship} on the sheet`);
+    }
+  });
+
+  test('cargo costs speed and helm, in proportion to how full she is', () => {
+    const empty = effectiveShip(laden('skiff', 0));
+    const half = effectiveShip(laden('skiff', 0.5));
+    const full = effectiveShip(laden('skiff', 1));
+    ok(full.speed < half.speed && half.speed < empty.speed, 'every unit aboard is a unit of way');
+    ok(full.turn < half.turn && half.turn < empty.turn, 'and a wider turn');
+    ok(full.accel < empty.accel, 'and a slower pickup out of a standing start');
+    ok(full.turnDrag > empty.turnDrag, 'and more way lost through a hard turn');
+    near(
+      (empty.speed - half.speed) * 2, empty.speed - full.speed, 1e-9,
+      'and it is proportional — half a hold costs half of what a full one does'
+    );
+  });
+
+  test('the hold cannot be over-full, and the numbers cannot invert', () => {
+    const over = laden('skiff', 3);
+    eq(holdLoad(over), 1, 'a hold stuffed past its own bottom is still just full');
+    const spec = effectiveShip(over);
+    ok(spec.speed > 0 && spec.turn > 0 && spec.accel > 0, 'and she still sails');
+    ok(spec.turnDrag < 1, 'and a hard turn can never stop her dead');
+  });
+
+  test('what a full hold does NOT cost is the hull, the hold or the guns', () => {
+    for (const ship of SHIP_TYPES) {
+      const spec = effectiveShip(laden(ship, 1));
+      eq(spec.hull, SHIPS[ship].hull, `a laden ${ship} is as strong as an empty one`);
+      eq(spec.hold, SHIPS[ship].hold, 'and the hold does not shrink under its own cargo');
+      eq(spec.damage, SHIPS[ship].damage, 'and the guns hit as hard');
+      eq(spec.radius, SHIPS[ship].radius, 'and she is the same size boat');
+      eq(spec.rated, SHIPS[ship].rated, 'and rated for the same water');
+    }
+  });
+
+  test('a decision, not a punishment: a full hold still outruns the sea', () => {
+    // The rule that keeps item 2 from turning into a tax on succeeding. If a
+    // laden ship could be run down by a hammerdead, the correct play would be
+    // to stop taking sites — and the whole risk curve inverts.
+    const fastest = Math.max(...Object.values(MOBS).map((m) => m.speed));
+    for (const ship of SHIP_TYPES) {
+      const spec = effectiveShip(laden(ship, 1));
+      ok(
+        spec.speed > fastest * 1.15,
+        `a full ${ship} makes ${spec.speed.toFixed(1)} against the sea's fastest ${fastest}`
+      );
+    }
+  });
+
+  test('and she sails the way the numbers say, not just reads that way', () => {
+    // The stats are one thing; the track through the water is what a thumb
+    // feels. Same seed, same helm, same seconds — one loaded, one not.
+    const run = (load: number) => {
+      let v = laden('skiff', load);
+      v.departed = true;
+      for (let cx = -6; cx <= 6; cx++) for (let cy = -6; cy <= 6; cy++) v.seen.push(`${cx}:${cy}`);
+      let heading = 0;
+      for (let i = 0; i < Math.round(6 / SEA_STEP); i++) {
+        v = stepVoyage(steer(v, { turn: 1, throttle: 1 })).voyage;
+        heading = v.heading;
+      }
+      return { swept: heading, gone: Math.hypot(v.x, v.y), speed: v.speed };
+    };
+    const light = run(0);
+    const heavy = run(1);
+    ok(heavy.speed < light.speed, `a full hold is slower through the water (${heavy.speed.toFixed(1)} against ${light.speed.toFixed(1)})`);
+    ok(
+      heavy.swept < light.swept,
+      `and six seconds of full helm turns her ${(light.swept - heavy.swept).toFixed(2)} radians less far round`
+    );
+  });
+
+  /**
+   * SEA_PLAY.md's own measurement: "the weight showing up as a measurable
+   * difference between running home loaded and running home empty."
+   */
+  test('running home rich is a harder job than running home empty', () => {
+    const row = weightRun(24, 4, 1);
+    ok(
+      row.fullSeconds > row.emptySeconds + 1,
+      `the same escape takes ${(row.fullSeconds - row.emptySeconds).toFixed(1)}s longer with the hold full (${row.fullSeconds.toFixed(1)}s against ${row.emptySeconds.toFixed(1)}s)`
+    );
+    ok(
+      row.fullHull < row.emptyHull,
+      `and she comes in more beaten (${(row.fullHull * 100).toFixed(0)}% against ${(row.emptyHull * 100).toFixed(0)}%)`
+    );
+    // But still gets in. A rich ship that could not get home would make the
+    // whole risk curve read backwards.
+    ok(row.fullHome >= 0.6, `and she still gets in (${(row.fullHome * 100).toFixed(0)}%)`);
+  });
+});
+
+/**
+ * PERTRECHOS — SEA_PLAY.md item 3, from the sim's side of the seam.
+ *
+ * The pool, the thresholds and the one-of-three offer are another module's
+ * work and are deliberately absent. What is asserted here is the CONTRACT that
+ * module builds against: a flat bag of named coefficients, neutral by default,
+ * each one landing in exactly one place in the simulation, and an empty bag
+ * reproducing the shipped ship step for step.
+ */
+describe('the pertrechos seam', () => {
+  const gear = (partial: Partial<Loadout>): Loadout => loadoutOf(partial);
+
+  test('an empty loadout is not a loadout at all', () => {
+    eq(JSON.stringify(loadoutOf()), JSON.stringify(NEUTRAL_LOADOUT), 'nothing in means neutral out');
+    eq(JSON.stringify(startVoyage('neutro').loadout), JSON.stringify(NEUTRAL_LOADOUT), 'and a voyage starts neutral');
+    // The property that let this land before the module that fills it: the same
+    // voyage with an explicitly neutral loadout is the same voyage, step for
+    // step, hull for hull, over long enough for every system to have run.
+    const run = (loadout?: Partial<Loadout>) => {
+      let v = startVoyage('sin-pertrechos', 'skiff', { loadout });
+      for (let i = 0; i < Math.round(120 / SEA_STEP); i++) {
+        v = stepVoyage(steer(v, { turn: 0.25, throttle: 1 })).voyage;
+      }
+      return `${v.x.toFixed(6)}|${v.y.toFixed(6)}|${v.hull.toFixed(6)}|${v.mobs.length}|${v.swells}|${holdUsed(v)}`;
+    };
+    eq(run({}), run(), 'an empty bag changes nothing about the voyage');
+  });
+
+  test('a partial loadout is filled in, never left with holes', () => {
+    const one = gear({ reload: 0.7 });
+    eq(one.reload, 0.7, 'what was given is kept');
+    eq(one.range, 1, 'and everything else is neutral');
+    eq(one.spread, false, 'including the flags');
+    eq(one.chainSlow, 0, 'and the ones whose identity is zero');
+  });
+
+  test('the guns read reload, range and arc', () => {
+    const shots = (loadout: Partial<Loadout>, at: { x: number; y: number }) => {
+      const v = startVoyage('canones', 'skiff', { loadout });
+      // Under way in clear water: alongside, the sea leaves her alone and the
+      // `home` latch would end the voyage before a second broadside reloaded.
+      const here = openWater('canones');
+      v.x = here.x;
+      v.y = here.y;
+      v.heading = here.heading;
+      v.departed = true;
+      // `at` is written in the ship's frame: x ahead, y off the starboard beam.
+      const post = offBow(v, at.x, at.y);
+      v.mobs.push({
+        id: 1, kind: 'blowfish', x: post.x, y: post.y, heading: v.heading, hp: 99999,
+        state: 'patrol', cooldown: 0, homeX: post.x, homeY: post.y, tether: 0, cell: '0:1',
+      });
+      sweep(v);
+      return sail(v, 10, { throttle: 0 }).events.filter((e) => e.kind === 'fired').length;
+    };
+    const abeam = { x: 0, y: 26 };
+    ok(shots({ reload: 0.5 }, abeam) > shots({}, abeam), 'a faster reload is more broadsides in the same ten seconds');
+    // Past the skiff's 54 by more than the 16-unit circle a patrol walks round
+    // its own anchor — six units of margin was less than the patrol's own orbit,
+    // so the target strolled INTO range and the base gun scored a hit off it.
+    const far = { x: 0, y: SHIPS.skiff.range + 24 };
+    eq(shots({}, far), 0, 'out of range is out of range');
+    ok(shots({ range: 1.4 }, far) > 0, 'and a longer gun reaches it');
+    // Off the beam by more than the arc, so only a wider arc bears.
+    const bearing = SHIPS.skiff.arc + 0.18;
+    const wide = { x: Math.cos(Math.PI / 2 - bearing) * 30, y: Math.sin(Math.PI / 2 - bearing) * 30 };
+    eq(shots({}, wide), 0, 'and outside the arc nothing fires');
+    ok(shots({ arc: 1.6 }, wide) > 0, 'until the arc is opened');
+  });
+
+  test('the helm reads speed and turn', () => {
+    const sailed = (loadout: Partial<Loadout>) => {
+      let v = startVoyage('timon', 'skiff', { loadout });
+      for (let i = 0; i < Math.round(8 / SEA_STEP); i++) {
+        v = stepVoyage(steer(v, { turn: 1, throttle: 1 })).voyage;
+      }
+      return { speed: v.speed, swept: v.heading };
+    };
+    ok(sailed({ speed: 1.25 }).speed > sailed({}).speed, 'a faster hull is faster');
+    ok(sailed({ turn: 1.35 }).swept > sailed({}).swept, 'and a better helm comes round further');
+  });
+
+  test('the tide reads its own rate', () => {
+    const after = (rate: number) => {
+      let v = startVoyage('contramaestre', 'skiff', { loadout: { tideRate: rate } });
+      for (let i = 0; i < Math.round(200 / SEA_STEP); i++) v = stepVoyage(v).voyage;
+      return v.tide;
+    };
+    ok(after(0.6) < after(1), `the contramaestre buys a lower tide at the same hour (${after(0.6).toFixed(2)} against ${after(1).toFixed(2)})`);
+    eq(after(0), 0, 'and a rate of zero is the control the harness sweeps against');
+  });
+
+  test('chain shot slows what it hits', () => {
+    const chased = (chainSlow: number) => {
+      const v = startVoyage('palanqueta', 'skiff', { loadout: { chainSlow } });
+      v.mobs.push({
+        id: 1, kind: 'hammerdead', x: 0, y: 30, heading: -Math.PI / 2, hp: 99999,
+        state: 'chase', cooldown: 0, homeX: 0, homeY: 30, tether: 400, cell: '0:1',
+      });
+      for (let cx = -3; cx <= 3; cx++) for (let cy = -3; cy <= 3; cy++) v.seen.push(`${cx}:${cy}`);
+      const after = sail(v, 6, { throttle: 0 }).voyage;
+      return Math.hypot(after.mobs[0].y - after.y, after.mobs[0].x - after.x);
+    };
+    const loose = chased(0);
+    const dragging = chased(0.4);
+    ok(dragging > loose, `a chained hammerdead is ${(dragging - loose).toFixed(1)} units further off after six seconds`);
+  });
+
+  test('grape spreads the broadside: more balls, each for less', () => {
+    const volley = (spread: boolean) => {
+      const v = startVoyage('metralla', 'skiff', { loadout: { spread } });
+      v.mobs.push({
+        id: 1, kind: 'blowfish', x: 0, y: 40, heading: 0, hp: 99999,
+        state: 'patrol', cooldown: 0, homeX: 0, homeY: 40, tether: 0, cell: '0:1',
+      });
+      for (let cx = -3; cx <= 3; cx++) for (let cy = -3; cy <= 3; cy++) v.seen.push(`${cx}:${cy}`);
+      let cur = steer(v, { throttle: 0 });
+      for (let i = 0; i < Math.round(6 / SEA_STEP); i++) {
+        const out = stepVoyage(cur);
+        cur = out.voyage;
+        if (out.events.some((e) => e.kind === 'fired')) return cur.shots;
+      }
+      return cur.shots;
+    };
+    const ball = volley(false);
+    const grape = volley(true);
+    eq(ball.length, 1, 'a plain broadside is one ball');
+    ok(grape.length > 1, `and grape is ${grape.length}`);
+    ok(grape[0].damage < ball[0].damage, `each for less (${grape[0].damage} against ${ball[0].damage})`);
+    ok(
+      grape.reduce((a, s) => a + s.damage, 0) > ball[0].damage,
+      'worth more than the ball if every one of them finds something, which is the trade'
+    );
+    const spreadOut = Math.abs(Math.atan2(grape[0].vy, grape[0].vx) - Math.atan2(grape[grape.length - 1].vy, grape[grape.length - 1].vx));
+    ok(spreadOut > 0.05, `and they actually fan (${spreadOut.toFixed(2)} radians across)`);
+  });
+
+  test('the false hold saves more of the cargo, and drowning is still worse than quitting', () => {
+    const drowned = (holdGuard: number) => {
+      const v = sinkAt(9, { oro: 800 });
+      const again = startVoyage('bodega', 'skiff', { loadout: { holdGuard } });
+      again.x = v.x;
+      again.y = v.y;
+      again.departed = true;
+      again.hull = 1;
+      again.cargo = { oro: 800 };
+      again.mobs.push({
+        id: 1, kind: 'hammerdead', x: again.x + 4, y: 0, heading: Math.PI, hp: 999,
+        state: 'attack', cooldown: 0, homeX: again.x, homeY: 0, tether: 0, cell: '9:0',
+      });
+      for (let cx = -20; cx <= 20; cx++) for (let cy = -3; cy <= 3; cy++) again.seen.push(`${cx}:${cy}`);
+      const wreck = sail(again, 6, { throttle: 0 }).voyage;
+      ok(wreck.sunk, 'the fixture sank');
+      return (wreck.cargo.oro ?? 0) + wreck.careened;
+    };
+    const plain = drowned(0);
+    const guarded = drowned(0.3);
+    ok(guarded > plain, `a false hold lands ${guarded - plain} more units of a sinking (${guarded} against ${plain})`);
+
+    // And the promise landfall makes still holds, however many are stacked.
+    const quit = startVoyage('bodega-quit');
+    quit.x = SEA_CELL * 9;
+    quit.departed = true;
+    quit.cargo = { oro: 800 };
+    abandonVoyageInPlace(quit);
+    ok(
+      drowned(1) < (quit.cargo.oro ?? 0),
+      `even a hold that is all false lands less by drowning (${drowned(1)}) than by turning for home (${quit.cargo.oro})`
+    );
   });
 });

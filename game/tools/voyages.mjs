@@ -92,8 +92,12 @@ table(rows, [
  */
 console.log(`\n${BOLD}La marea sube${OFF} ${DIM}— el mismo viaje, quedándose fuera más tiempo · «sin marea» es el mismo mar con el reloj parado${OFF}\n`);
 
+// Rings 1 to 3, which is where the base survival is high enough that a FALL is
+// attributable. Ring 4 and 5 already kill the majority of a loitering fleet on
+// their own — the sweep at the top of this file says so — and a column that
+// starts at 30% cannot show anything about a tide.
 const LOITERS = [0, 60, 120, 180, 240];
-for (const [ring, skill] of [[1, 'novato'], [4, 'novato'], [4, 'veterano']]) {
+for (const [ring, skill] of [[1, 'novato'], [2, 'novato'], [3, 'veterano']]) {
   console.log(`  ${DIM}anillo ${ring} · ${skill}${OFF}`);
   table(tideSweep(runs, ring, skill, LOITERS), [
     { head: 'fuera', cell: (r) => `${r.loiter}s` },

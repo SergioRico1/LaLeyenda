@@ -15,7 +15,14 @@ Status: `[x]` done and verified · `[~]` partly there, gap named · `[ ]` not st
 ## 0 · Gates that must stay green
 
 - [x] `npx tsc --noEmit` clean (strict, `noUnusedLocals`)
-- [x] `npm test` — the pure-sim suite, 301 cases (round 13 added 7: the three
+- [x] `npm test` — 360 cases. Round 15 added 59: `resilience.test.ts` is a new
+      file covering a full storage quota, a browser that refuses storage
+      outright, a save this build cannot read (truncated, wrong types, missing
+      keys, not ours, from a later version), the duplicate write two
+      backgrounding handlers make a millisecond apart, and the stylesheet rules
+      whose absence is a clipped panel on a device nobody here owns — plus the
+      gate's guard on the Recoger Todo cascade bug (§7.1). It is the first
+      suite in this build that is not about the sim. (Round 13 added 7: the three
       sources the empty chest tray names and the one it must not, the zone
       warning's new look-ahead over a live fleet, and the pairing of a
       tutorial card's noun with the obstacle its ring is on. Round 12 added
@@ -293,12 +300,24 @@ have to trust a figure typed in here by hand again.
 | — plus what a real browser fetches | `npm run bundle:boot` | |
 | both | `npm run ship` | |
 
-Measured by round 15 on the round's working tree (HEAD `18e7b1b`, with that
-round's unhappy-path work in `src/core/save.ts`, `src/main.ts` and
-`src/ui/panels/settings.*` present but uncommitted). The code figures move a
-few KB with every round; the model figures and the draw calls do not. Draw
-calls are deterministic — four separate runs returned the same three integers —
-so a number below that has moved is a change somebody made, not noise.
+Re-measured by round 15's GATE at `aa75d7c`, in a clean worktree at that commit
+rather than in a working tree carrying the next round's uncommitted edits.
+Draw calls are deterministic *for a given tree* — repeated runs return the same
+integers — so a number that has moved is a change somebody made, not noise.
+
+**The sea row went stale twice while this section was being written, which is
+the whole argument for the section.** It first went in measured at `18e7b1b`,
+quoting **217**. The sea builder's `seaScene.ts` landed in the very commit that
+published that table and took the sea to **51**. By the time the gate came to
+verify, four more commits had taken it to **39**. Nobody was careless: the perf
+builder measured a tree that did not yet contain the sea work, and no step in
+this workflow compares two builders' trees. Two lessons, both cheap:
+
+- *Run the command, do not read the table.* Every figure here is one command.
+- **Measure the tree you are committing.** The gate's first pass measured the
+  working tree and got 51, because a round-16 builder's `sim/sea.ts` was sitting
+  in it uncommitted, changing what spawns. The number that belongs in a release
+  checklist is the one a clean checkout produces.
 
 - [ ] **Draw calls < 100.** Read after a real frame, by a counter wrapped
       around the WebGL context itself: every `drawElements`, `drawArrays` and
@@ -311,10 +330,16 @@ so a number below that has moved is a change somebody made, not noise.
       |---|---|---|---|
       | island day one (1 building) | **137** | 94,432 | +37 |
       | island demo (11 buildings) | **1110** | 152,216 | +1010 |
-      | sea | **217** | 144,696 | +117 |
+      | sea | **39** | 137,520 | OK |
 
-      Round 11 measured 136 / 1112 / 217. Nothing has regressed and nothing has
-      improved; rounds 12-14 were spent elsewhere.
+      Round 11 measured 136 / 1112 / 217. The two island figures have not moved.
+      **The sea has: 217 → 39, and it is the first scene in this game ever to
+      come in under the budget** — at better than a third of it. Round 15's sea
+      builder cut the caster set to the hull alone while re-lighting the water,
+      which is recommendation 1 below arriving from a different direction: the
+      shadows went because the sun now draws the contact, not because anyone was
+      chasing draw calls. The cheapest perf win in this build was a side effect
+      of an art decision.
 
       **Where they go, by layer** (`--parts`, day one / demo):
 
@@ -338,50 +363,55 @@ so a number below that has moved is a change somebody made, not noise.
       |---|---|---|
       | island day one | 66 (48%) | 71 |
       | island demo | 591 (53%) | 519 |
-      | sea | **185 (85%)** | 32 |
+      | sea | 12 (31%) | 27 |
 
       Day one draws 71 visible calls — *inside* budget — and then draws 66 more
-      into the shadow map, and that is what puts it at 137. The sea is the loud
-      one: 217 calls of which 185 are shadow casters, for a scene whose visible
-      geometry is 32 calls. Every caster is re-rendered every frame —
-      `shadowMap.autoUpdate` is never set and three.js defaults it to true — so
-      this is a per-frame cost, not a boot cost.
+      into the shadow map, and that is what puts it at 137. **The sea was the
+      loud one and is now the quiet one**: it used to be 185 casters against 32
+      calls of visible geometry, and it is 12 against 27. Every caster is
+      re-rendered every frame — `shadowMap.autoUpdate` is never set and three.js
+      defaults it to true — so the 173 that went were a per-frame cost, not a
+      boot cost.
 
-      **Recommended, NOT done this round** (a big instancing refactor was
-      explicitly out of scope, and none of these files were this round's to
-      touch):
-      1. *The sea's caster set* — `seaScene.ts`. Cheapest win in the game:
-         185 → a handful takes the sea from 217 to under 60 without a single
-         change to the models. A mob, a reef and a floating crate on open water
-         do not each need a real shadow.
-      2. *Merge or instance the buildings* — `tools/optimize.mjs` and the model
-         loader. This is the only route to the demo island's 1110.
-      3. *The skiff's 22.* Small, but it is 22% of the budget for scenery.
+      **Still recommended** (a big instancing refactor remains out of scope):
+      1. *Merge or instance the buildings* — `tools/optimize.mjs` and the model
+         loader. **The only route to the demo island's 1110**, and now the whole
+         of the problem: with the sea inside budget, buildings are the sole
+         reason this box is unticked. **492 of the demo's 1110 calls bind a
+         SINGLE material** (`npm run perf:where`) — the models already share it
+         and simply arrive as a mesh apiece, which is the easiest kind of merge
+         there is. Read the count, not the name in that column: three.js labels
+         a row from whichever material supplied its `SHADER_NAME`, and the same
+         row came back `Base02-Material` on one tree and `RoofBoard03-Material`
+         on the next with every integer identical.
+      2. *The skiff's 22.* Small, but it is 22% of the budget for scenery.
+      3. *The island's shadow pass*, now that the sea has shown what it is worth:
+         66 of day one's 137 and 591 of the demo's 1110.
 
 - [ ] **Initial download < 10 MB** — depends entirely on which download, and
       the honest answer is that we pass one budget and fail the other.
 
       | class | files | raw | gzip | brotli |
       |---|---|---|---|---|
-      | js | 4 | 1159.6 KB | 350.4 KB | 290.4 KB |
-      | css | 3 | 124.3 KB | 24.7 KB | 21.0 KB |
+      | js | 4 | 1177.9 KB | 357.5 KB | 296.2 KB |
+      | css | 3 | 124.6 KB | 24.7 KB | 21.0 KB |
       | html | 1 | 1.2 KB | 0.7 KB | 0.5 KB |
       | models | 97 | 12900.9 KB | 2815.9 KB | 2073.0 KB |
       | fonts | 4 | 30.5 KB | 30.6 KB | 30.5 KB |
       | textures | 2 | 83.8 KB | 83.7 KB | 83.8 KB |
       | json | 2 | 17.3 KB | 3.0 KB | 2.3 KB |
-      | **TOTAL** | **113** | **13.98 MB** | **3.23 MB** | **2.44 MB** |
+      | **TOTAL** | **113** | **14.00 MB** | **3.24 MB** | **2.45 MB** |
 
-      **A web player passes: 3.23 MB gzipped, 2.44 MB brotli, for every byte of
+      **A web player passes: 3.24 MB gzipped, 2.45 MB brotli, for every byte of
       the game.** Round 12's gate reported 3.05 MB for the same measurement; the
       0.18 MB since has not been attributed to anything in particular.
 
-      **A Capacitor build fails: 13.98 MB raw, 3.98 MB over.** A native shell
+      **A Capacitor build fails: 14.00 MB raw, 4.00 MB over.** A native shell
       reads files off its own filesystem and negotiates `Content-Encoding` with
       nobody, so the raw column is what an `.ipa` carries, and the raw column is
       the one that has to come down before §7 can be ticked. **Every previous
       round measured only the gzip column, which is why this line has read as
-      passing.** The gap between 13.98 and 3.23 is itself the measurement of the
+      passing.** The gap between 14.00 and 3.24 is itself the measurement of the
       problem: the models compress by a factor of four and a half, which means
       those bytes are redundancy a general-purpose compressor can see and the
       asset pipeline cannot.
@@ -407,7 +437,7 @@ so a number below that has moved is a change somebody made, not noise.
 
       Three routes down, none of them this round's files. **Neither of the
       first two is enough alone**: deleting every model nothing loads takes
-      13.98 MB to 11.13 MB, still 1.13 MB over, so the pipeline change has to
+      14.00 MB to 11.15 MB, still 1.15 MB over, so the pipeline change has to
       happen as well.
       1. *`quantize()` + `EXT_meshopt_compression` in `tools/optimize.mjs`.*
          The pipeline runs dedup, weld, join, flatten, resample, sparse and a
@@ -458,8 +488,51 @@ so a number below that has moved is a change somebody made, not noise.
         deterministic; the milliseconds are not. Read ratios, never absolutes.
 - [ ] PWA installable, offline boot verified on a device
 - [ ] Capacitor shell, icons, splash, App Store metadata
-- [ ] An error a player can hit shows something other than a blank canvas
+- [x] **An error a player can hit shows something other than a blank canvas.**
+      Walked by round 15's gate in a real browser against the BUILT game in
+      `dist/`, served over http, not against the dev server: the radio cut after
+      the title had loaded, then Jugar. Before the round that showed nothing at
+      all — `show()` had disposed the title, the captain screen's models failed
+      to fetch, and the rejection went to `window.__error` and the console. Now
+      it shows *"Falta algo por cargar"* over a scrim with **Reintentar** and
+      **Volver al título**. Ditto a corrupt save: *"No hemos podido leer tu
+      partida"*, the game still boots, and `save:broken` holds the original
+      bytes with a Descargar archivo button on the card and a permanent row in
+      Ajustes.
 - [x] Audio: synthesised bus, island and sea both covered
+
+### 7.1 · The unhappy paths, walked
+
+Round 15's gate drove all seven in a real Chromium against `dist/`. What the
+suite asserts is in `tools/tests/resilience.test.ts`; this is what a phone did.
+
+| path | result |
+|---|---|
+| network cut mid-session, then Jugar | **ok** — the card, with two ways out |
+| a corrupt / truncated save | **ok** — told, quarantined, still boots |
+| a save from schema 1 (current is 3) | **ok** — 1 → 3, island, resources and seed intact, captain rolled from that seed, no notice |
+| a full storage quota | **ok** — announced once, not per retry; recovers when space is freed |
+| no durable storage at all | **ok** — plays in memory, and says it will not survive the tab |
+| 320x568, 360x640, 390x844, 430x932 + three landscapes | **one real bug, fixed** — see below |
+| **first launch with no network** | **BROKEN, and unfixable without a service worker** |
+
+**The tiny-screen walk found a bug that was never about tiny screens.**
+`.collect-all` (hud.css) sets `position:absolute`; `.btn`
+(`components/button.css`) sets `position:relative`. Same specificity, and
+`button.css` is imported later, so `.btn` won — and on a *relative* box
+`bottom:159px` means "shift up 159px from where you would sit", not "159px off
+the bottom edge". Every sibling in `.hud` is absolute, so the pill's flow
+position is the top of the hud and it drew at **y = -159 at every one of the
+seven viewports**: §3.9's four-bubble shortcut had never once been tappable.
+The rule directly beneath it out-specifies `.btn` for `transform` and documents
+exactly this hazard; `position` was the property that got away. Fixed with
+`.collect-all.btn{position:absolute}` and guarded by a test that reads the
+relationship between the two stylesheets rather than either string.
+
+**First launch offline is the one that cannot be closed here.** There is no
+service worker, so the document itself never arrives and the player gets the
+browser's error page, not ours. That is the same box as "PWA installable"
+above, and it stays open until a shell exists to close it.
 
 ## 8 · Known deferred, with the reason
 

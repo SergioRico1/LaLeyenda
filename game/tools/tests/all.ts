@@ -13,6 +13,7 @@ import './resilience.test';
 import './tokens.test';
 import './decor.test';
 import './sea.test';
+import './pertrechos.test';
 import './shipyard.test';
 import './store.test';
 import './rivals.test';
