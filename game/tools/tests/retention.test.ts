@@ -541,8 +541,20 @@ describe('OPENING.md — day one is the Ayuntamiento and nothing else', () => {
     const state = fresh();
     ok(storeCap(state, 'madera') > 0, `the hall banks ${storeCap(state, 'madera')} madera`);
     ok(storeCap(state, 'oro') > 0, `and ${storeCap(state, 'oro')} oro`);
-    eq(storeCap(state, 'ron'), 0, 'but ron still has to earn its Bodega');
-    eq(storeCap(state, 'metal'), 0, 'and metal its Depósito');
+    // Ron and metal used to be exactly zero here, on the rule that they must
+    // earn their store. Round 17 gave the hall a TASTE of each, because the sea
+    // pays both in ring 1 and a first voyage was spilling its ron against a cap
+    // of nothing — for a currency the HUD had never even drawn. The rule
+    // survives as the thing it was actually protecting: a store is what you
+    // build when you want any REAL quantity, and the hall is nowhere near one.
+    ok(storeCap(state, 'ron') > 0, `the hall keeps a taste of ron (${storeCap(state, 'ron')})`);
+    ok(storeCap(state, 'metal') > 0, `and of metal (${storeCap(state, 'metal')})`);
+    for (const res of ['ron', 'metal'] as const) {
+      ok(
+        storeCap(state, res) < storeCap(state, 'madera') / 4,
+        `${res} is a taste beside what the hall really banks, not a supply`
+      );
+    }
   });
 
   test('the opening is 50 madera short of an Aserradero, and one palm covers it', () => {

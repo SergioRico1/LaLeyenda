@@ -277,7 +277,17 @@ export function spilledStoreNeeded(state: GameState): ResourceId | null {
   const hall = townHallLevel(state);
   for (const resource of RESOURCE_IDS) {
     if ((landing.spilled[resource] ?? 0) <= 0) continue;
-    if (storeCap(state, resource) > 0) continue;
+    // THE CAP IS NOT THE QUESTION, and it used to be: `storeCap > 0` meant
+    // "you already have room, so no store is needed". That was a PROXY for "you
+    // have no store", and it was true only while the hall held nothing of this
+    // resource. Round 17 gave the hall a taste of ron and metal so a first
+    // voyage's haul would land — and the proxy inverted, so the resolver went
+    // silent at exactly the moment it had something to say: cargo over the side
+    // and an unbuilt Bodega right there in the picker.
+    //
+    // The real question is the one the next three lines ask: something spilled,
+    // the building that would have kept it is reachable at this hall, and it is
+    // not standing. Nothing about how much room the hall happens to have.
     const type = storeTypeFor(resource);
     if (reachableLevel(type, hall) < 1) continue;
     if (state.buildings.some((b) => b.type === type)) continue;

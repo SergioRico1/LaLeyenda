@@ -39,8 +39,22 @@ export function toHudState(state: GameState, now: number): HudState {
 
   // §4.1 staged reveal — three rows early, five at Ayuntamiento 4. Four full
   // bars on the first screen is noise a new player cannot read.
+  //
+  // OR YOU HAVE SOME, and that second half is the fix for a real hole. The
+  // reveal was a pure function of the hall, which was true while the only way
+  // to get a resource was to build the thing that makes it. The SEA is not: a
+  // ring-1 islet pays ron and a harvest site pays metal, so a player at hall 1
+  // could come home from their first voyage carrying a currency the HUD flatly
+  // refused to draw. The number moved in the save, the end-of-voyage card
+  // named it, and the one place a player actually looks showed nothing at all.
+  //
+  // Owning some is the honest trigger, and it makes the reveal follow the GAME
+  // rather than a table: the row arrives the moment the thing becomes real to
+  // this player, whether that was a hall level, a voyage, a chest or a daily.
+  // hud.ts already gives a newly-arrived row its beat (`sfx('pop')`), so this
+  // lands as a moment rather than as a layout shift.
   const resources: ResourceState[] = (Object.keys(BALANCE.resources) as ResourceId[])
-    .filter((id) => hall >= BALANCE.resources[id].revealAtTownHall)
+    .filter((id) => hall >= BALANCE.resources[id].revealAtTownHall || state.store[id] > 0)
     .sort((a, b) => BALANCE.resources[a].pillRow - BALANCE.resources[b].pillRow)
     .map((id) => ({
       id,

@@ -48,11 +48,27 @@
       "without this the first island can hold zero of everything and every payout, chest and",
       "daily lands as nothing. Flat rather than a ladder: past the first Almacén (2 000) it is",
       "noise, and its only job is to make the opening possible. Oro and madera only — ron and",
-      "metal still have to earn their store, which is the whole point of a store."
+      "metal still have to earn their store, which is the whole point of a store.",
+      "",
+      "THAT LAST SENTENCE WAS WRITTEN FOR AN ISLAND-ONLY ECONOMY, AND THE SEA BROKE IT.",
+      "Round 12 moved the starter skiff to the Muelle at 300 madera so the first sail is a",
+      "first-session beat, and every kind of site in ring 1 pays ron: an islet is",
+      "madera+ron, a wreck is oro+ron, a harvest site is madera+metal. So a brand-new",
+      "player's first voyage came home with ron in the hold, the end-of-voyage card",
+      "printed it, and `previewLanding` spilled every unit into the water against a cap of",
+      "ZERO — for a currency that was not on the HUD and had never been named. Nothing on",
+      "screen could have explained that, because the game had never told them ron existed.",
+      "",
+      "150 is a TASTE and not a supply, which is how both rules survive: a first voyage's",
+      "ron lands, and the Bodega at 1 000 is still the answer to wanting any. What a store",
+      "is FOR is unchanged; what changed is that the game no longer pays you in something",
+      "it cannot keep and will not name."
     ],
     "baseStorage": {
       "oro": 600,
-      "madera": 1200
+      "madera": 1200,
+      "ron": 150,
+      "metal": 150
     },
     "levels": [
       {

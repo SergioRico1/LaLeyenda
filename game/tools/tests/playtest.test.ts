@@ -22,30 +22,70 @@ import { T0, TZ, game, quiet } from './fixtures';
 /* --------------------------------------------------------------------------
  * finding 1 — "landing manifest said Ron 180 · Metal 99 … the save ledger
  * reads ron:0, metal:0". A player must never watch loot evaporate in silence.
+ *
+ * ROUND 17 MOVED THE PREMISE AND LEFT EVERY CLAIM STANDING, so it is worth
+ * being exact about what changed. Round 11's fix was to make the loss LEGIBLE —
+ * a landing report in the save, a toast that names what spilled, a resolver
+ * that points at the missing store — and it was the right fix for what the
+ * playtester saw. What it did not touch was the reason the loss happened: a
+ * day-one hall could hold ZERO ron and zero metal, while every kind of site in
+ * ring 1 pays one or the other.
+ *
+ * The deciding fact came from these very cases. Two of them below say that on
+ * day one the Bodega is locked behind Ayuntamiento 2 and `spilledStoreNeeded`
+ * therefore returns null — so a brand-new player was told they had lost 180 ron
+ * and the game could not name the remedy. A legible loss you can act on is a
+ * lesson; a legible loss you cannot act on is a punishment for playing the way
+ * the game told you to.
+ *
+ * So the hall now keeps a TASTE of each (`townHall.baseStorage`, 150), and the
+ * amounts below are raised past it. Every mechanism round 11 built is still
+ * exercised, at the moment it is actually useful: when the player is carrying
+ * real quantities and the Bodega is a thing they can go and build.
  * ----------------------------------------------------------------------- */
 
 describe('playtest 1 · the landing report', () => {
-  test('REPRO: a day-one island spills every drop of ron and metal it lands', () => {
+  test('REPRO: a day-one island spills what will not fit in the hall', () => {
     const state = game();
-    eq(storeCap(state, 'ron'), 0, 'no Bodega: the ron cap is zero');
-    eq(storeCap(state, 'metal'), 0, 'no Depósito: the metal cap is zero');
+    const ronCap = storeCap(state, 'ron');
+    const metalCap = storeCap(state, 'metal');
+    ok(ronCap > 0, `no Bodega, but the hall keeps a taste of ron (${ronCap})`);
+    ok(ronCap < 400, 'a taste and not a supply — the Bodega is still the answer');
 
-    const { landed, spilled } = landCargoInPlace(state, { ron: 180, metal: 99, oro: 40 });
+    const { landed, spilled } = landCargoInPlace(state, { ron: 400, metal: 300, oro: 40 });
     eq(landed.oro, 40, 'the oro fits in the hall strongroom');
-    eq(landed.ron, undefined, 'not a drop of ron lands');
-    eq(spilled.ron, 180, 'the ron is reported spilled');
-    eq(spilled.metal, 99, 'the metal is reported spilled');
-    eq(state.store.ron, 0, 'the ledger honestly holds none of it');
+    eq(landed.ron, ronCap, 'the ron fills the strongroom exactly');
+    eq(spilled.ron, 400 - ronCap, 'and the rest is reported spilled');
+    eq(spilled.metal, 300 - metalCap, 'the metal too');
+    eq(state.store.ron, ronCap, 'the ledger honestly holds what it holds');
   });
 
   test('the landing is WRITTEN INTO THE SAVE, spill and all, so a later boot can say it', () => {
     const state = game();
-    landCargoInPlace(state, { ron: 180, metal: 99, oro: 40 });
+    const ronCap = storeCap(state, 'ron');
+    const metalCap = storeCap(state, 'metal');
+    landCargoInPlace(state, { ron: 400, metal: 300, oro: 40 });
 
     ok(state.landing, 'the landing report exists on the state');
-    deepEq(state.landing!.landed, { oro: 40 }, 'what landed is recorded');
-    deepEq(state.landing!.spilled, { ron: 180, metal: 99 }, 'what spilled is recorded');
+    deepEq(state.landing!.landed, { oro: 40, ron: ronCap, metal: metalCap }, 'what landed is recorded');
+    deepEq(
+      state.landing!.spilled, { ron: 400 - ronCap, metal: 300 - metalCap },
+      'what spilled is recorded'
+    );
     eq(state.landing!.seen, false, 'and nobody has been told yet');
+  });
+
+  /**
+   * The case the owner was actually looking at, and the one round 11 could not
+   * have written because the sea was not a first-session activity yet.
+   */
+  test('a FIRST VOYAGE is not a lesson in loss: everything it can carry lands', () => {
+    const state = game();
+    // An islet and a wreck, which is exactly what ring 1 has to offer.
+    const { landed, spilled } = landCargoInPlace(state, { madera: 45, ron: 38, oro: 35 });
+    eq(landed.ron, 38, 'every drop of the first voyage\'s ron reached the island');
+    deepEq(spilled, {}, 'and nothing at all went over the side');
+    ok(state.store.ron > 0, 'the ledger says so, which is what puts it on the HUD');
   });
 
   test('a clean landing still reports what landed — the arrival toast is always true', () => {
@@ -64,24 +104,25 @@ describe('playtest 1 · the landing report', () => {
 
   test('markLandingSeen stops the repeat without forgetting the loss', () => {
     const state = game();
-    landCargoInPlace(state, { ron: 180 });
+    const over = 400 - storeCap(state, 'ron');
+    landCargoInPlace(state, { ron: 400 });
     const result = markLandingSeen(state);
     ok(result.ok, 'acknowledging is never refused');
     eq(result.state.landing!.seen, true, 'seen travels in the save');
-    deepEq(result.state.landing!.spilled, { ron: 180 }, 'the loss itself is kept');
+    deepEq(result.state.landing!.spilled, { ron: over }, 'the loss itself is kept');
   });
 
   test('the resolver points a spill at the missing store once it is buildable', () => {
     const state = game();
     state.buildings[0].level = 2;                // Ayuntamiento 2: Bodega reachable
-    landCargoInPlace(state, { ron: 180 });
+    landCargoInPlace(state, { ron: 400 });
     eq(spilledStoreNeeded(state), 'ron', 'the ron store is the named gap');
     eq(nextAction(state, T0), 'almacen', 'and the resolver says: build it');
   });
 
   test('on day one the Bodega is locked behind the hall, so the cue stays construir', () => {
     const state = game();                        // Ayuntamiento 1
-    landCargoInPlace(state, { ron: 180 });
+    landCargoInPlace(state, { ron: 400 });
     eq(spilledStoreNeeded(state), null, 'a store the hall does not allow is not pointed at');
     eq(nextAction(state, T0), 'construir', 'the generic build cue still leads the way');
   });
@@ -89,7 +130,7 @@ describe('playtest 1 · the landing report', () => {
   test('placing the missing store retires the cue, even while it is still building', () => {
     const state = game();
     state.buildings[0].level = 2;
-    landCargoInPlace(state, { ron: 180 });
+    landCargoInPlace(state, { ron: 400 });
     state.buildings.push({
       id: 99, type: 'bodega', x: 30, z: 30, level: 0, stock: 0,
       work: { kind: 'build', toLevel: 1, startedAt: T0, endsAt: T0 + MINUTE },
@@ -101,9 +142,9 @@ describe('playtest 1 · the landing report', () => {
   test('previewLanding agrees with the landing and touches nothing', () => {
     const state = game();
     const before = JSON.stringify(state);
-    const preview = previewLanding(state, { ron: 180, metal: 99, oro: 40 });
+    const preview = previewLanding(state, { ron: 400, metal: 300, oro: 40 });
     eq(JSON.stringify(state), before, 'a preview mutates nothing');
-    const real = landCargoInPlace(structuredClone(state), { ron: 180, metal: 99, oro: 40 });
+    const real = landCargoInPlace(structuredClone(state), { ron: 400, metal: 300, oro: 40 });
     deepEq(preview, { landed: real.landed, spilled: real.spilled },
       'the card the sea could print and the landing that follows are one arithmetic');
   });
