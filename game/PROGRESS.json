@@ -531,6 +531,50 @@
         "The fight frame to store-page: the judge says the chip field carpets the mid-fight sea.",
         "Why does the demo island still read as a flat plateau? The terraces exist; the judge cannot see them at this framing."
       ]
+    },
+    {
+      "round": 13,
+      "title": "The short list closed, and the harness turned out to be judging 8-bit proxies",
+      "a": "shots/r14_demo.png",
+      "b": "shots/r14_demo.png",
+      "key": {
+        "a": "ours",
+        "b": "ours"
+      },
+      "better": null,
+      "weWon": false,
+      "gapSize": "verdict void",
+      "biggestFlaw": "All six items landed and were verified live — Cofres opens a state-aware tray on the first tap, the zone plate now fires with a median 6.1s of warning where round 12 gave 0.3s at worst, the first tutorial tap lands, the deep rests and the terraces read. The playtest confirmed all four: pathCompleted, cofresOpens, warnedBeforeDamage, firstTapLands, fun decent. But the round's blind verdict is VOID and recorded as such: the harness had been silently quantising both candidates to a 256-colour palette with Floyd-Steinberg dither since round 10 — my bug — so every fine-texture judgement from round 10 to 13 graded proxies, and the dither fell exactly on the flat sand and open water those rounds existed to evaluate.",
+      "differences": [
+        "The gate found --hud 0 had never been read by the sea scene: every blind sea comparison put our frame, hull bar and compass and helm and all, against a shipped still that carries no chrome at all.",
+        "Terraces measured at the blind's own framing: 206 walls over 124 columns, 48.4% crossing, with candidates linked across columns so a shrub stem cannot pose as a riser.",
+        "The blind's own history is now nine documented leaks deep, each found by a different judge, and the honest limit is written at the top of the tool."
+      ],
+      "pieces": [],
+      "nextRound": []
+    },
+    {
+      "round": 14,
+      "title": "Form turns — the first clean verdict named one cause, and it was the light",
+      "a": "shots/r14_demo.png",
+      "b": "shots/r14_demo.png",
+      "key": {
+        "a": "ours",
+        "b": "ours"
+      },
+      "better": "B",
+      "weWon": false,
+      "gapSize": "obvious",
+      "biggestFlaw": "THE FIRST GENUINELY BLIND VERDICT THIS PROJECT EVER RAN, and it went against us: 'FORM DOES NOT TURN. Surfaces facing different directions are rendered at the same value. Eight luma between two roof planes that should be thirty to forty apart. Everything else wrong is downstream of that single fact.' Unarguable because both frames render THE SAME MODELS — the pagoda, the harbour house, the palms are identical assets. 'This is not a content contest. It is a shading contest, and we lose it.' Round 14 is the answer to it: the roof planes separate now, the ridges read, buildings sit on the ground, the islets carry a shore collar instead of floating, and the plaza lamp no longer blows a white hole through the town.",
+      "differences": [
+        "What we genuinely win, per the same judge: framing (centred, even ocean margin; theirs runs its dock off the right edge), density and lived-in-ness against their mostly-empty green interior, a colour scheme it called 'more grown-up, more filmic', and attempting real-time light at all — 'the harder problem and the direction that ages better'.",
+        "The sea had no stakes: Volver banked a full hold instantly from any distance at any hull state, and sinking restored the hull free. Quitting away from home now costs, sinking bills a careen, and the end card is computed from the same seam the island uses.",
+        "The end-of-voyage summary had been promising about twice what the ledger credited, on 3 of 3 docked returns.",
+        "Three more harness leaks closed: palette quantisation, the file-size band that resolved the mapping in one ls, and the IDAT totals that survived the container padding — 'smaller IDAT is ours' had been 17 of 17 correct.",
+        "And the protocol itself was wrong: nine rounds of briefs told judges to attack the blind BEFORE judging. One finally succeeded and had to disqualify its own verdict. Judge first, attack second, now written into the tool."
+      ],
+      "pieces": [],
+      "nextRound": []
     }
   ]
 }
