@@ -1233,6 +1233,53 @@ export function startVoyage(
   };
 }
 
+/* --------------------------------------------------------------------------
+ * WHERE TO GO — the question the first ten seconds of a voyage could not answer
+ * ----------------------------------------------------------------------- */
+
+/** How far out a prize can be and still be worth pointing at: five cells, which
+ *  is comfortably past the streaming radius and past `HORIZON`'s plumes, so the
+ *  answer exists before anything is on the glass. */
+const PRIZE_RANGE = SEA_CELL * 5;
+
+export interface Prize {
+  site: Site;
+  /** World radians from the ship to it. */
+  bearing: number;
+  distance: number;
+}
+
+/**
+ * The nearest thing worth sailing to, if there is one.
+ *
+ * THE HOLE THIS FILLS. Read off a capture of the first frame after ¡Zarpar!:
+ * an empty blue rectangle and a stat card. Nothing on the water, nothing in
+ * range of `HORIZON`'s plumes, and no instrument that answered "which way".
+ * So the opening beat of every voyage was picking a direction at random and
+ * sailing until something appeared — which is a loading screen the player has
+ * to hold their thumb down for.
+ *
+ * The compass has always pointed home; this is the other half of the only
+ * decision the sea offers between fights. TWO headings, and the whole voyage is
+ * choosing between them: what you came for, and the way back.
+ *
+ * Reefs are not prizes and neither is a lair — a boss is not a destination the
+ * game should be pointing a new player at, and `zone-warning` is the mechanism
+ * for water that outranks a hull. Everything already taken is skipped, so the
+ * needle moves on the moment a survey banks.
+ */
+export function nearestPrize(v: Voyage): Prize | null {
+  let best: Prize | null = null;
+  for (const site of sitesNear(v.seed, v.x, v.y, PRIZE_RANGE)) {
+    if (site.kind === 'reef' || site.kind === 'lair') continue;
+    if (v.taken.includes(site.id)) continue;
+    const distance = Math.hypot(site.x - v.x, site.y - v.y);
+    if (best && distance >= best.distance) continue;
+    best = { site, bearing: Math.atan2(site.y - v.y, site.x - v.x), distance };
+  }
+  return best;
+}
+
 /** Units of cargo in the hold. */
 export function holdUsed(v: Voyage): number {
   let total = 0;

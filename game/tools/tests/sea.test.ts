@@ -3,7 +3,8 @@ import {
   SONDEO_TIERS, TIDE_STAGES, TIDE_STAGE_AT, ZAFARRANCHO, abandonVoyageInPlace, bearingHome,
   careenBill, cellsInRing, effectiveShip, holdLoad, holdUsed, landfallShare, loadoutOf,
   mobsAt, previewAbandon,
-  canDash, callDash, holdManifest, readDash, readTide, ringOf, siteAt, sitesNear, startVoyage, steer,
+  canDash, callDash, holdManifest, nearestPrize, readDash, readTide, ringOf, siteAt, sitesNear,
+  startVoyage, steer,
   stepVoyage, stow, tideAt, tideClock,
   tideStageOf, type Loadout, type SeaEvent, type Voyage,
 } from '../../src/sim/sea';
@@ -2470,6 +2471,72 @@ describe('the pertrechos seam', () => {
  * the ron the Destilería is waiting for or more of the madera already aboard,
  * and that is not answerable against a number with no kind attached.
  */
+/**
+ * EL RUMBO — the answer to "which way", which the first ten seconds of every
+ * voyage did not have.
+ *
+ * Read off a capture of the frame after ¡Zarpar!: an empty blue rectangle and a
+ * stat card. Nothing on the water, nothing in range of the plumes, and no
+ * instrument that pointed anywhere but home. So the opening beat was picking a
+ * direction at random and holding a thumb down until something appeared.
+ *
+ * The compass has always pointed home. This is the other heading, and between
+ * them they are the only decision the sea offers outside a fight.
+ */
+describe('the compass knows where the next prize is', () => {
+  test('a voyage at the harbour already has somewhere to go', () => {
+    // The case that matters most, because it is the one a player meets first.
+    const prize = nearestPrize(startVoyage('la-leyenda'));
+    ok(prize !== null, 'there is something to point at from the dock');
+    ok(prize!.distance > 0, `and it is ${prize!.distance.toFixed(0)} units away`);
+    const site = siteAt('la-leyenda', Math.round(prize!.site.x / SEA_CELL), Math.round(prize!.site.y / SEA_CELL));
+    eq(site?.id, prize!.site.id, 'and it is a real site in the seeded sea');
+  });
+
+  test('it is the NEAREST one, and the bearing points at it', () => {
+    const v = startVoyage('rumbo');
+    v.x = SEA_CELL * 2;
+    const prize = nearestPrize(v);
+    ok(prize !== null, 'something is in range');
+    for (const site of sitesNear(v.seed, v.x, v.y, SEA_CELL * 5)) {
+      if (site.kind === 'reef' || site.kind === 'lair') continue;
+      const d = Math.hypot(site.x - v.x, site.y - v.y);
+      ok(d >= prize!.distance - 1e-9, `nothing worth taking is nearer than ${prize!.distance.toFixed(0)}`);
+    }
+    near(
+      prize!.bearing, Math.atan2(prize!.site.y - v.y, prize!.site.x - v.x), 1e-9,
+      'and the bearing is the bearing to it'
+    );
+  });
+
+  test('a reef is not a prize, and neither is a boss', () => {
+    // A reef pays nothing and a lair is not a destination to point a new player
+    // at — `zone-warning` is the mechanism for water that outranks a hull.
+    for (let cx = 0; cx <= 6; cx++) {
+      for (let cy = -6; cy <= 6; cy++) {
+        const v = startVoyage('la-leyenda');
+        v.x = cx * SEA_CELL;
+        v.y = cy * SEA_CELL;
+        const prize = nearestPrize(v);
+        if (!prize) continue;
+        ok(prize.site.kind !== 'reef', 'never a reef');
+        ok(prize.site.kind !== 'lair', 'never a lair');
+      }
+    }
+  });
+
+  test('the needle moves on the moment a prize is spent', () => {
+    const v = startVoyage('la-leyenda');
+    v.x = SEA_CELL * 2;
+    const first = nearestPrize(v);
+    ok(first !== null, 'something to take');
+    v.taken.push(first!.site.id);
+    const second = nearestPrize(v);
+    ok(second === null || second.site.id !== first!.site.id, 'it points somewhere else now');
+    if (second) ok(second.distance >= first!.distance, 'and the next one is further, which is the cost of taking');
+  });
+});
+
 describe('the hold says what is in it, not just how much', () => {
   test('an empty hold is an empty manifest, not four zeroes', () => {
     deepEq(holdManifest(startVoyage('manifiesto')), [], 'nothing aboard, nothing to draw');

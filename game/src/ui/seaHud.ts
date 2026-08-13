@@ -2,8 +2,8 @@ import './seaHud.css';
 import type { ResourceId } from '../sim';
 import {
   HARBOUR, MOBS, SHIPS, abandonVoyageInPlace, bearingHome, canDash, effectiveShip, holdUsed,
-  holdManifest, previewAbandon, readDash, readTide, ringOf, SEA_CELL, SONDEO_TIERS,
-  TIDE_STAGE_AT, type TideStage, type Voyage,
+  holdManifest, nearestPrize, previewAbandon, readDash, readTide, ringOf, SEA_CELL,
+  SONDEO_TIERS, TIDE_STAGE_AT, type SiteKind, type TideStage, type Voyage,
 } from '../sim/sea';
 import { progress, type PertrechosState } from '../sim/pertrechos';
 import { CAPTURE } from './env';
@@ -81,11 +81,25 @@ function chips(entries: Partial<Record<string, number>>): string {
     .join('');
 }
 
-/** What the sea's prizes are called, in Spanish. Same rule as the hulls: the
- *  sim speaks ids and this screen owns the words. */
-const SITE_LABEL: Record<string, string> = {
-  islet: 'Islote', grove: 'Arboleda', vein: 'Veta', wreck: 'Pecio', lair: 'Guarida',
+/**
+ * What the sea's prizes are called, in Spanish. Same rule as the hulls: the sim
+ * speaks ids and this screen owns the words.
+ *
+ * TYPED AS A COMPLETE RECORD OF `SiteKind`, and that is not decoration. The
+ * first draft was `Record<string, string>` carrying `grove` and `vein`, which
+ * are not site kinds and never were, and missing `harvest`, which is — so the
+ * compass chip pointed at a wooded outcrop and called it "Rumbo", and the
+ * sondeo panel would have called it "Sondeo". A map that can silently miss a
+ * case is a map that will, and tsc refuses this one now.
+ */
+const SITE_LABEL: Record<SiteKind, string> = {
+  none: 'Mar abierto',
   reef: 'Arrecife',
+  islet: 'Islote',
+  // Oaks, pines and an iron seam: a small wooded key you go ashore to strip.
+  harvest: 'Cayo',
+  wreck: 'Pecio',
+  lair: 'Guarida',
 };
 
 /** The hulls, named for the player. Lives here because this HUD is the screen
@@ -459,9 +473,15 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
     <!-- The shipyard's product, named at the dock. Stands while the ship is
          still in home water and steps aside the moment the voyage is really
          on, so it teaches the hull without ever costing fighting screen. -->
+    <!-- The dock card. It named the hull and recited its three numbers, which
+         is the right thing to teach and the wrong thing to be the loudest
+         object on the frame a player sees the instant they tap ¡Zarpar!. It
+         now ends on the one line that turns an empty blue rectangle into a
+         voyage: where the nearest prize is and how far. -->
     <div class="sea__dock" data-dock>
       <span class="sea__dockName" data-dockname></span>
       <span class="sea__dockStats num" data-dockstats></span>
+      <span class="sea__dockGo" data-dockgo hidden></span>
     </div>
 
     <!-- The sea's two shouted lines (boss phase, chest of the deep). -->
@@ -479,10 +499,20 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
       <span class="sea__leaveShare num" data-leaveshare hidden></span>
     </button>
 
+    <!-- THE ONLY DECISION THE SEA OFFERS BETWEEN FIGHTS, on one instrument.
+         The needle is home and always was. The notch on the rim is the nearest
+         thing worth sailing to, and the chip above names it — so a voyage is
+         choosing between two headings instead of picking a direction at random
+         and holding a thumb down until something appears. -->
     <div class="sea__compass" data-compass="port">
+      <span class="sea__prize" data-prize hidden>
+        <span class="sea__prizeName" data-prizename></span>
+        <span class="sea__prizeDist num" data-prizedist></span>
+      </span>
       <span class="sea__compassCap">A casa</span>
       <span class="sea__dial">
         <span class="sea__face"></span>
+        <span class="sea__notch" data-notch hidden></span>
         <svg class="sea__arrow" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 2 L20 20 L12 15.5 L4 20 Z" fill="#FFD75E" stroke="#17130E" stroke-width="2"
                 stroke-linejoin="round"/>
@@ -565,10 +595,15 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
   const bossPip2 = root.querySelector('[data-pip2]') as HTMLElement;
   const dockName = root.querySelector('[data-dockname]') as HTMLElement;
   const dockStats = root.querySelector('[data-dockstats]') as HTMLElement;
+  const dockGo = root.querySelector('[data-dockgo]') as HTMLElement;
   const bannerOut = root.querySelector('[data-banner]') as HTMLElement;
   const compass = root.querySelector('.sea__compass') as HTMLElement;
   const homeOut = root.querySelector('[data-home]') as HTMLElement;
   const arrow = root.querySelector('.sea__arrow') as HTMLElement;
+  const prizeEl = root.querySelector('[data-prize]') as HTMLElement;
+  const prizeName = root.querySelector('[data-prizename]') as HTMLElement;
+  const prizeDist = root.querySelector('[data-prizedist]') as HTMLElement;
+  const notch = root.querySelector('[data-notch]') as HTMLElement;
   const hurtVeil = root.querySelector('.sea__hurt') as HTMLElement;
   const leave = root.querySelector('.sea__leave') as HTMLButtonElement;
   const leaveShare = root.querySelector('[data-leaveshare]') as HTMLElement;
@@ -881,7 +916,7 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
     }
     if (sondeoEl.hidden) sondeoEl.hidden = false;
 
-    setText(sondeoTitle, SITE_LABEL[survey.siteKind] ?? 'Sondeo');
+    setText(sondeoTitle, SITE_LABEL[survey.siteKind]);
 
     const done = survey.tier;
     const from = done > 0 ? SONDEO_TIERS[done - 1].at : 0;
@@ -1140,6 +1175,29 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
       if (arrow.style.getPropertyValue('--sea-bearing') !== heading) {
         arrow.style.setProperty('--sea-bearing', heading);
       }
+
+      // EL RUMBO — the other half of the only decision the sea offers between
+      // fights, on the same dial. `bearingHome` is measured as atan2(-x, y) and
+      // `nearestPrize` reports an ordinary world angle, so it is converted the
+      // same way before `needleDegrees` sees it: a notch that is right about
+      // three quarters of the compass and wrong about the rest is worse than
+      // no notch, because it is believed.
+      const prize = over ? null : nearestPrize(voyage);
+      if (prizeEl.hidden !== (prize === null)) prizeEl.hidden = prize === null;
+      if (notch.hidden !== (prize === null)) notch.hidden = prize === null;
+      if (prize) {
+        const toward = Math.atan2(-Math.cos(prize.bearing), Math.sin(prize.bearing));
+        const mark = `${needleDegrees(toward).toFixed(1)}deg`;
+        if (notch.style.getPropertyValue('--sea-bearing') !== mark) {
+          notch.style.setProperty('--sea-bearing', mark);
+        }
+        setText(prizeName, SITE_LABEL[prize.site.kind]);
+        setHtml(prizeDist, distanceText(prize.distance));
+      }
+      // And on the dock card, in words, for the one frame where the player has
+      // not moved yet and the compass is a thing they have not learned to read.
+      if (dockGo.hidden !== (prize === null)) dockGo.hidden = prize === null;
+      if (prize) setHtml(dockGo, `${SITE_LABEL[prize.site.kind]} a ${distanceText(prize.distance)}`);
       const distance = Math.hypot(voyage.x, voyage.y);
       // The SIMULATION'S harbour, not a number that looked about right.
       //

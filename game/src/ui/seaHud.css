@@ -807,6 +807,117 @@
   filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.45));
 }
 
+/* The dock card's last line: where to go. Green, because it is the same fact
+   the compass notch carries and the two must read as one instrument. */
+.sea__dockGo {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--ui-ok-gloss-a);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
+
+.sea__dockGo[hidden] { display: none; }
+
+.sea__dockGo u { font-size: 10px; text-decoration: none; opacity: 0.75; }
+
+/* --- el rumbo: where the next prize is, on the same dial ------------------ */
+/* The needle is home and always was. This is the other heading — the nearest
+   thing worth sailing to — and it is a NOTCH ON THE RIM rather than a second
+   needle on purpose: two needles on one face is a puzzle, and the player only
+   ever needs to know which way round the rim it sits. Green against the
+   needle's gold, because the two must never be confused at a glance. */
+
+.sea__notch {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  /* INSIDE the brass ring, not on it. At the dial's full width the mark swings
+     out over the distance pill at the bottom of the sweep and reads as a badge
+     on the pill rather than as a bearing. 0.74 keeps it on the face. */
+  height: calc(var(--dial-size) * 0.74);
+  margin: calc(var(--dial-size) * -0.37) 0 0 -1px;
+  /* Rotated by seaHud.ts, in degrees, toward the prize. */
+  transform: rotate(var(--sea-bearing, 0deg));
+  transition: transform 0.2s linear;
+  pointer-events: none;
+}
+
+.sea__notch[hidden] { display: none; }
+
+/* The mark itself lives at the TOP of that 2px column, so rotating the column
+   sweeps it round the rim. Drawn with the four layers like everything else with
+   a body: ink contour, a gloss step, a warm rim. */
+.sea__notch::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 1px;
+  width: 9px;
+  height: 11px;
+  margin-left: -4.5px;
+  border-radius: 2px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  background: linear-gradient(180deg, var(--ui-ok-gloss-a) 0 50%, var(--ui-ok-a) 50% 100%);
+  box-shadow: inset 0 1px 0 var(--ui-rim), 0 1px 0 rgba(0, 0, 0, 0.5);
+}
+
+/* The chip above the dial, naming what the notch is pointing at. Without it the
+   mark is a green tick with no meaning — "there is something over there" is
+   half an instrument, and "an islet, 140 m" is the whole one. */
+.sea__prize {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 2px);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 9px 4px;
+  border-radius: 999px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0 50%, rgba(0, 0, 0, 0.14) 50% 100%),
+              rgba(10, 22, 34, 0.82);
+  box-shadow: inset 0 1px 0 var(--ui-rim-low), var(--ui-drop-xs);
+  white-space: nowrap;
+  animation: sea-alert-in 0.22s ease-out;
+}
+
+.sea__prize[hidden] { display: none; }
+
+.sea__prizeName {
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--ui-ok-gloss-a);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+}
+
+.sea__prizeDist {
+  font-size: 12px;
+  line-height: 1;
+  -webkit-text-stroke-width: 1.5px;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+}
+
+.sea__prizeDist u {
+  font-size: 9px;
+  text-decoration: none;
+  opacity: 0.7;
+  -webkit-text-stroke-width: 0;
+}
+
+/* IT DOES NOT WAIT FOR THE DEPARTURE, and the first draft did — copied from
+   the voyage strip and the zafarrancho button, which hide alongside because
+   there is no clock yet and nothing to fight yet. This is the opposite case:
+   the moment a player most needs to know which way is the moment before they
+   have moved. Shot at t=0 with the rule in, the departure frame was still an
+   empty blue rectangle with a stat card on it. */
+
 .sea__dist {
   margin-top: -11px;
   padding: 3px 10px 4px;
