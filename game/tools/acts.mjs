@@ -694,6 +694,35 @@ export const ACTS = {
   },
 
   /**
+   * The instant a rung comes up — the beat the whole round is built around.
+   *
+   *   npm run shoot -- sea --mobile --at 220,0 --act tier
+   *
+   * A bloom lives about a second, which is thirty frames, so this cannot hold
+   * and hope: it watches the panel's own lit-pip count and stops four frames
+   * after it ticks over, with the gold still in the air. Watching the PIPS
+   * rather than a clock means it stays true if the ladder is ever retimed.
+   */
+  async tier(page) {
+    await page.evaluate(() => window.__sail?.('hunt'));
+    const lit = () => page
+      .$$eval('.sea__sondeoPip.is-on', (els) => els.length)
+      .catch(() => 0);
+    let seen = 0;
+    for (let i = 0; i < 120; i++) {
+      await step(page, 5);
+      const now = await lit();
+      if (now > seen && seen > 0) {
+        // Mid-flight: past the snap ring, before the motes have fallen back.
+        await step(page, 4);
+        return;
+      }
+      seen = now;
+    }
+    throw new Error('act: tier — never caught a rung coming up in two minutes of hunting');
+  },
+
+  /**
    * The choice of three, EARNED rather than posed.
    *
    *   npm run shoot -- sea --mobile --at 220,0 --act pertrechos

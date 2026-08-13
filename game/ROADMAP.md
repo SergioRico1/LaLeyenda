@@ -277,6 +277,16 @@ The promise that a beginner sails the fleet table's sea roll-for-roll is not.
 
 - **No captain at sea, no island defence, no store submission package.** All
   three are still ahead of everything else in this file.
-- **The sondeo has no sound of its own** beyond the borrowed cues, and the tier
-  bloom is a shock ring rather than a treasure moment. It should be the best
-  thirty frames in the game and it is currently adequate.
+- ~~**The sondeo has no sound of its own** beyond the borrowed cues, and the
+  tier bloom is a shock ring rather than a treasure moment.~~ **Done.** A rung
+  is now a snap ring and a column of gold off the water, both scaled to how far
+  up the ladder it is — the last one is unmistakably the site giving up
+  everything, and it kicks the camera. Deliberately NOT the burst `looted`
+  uses: nothing is aboard at a rung, so the run of gold toward the ship belongs
+  to the bank at the end. Two moments, two pictures. `--act tier` photographs it
+  by watching the panel's own pips rather than a clock, so it stays true if the
+  ladder is ever retimed.
+- **The hold is a manifest now**, not a total: a stacked strip under the numeral
+  in the island rail's four colours, shares of the CARGO rather than of the
+  hold, so the mix reads at full width on a quarter-full ship — which is when
+  the sondeo's question is actually being asked.

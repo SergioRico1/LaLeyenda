@@ -1193,6 +1193,10 @@ export type SeaEvent =
    *  the survey is holding — which is what breaking off right now would bank. */
   | {
     kind: 'sondeo-tier'; siteId: string; tier: number; of: number; share: number;
+    /** Where it broke the surface. Every event this file raises that the scene
+     *  draws SOMEWHERE carries its somewhere; this one did not, and a tier
+     *  bloom has to happen on the site rather than under the ship. */
+    x: number; y: number;
     gained: Partial<Record<ResourceId, number>>;
     secured: Partial<Record<ResourceId, number>>;
     /** Seconds until the next tier, or null once there is nothing left. */
@@ -1737,6 +1741,7 @@ export function stepVoyage(prev: Voyage, dt: number = SEA_STEP): { voyage: Voyag
         const next = SONDEO_TIERS[reached] ?? null;
         events.push({
           kind: 'sondeo-tier', siteId: site.id, tier: reached, of: SONDEO_TIERS.length,
+          x: site.x, y: site.y,
           share, gained, secured: { ...v.sondeo.revealed },
           toNext: next ? Math.max(0, next.at - v.sondeo.seconds) : null,
         });

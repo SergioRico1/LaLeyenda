@@ -2166,12 +2166,44 @@ export async function createSeaScene(stage: Stage, opts: SeaSceneOptions = {}): 
         sfx('land', -3);
         shockAt(event.x, event.y, 2, 8, 0.4, 1, 0.78, 0.3);
         break;
-      case 'sondeo-tier':
-        // A tier came up: a coin note and a bloom on the site. It rises with
-        // the ladder, because the last tier is worth more than the first and
-        // the player should HEAR that before they read it.
+      case 'sondeo-tier': {
+        // A RUNG CAME UP, and this is the beat the whole round is built around
+        // — the moment a player finds out what waiting bought them. It has to
+        // be the best half-second on the screen, and it has to ESCALATE, because
+        // the last rung is worth twice the first and they should know that in
+        // the body before they read it off the panel.
+        //
+        // The picture is deliberately NOT the burst that `looted` uses. Nothing
+        // is aboard yet: a tier is something breaking the surface at the site,
+        // and the run of gold toward the ship belongs to the bank at the end.
+        // Two different moments, two different pictures.
+        const rung = event.tier / event.of;
         sfx('coin', -6 + event.tier * 2);
+        // The snap: a hard bright ring, wider and faster with every rung.
+        shockAt(event.x, event.y, 1.6, 9 + 7 * rung, 0.34 + 0.1 * rung, 1, 0.86, 0.42);
+        // The column: motes off the water, thrown higher each time. Sized to the
+        // rung so the last one is unmistakably the site giving up everything.
+        const motes = Math.round(7 + 11 * rung);
+        for (let i = 0; i < motes; i++) {
+          const angle = fxRng.range(0, Math.PI * 2);
+          const out = fxRng.range(1, 4 + 4 * rung);
+          emit({
+            x: event.x + Math.cos(angle) * out, y: SEA_Y + 0.6, z: event.y + Math.sin(angle) * out,
+            vy: fxRng.range(6, 10 + 8 * rung),
+            // A little outward drift, so the column blooms rather than shooting
+            // up as a pillar — a pillar reads as a beam of light, not treasure.
+            vx: Math.cos(angle) * fxRng.range(0.5, 2.5),
+            vz: Math.sin(angle) * fxRng.range(0.5, 2.5),
+            life: fxRng.range(0.55, 0.95 + 0.3 * rung), span: 1.2,
+            size: 0.75 + 0.5 * rung, grow: 0.72, drag: 1.5, gravity: 5,
+            r: 1, g: 0.84, b: 0.36,
+          });
+        }
+        // And the ship feels the last one. A kick on every rung would be noise;
+        // on the rung that empties the site it is the punctuation.
+        if (event.tier === event.of) kick(0.3);
         break;
+      }
       case 'sondeo-noise':
         // SOMETHING HEARD IT. This is the cue the whole mechanic turns on, and
         // it is deliberately the loudest thing in this list: the player has to
