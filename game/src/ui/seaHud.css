@@ -85,6 +85,9 @@
 .sea__cell--hull { flex: 1; }
 .sea__cell--hold,
 .sea__cell--ring { flex: 0 0 auto; align-items: center; }
+/* The manifest wants the cell's whole width, which `align-items: center` on a
+   column flexbox otherwise shrink-wraps away from it. */
+.sea__cell--hold { align-items: stretch; text-align: center; }
 
 /* Thin separators rather than a gap: Kingshot's capsule reads as ONE object
    with divisions, which is what stops four readouts becoming four decisions. */
@@ -159,6 +162,53 @@
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
   transition: font-size 0.2s ease-out, color 0.2s linear;
 }
+
+/* --- the hold's manifest ------------------------------------------------- */
+/* The numeral says how full; this says of what. Four segments in the same four
+   colours the island rail uses, so a player reads one manifest in one language
+   on both screens — and a bar rather than four labelled chips because on a
+   320px phone the capsule has no room for another row, and "mostly wood" is a
+   thing you should be able to see without reading. */
+
+.sea__holdTrack {
+  display: flex;
+  width: 100%;
+  min-width: 46px;
+  height: 6px;
+  margin-top: 3px;
+  border-radius: 999px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  background: var(--ui-track-well);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+/* No rounding on the segments themselves: they butt against each other and a
+   rounded end mid-bar reads as a gap in the cargo. The TRACK is what has the
+   shape, which is the same rule the hull bar follows. */
+.sea__holdSeg {
+  height: 100%;
+  transition: width 0.18s ease-out;
+}
+
+.sea__holdSeg[data-res='oro'] {
+  background: linear-gradient(180deg, var(--ui-gold-a) 0 50%, var(--ui-gold-b) 50% 100%);
+}
+
+.sea__holdSeg[data-res='madera'] {
+  background: linear-gradient(180deg, #C08A4A 0 50%, #8A5A2B 50% 100%);
+}
+
+.sea__holdSeg[data-res='ron'] {
+  background: linear-gradient(180deg, #E07BC8 0 50%, #B44E9C 50% 100%);
+}
+
+.sea__holdSeg[data-res='metal'] {
+  background: linear-gradient(180deg, #D6DCE4 0 50%, #98A3B0 50% 100%);
+}
+
+/* The capsule dims the hold cell when something else is shouting, and the
+   manifest goes with it — it is the same readout. */
 
 /* --- the hierarchy ------------------------------------------------------- */
 /* `data-focus` names the one readout that is shouting. Nothing here changes

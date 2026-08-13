@@ -3,13 +3,13 @@ import {
   SONDEO_TIERS, TIDE_STAGES, TIDE_STAGE_AT, ZAFARRANCHO, abandonVoyageInPlace, bearingHome,
   careenBill, cellsInRing, effectiveShip, holdLoad, holdUsed, landfallShare, loadoutOf,
   mobsAt, previewAbandon,
-  canDash, callDash, readDash, readTide, ringOf, siteAt, sitesNear, startVoyage, steer,
+  canDash, callDash, holdManifest, readDash, readTide, ringOf, siteAt, sitesNear, startVoyage, steer,
   stepVoyage, stow, tideAt, tideClock,
   tideStageOf, type Loadout, type SeaEvent, type Voyage,
 } from '../../src/sim/sea';
 import { landCargoInPlace, previewLanding, storeCap } from '../../src/sim';
 import { clone } from '../../src/sim/economy';
-import { describe, eq, near, ok, test } from './harness';
+import { deepEq, describe, eq, near, ok, test } from './harness';
 import { quiet } from './fixtures';
 import { breakOff, playFleet, straightOut, summarise, weightRun } from './voyages';
 
@@ -2461,6 +2461,61 @@ describe('the pertrechos seam', () => {
  * rare, being a MANOEUVRE rather than a straight-line boost, and — the one that
  * keeps it honest — not being an escape from anything except by moving the hull.
  */
+/**
+ * THE HOLD AS A MANIFEST — the owner, looking at the HUD: the sea said
+ * `24/900` and nothing about of WHAT.
+ *
+ * Survivable while a hold was a score; el sondeo made it a decision. "Is the
+ * next tier worth another few seconds" turns on whether what is coming up is
+ * the ron the Destilería is waiting for or more of the madera already aboard,
+ * and that is not answerable against a number with no kind attached.
+ */
+describe('the hold says what is in it, not just how much', () => {
+  test('an empty hold is an empty manifest, not four zeroes', () => {
+    deepEq(holdManifest(startVoyage('manifiesto')), [], 'nothing aboard, nothing to draw');
+  });
+
+  test('every kind aboard is listed, and nothing else is', () => {
+    const v = startVoyage('manifiesto');
+    v.cargo = { madera: 120, ron: 60, oro: 20 };
+    const kinds = holdManifest(v).map((slice) => slice.id);
+    eq(kinds.length, 3, 'three kinds aboard, three slices');
+    ok(!kinds.includes('metal'), 'and no slice for the metal that is not there');
+    eq(holdManifest(v).find((s) => s.id === 'ron')?.units, 60, 'reading the cargo itself');
+  });
+
+  test('the shares are of the CARGO, so they always fill the strip', () => {
+    // Against capacity the bar would double as a fullness gauge, which the
+    // numeral beside it already gives to the unit — and the mix would then be
+    // squeezed into however full the ship happened to be.
+    const v = startVoyage('manifiesto');
+    v.cargo = { madera: 120, ron: 60, oro: 20 };
+    const slices = holdManifest(v);
+    const total = slices.reduce((sum, s) => sum + s.share, 0);
+    near(total, 1, 1e-9, 'the shares of a manifest sum to one');
+    near(slices.find((s) => s.id === 'madera')!.share, 0.6, 1e-9, 'and each one is its own share of it');
+    // A nearly-empty hold reads exactly as clearly as a full one, which is the
+    // whole point: that is when the player is choosing what to survey next.
+    const thin = startVoyage('manifiesto');
+    thin.cargo = { madera: 12, ron: 6, oro: 2 };
+    deepEq(
+      holdManifest(thin).map((s) => s.share), slices.map((s) => s.share),
+      'a tenth of the cargo draws the same mix'
+    );
+  });
+
+  test('it is read in the island rail\'s order, so there is one manifest to learn', () => {
+    const v = startVoyage('manifiesto');
+    // Written in a deliberately scrambled order — the manifest sorts it.
+    v.cargo = { metal: 5, ron: 5, madera: 5, oro: 5 };
+    eq(
+      JSON.stringify(holdManifest(v).map((s) => s.id)),
+      JSON.stringify(['oro', 'madera', 'ron', 'metal']),
+      'oro, madera, ron, metal — balance.json pillRow, the same order the island shows'
+    );
+  });
+});
+
 describe('zafarrancho: the one thing to press that is not the helm', () => {
   /** Under way in clear water with a runway to use the burst in — a ship marked
    *  departed at the origin is a ship the `home` latch ends the voyage of on

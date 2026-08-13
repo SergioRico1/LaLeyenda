@@ -2,8 +2,8 @@ import './seaHud.css';
 import type { ResourceId } from '../sim';
 import {
   HARBOUR, MOBS, SHIPS, abandonVoyageInPlace, bearingHome, canDash, effectiveShip, holdUsed,
-  previewAbandon, readDash, readTide, ringOf, SEA_CELL, SONDEO_TIERS, TIDE_STAGE_AT,
-  type TideStage, type Voyage,
+  holdManifest, previewAbandon, readDash, readTide, ringOf, SEA_CELL, SONDEO_TIERS,
+  TIDE_STAGE_AT, type TideStage, type Voyage,
 } from '../sim/sea';
 import { progress, type PertrechosState } from '../sim/pertrechos';
 import { CAPTURE } from './env';
@@ -379,6 +379,10 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
       <div class="sea__cell sea__cell--hold">
         <span class="sea__cellLabel" data-holdlabel>Bodega</span>
         <span class="sea__cellValue num" data-hold>0/0</span>
+        <!-- WHAT is aboard, in the game's own resource colours. The numeral
+             says how full; this says of what, which is half the sondeo's
+             decision and was previously unknowable until the voyage ended. -->
+        <span class="sea__holdTrack" data-holdtrack></span>
       </div>
       <span class="sea__sep"></span>
       <div class="sea__cell sea__cell--ring">
@@ -518,6 +522,7 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
   const hullPct = root.querySelector('[data-hullpct]') as HTMLElement;
   const holdOut = root.querySelector('[data-hold]') as HTMLElement;
   const holdLabel = root.querySelector('[data-holdlabel]') as HTMLElement;
+  const holdTrack = root.querySelector('[data-holdtrack]') as HTMLElement;
   const ringOut = root.querySelector('[data-ring]') as HTMLElement;
   const dashBtn = root.querySelector('[data-dash]') as HTMLButtonElement;
   const dashSweep = root.querySelector('[data-dashsweep]') as HTMLElement;
@@ -818,6 +823,55 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
    *             TURNS ON. Everything above is bookkeeping; this is the reason
    *             to leave, and it has to arrive early enough to leave ON.
    */
+  /**
+   * The hold, as a MANIFEST rather than a total.
+   *
+   * `24/900` says how full and nothing about of what, and until el sondeo that
+   * was survivable — a hold was a score. It is a decision now: "is the next
+   * tier worth another few seconds" turns on whether what is coming up is the
+   * ron the Destilería is waiting for or more of the madera you are already
+   * carrying. So the numeral keeps saying how full, and a stacked track under
+   * it says of what, in the same four colours the island rail uses.
+   *
+   * A BAR AND NOT CHIPS, and the reason is the screen: four labelled chips in
+   * the readout capsule is another row of chrome on a 320px phone, and the
+   * player does not need the numbers — they need to know at a glance that the
+   * hold is mostly wood. Colour answers that in no time at all; a number has to
+   * be read. The end-of-voyage card is where the numbers belong and it has them.
+   *
+   * The strip is always FULL, because its shares are of the cargo rather than
+   * of the hold — the numeral above it is the fullness gauge and says so to the
+   * unit. Spending the strip's width on the same fact would cost the mix three
+   * quarters of its resolution on a quarter-full ship, which is exactly when a
+   * player is deciding what to survey next.
+   *
+   * Segments are rebuilt only when the manifest's SHAPE changes, because this
+   * runs thirty times a second and a hold that is filling would otherwise churn
+   * the DOM on every unit of cargo.
+   */
+  let holdShape = '';
+  function drawHold(voyage: Voyage): void {
+    const slices = holdManifest(voyage);
+    const shape = slices.map((s) => s.id).join(',');
+    if (shape !== holdShape) {
+      holdShape = shape;
+      holdTrack.replaceChildren(...slices.map((slice) => {
+        const seg = document.createElement('span');
+        seg.className = 'sea__holdSeg';
+        seg.dataset.res = slice.id;
+        return seg;
+      }));
+    }
+    const segs = holdTrack.children;
+    for (let i = 0; i < segs.length; i++) {
+      // Rounded to a tenth of a percent: the sim's shares are floats and an
+      // unrounded width writes a new style string on every single step.
+      const width = `${(slices[i].share * 100).toFixed(1)}%`;
+      const seg = segs[i] as HTMLElement;
+      if (seg.style.width !== width) seg.style.width = width;
+    }
+  }
+
   function drawSondeo(voyage: Voyage): void {
     const survey = voyage.sondeo;
     const over = voyage.sunk || voyage.home || voyage.abandoned;
@@ -961,6 +1015,7 @@ export function createSeaHud(host: HTMLElement, opts: SeaHudOptions): SeaHud {
       const used = holdUsed(voyage);
       const holdFraction = spec.hold > 0 ? used / spec.hold : 0;
       setText(holdOut, `${Math.round(used)}/${spec.hold}`);
+      drawHold(voyage);
       const holdFull = holdFraction >= 0.999;
       const holdHeavy = holdFraction >= HOLD_HEAVY;
       setText(holdLabel, holdFull ? '¡Llena!' : 'Bodega');

@@ -42,6 +42,9 @@ import { Rng } from '../core/rng';
 // Units: world units and seconds, matching the island scene (1 unit = 1 cell).
 
 const SEA = raw.sea;
+/** The resource table, for the one thing the sea needs from it: the order a
+ *  manifest is read in, which must be the island rail's order too. */
+const RESOURCES: Record<ResourceId, { pillRow: number }> = raw.resources;
 
 /** Fixed simulation step. The renderer interpolates between these. */
 export const SEA_STEP = 1 / 30;
@@ -1231,6 +1234,45 @@ export function holdUsed(v: Voyage): number {
   let total = 0;
   for (const amount of Object.values(v.cargo)) total += amount ?? 0;
   return total;
+}
+
+/** One kind of cargo aboard, and its share OF WHAT IS ABOARD — not of the
+ *  hold's capacity. See `holdManifest` for why that is the useful number. */
+export interface HoldSlice {
+  id: ResourceId;
+  units: number;
+  /** 0 to 1 of the cargo. The shares of a manifest sum to 1. */
+  share: number;
+}
+
+/**
+ * WHAT IS IN THE HOLD, not just how much.
+ *
+ * The sea said `24/900` and nothing else, so the only way to find out what a
+ * voyage was carrying was to end it and read the card. That was survivable
+ * while a hold was a score; el sondeo made it a decision — "is the next tier
+ * worth another few seconds" depends on whether what is coming up is the ron
+ * you need for the Destilería or more of the madera you are already full of —
+ * and a decision cannot be taken against a number with no kind attached.
+ *
+ * SHARES ARE OF THE CARGO, NOT OF THE HOLD, and that is a division of labour
+ * rather than a detail. Measured against capacity the bar doubles as a fullness
+ * gauge — which the numeral beside it already gives exactly — and the mix gets
+ * squeezed into however full the ship happens to be: read off a capture at
+ * 211/900, three kinds of cargo were sharing a quarter of the strip. Against
+ * the cargo the strip is always full and spends its whole width on the one
+ * question the numeral cannot answer. How much, and of what, said once each.
+ *
+ * In the game's own resource order (`resources[id].pillRow`, the same order the
+ * island rail uses), so a player reads one manifest in one order everywhere.
+ * Empty kinds are left out: a bar with four segments of nothing is four lies.
+ */
+export function holdManifest(v: Voyage): HoldSlice[] {
+  const aboard = holdUsed(v);
+  return (Object.keys(RESOURCES) as ResourceId[])
+    .map((id) => ({ id, units: v.cargo[id] ?? 0, share: aboard > 0 ? (v.cargo[id] ?? 0) / aboard : 0 }))
+    .filter((slice) => slice.units > 0)
+    .sort((a, b) => RESOURCES[a.id].pillRow - RESOURCES[b.id].pillRow);
 }
 
 /** What a sunk creature leaves floating. See balance.json `sea.bounty`. */
