@@ -1,0 +1,34 @@
+/* ============================================================================
+ * ui.css — the overlay entry point, linked from index.html.
+ *
+ * Order matters: tokens first (everything below reads them), then the reset
+ * and the two text mixins, then the §2 layout, then the §3 components.
+ * ========================================================================== */
+@import './tokens.css';
+@import './base.css';
+@import './hud.css';
+
+@import './components/button.css';
+@import './components/pill.css';
+@import './components/chip.css';
+@import './components/badge.css';
+@import './components/bubble.css';
+@import './components/timer.css';
+@import './components/tray.css';
+
+/* LAYOUT_SPEC's three structural objects. After chip.css, because the grouped
+   capsule IS `.cap` with a row of cells added to it. */
+@import './components/readout.css';
+@import './components/navbar.css';
+@import './components/objective.css';
+
+@import './panels/panels.css';
+
+/* §5 — the payoff layer and the answer to a refused tap. Both mount into
+   --z-celebrate / --z-toast, which had tokens and no users. */
+@import './celebrate.css';
+@import './toast.css';
+
+/* Optional third-party artwork; every rule inside is scoped to html.has-uipack
+   and the HUD is correct without it. See pack.css. */
+@import './pack.css';

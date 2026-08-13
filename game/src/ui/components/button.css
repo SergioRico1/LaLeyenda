@@ -1,0 +1,239 @@
+/* ============================================================================
+ * button.css — §3.0 the button base, §3.5 the primary CTA tile,
+ * §3.6 the utility icon button, §3.7 the one featured (ivory) tile.
+ *
+ * Every one of them is the same physical object: contour, hard gloss STEP,
+ * top rim, lip + zero-x extrusion. A "secondary" is that object in a duller
+ * hue — never that object with a layer removed (§6.10).
+ * ========================================================================== */
+
+.btn{
+  --a:var(--ui-green-gloss-a); --b:var(--ui-green-gloss-b);
+  --c:var(--ui-green-a);       --d:var(--ui-green-b);
+  --lip:var(--ui-green-lip);   --brk:52%;
+
+  /* A light pool behind the art, for a family whose icon is darker than its
+   * face. Transparent by default — see .tile--featured, where a near-black
+   * chest sits on gold. It rides ABOVE the face gradient and BELOW the art,
+   * which is what the tray slot already does for the same reason. */
+  --halo:linear-gradient(rgba(0,0,0,0), rgba(0,0,0,0));
+
+  position:relative; display:inline-flex; align-items:center; justify-content:center;
+  border:var(--ui-ink-w) solid var(--ui-ink);
+  border-radius:var(--ui-r-btn);
+  padding:12px 26px; min-height:52px;
+  background:
+    var(--halo),
+    linear-gradient(180deg,
+      var(--a) 0%,  var(--b) var(--brk),
+      var(--c) calc(var(--brk) + .01%), var(--d) 92%,
+      var(--lip) 92.01%, var(--lip) 100%);
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim),
+    inset 0 -2px 0 var(--ui-rim-low),
+    var(--ui-drop), var(--ui-cast);
+  transition:transform .06s ease-out, box-shadow .06s ease-out, filter .06s ease-out;
+}
+/* Pressed = travels DOWN into its own extrusion (6px → 2px) and dims.
+ * Nothing scales, nothing changes hue, there is no ripple.
+ *
+ * `.is-pressed` is the pointer-driven twin of `:active` (see dom.ts): on iOS
+ * Safari `:active` only fires when the document carries a touchstart listener,
+ * so on the target device the `:active` half of this rule is dead on its own. */
+.btn:active,
+.btn.is-pressed{
+  transform:translateY(4px);
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.35),
+             0 2px 0 rgba(0,0,0,.30), 0 3px 2px rgba(0,0,0,.32);
+  filter:brightness(.94);
+}
+.btn[disabled]{
+  --a:var(--ui-grey2-gloss-a); --b:var(--ui-grey2-gloss-b);
+  --c:var(--ui-grey2-a); --d:var(--ui-grey2-b); --lip:var(--ui-grey-lip-2);
+  filter:saturate(.25); box-shadow:inset 0 2px 0 var(--ui-rim),0 3px 0 rgba(0,0,0,.30);
+  pointer-events:none;
+}
+
+/* --- the five families (§1.3). Colour is strictly functional. ------------ */
+.btn--orange{ --a:var(--ui-orange-gloss-a); --b:var(--ui-orange-gloss-b);
+              --c:var(--ui-orange-a);       --d:var(--ui-orange-b);
+              --lip:var(--ui-orange-lip); }
+.btn--red   { --a:var(--ui-red-gloss-a);    --b:var(--ui-red-gloss-b);
+              --c:var(--ui-red-a);          --d:var(--ui-red-b);
+              --lip:var(--ui-red-lip); }
+.btn--ok    { --a:var(--ui-ok-gloss-a);     --b:var(--ui-ok-gloss-b);
+              --c:var(--ui-ok-a);           --d:var(--ui-ok-b);
+              --lip:var(--ui-ok-lip); }
+.btn--grey  { --a:var(--ui-grey-gloss-a);   --b:var(--ui-grey-gloss-b);
+              --c:var(--ui-grey-a);         --d:var(--ui-grey-b);
+              --lip:var(--ui-grey-lip); }
+.btn--grey2 { --a:var(--ui-grey2-gloss-a);  --b:var(--ui-grey2-gloss-b);
+              --c:var(--ui-grey2-a);        --d:var(--ui-grey2-b);
+              --lip:var(--ui-grey-lip-2); }
+.btn--gold  { --a:#FFD966;                  --b:var(--ui-gold-a);
+              --c:var(--ui-gold-b);         --d:#C3830E;
+              --lip:var(--ui-gold-lip); }
+
+/* --- §3.5 / §3.6 square tiles -------------------------------------------
+ * NOT a text pill (§6.13): a large square icon tile with the caption baked in. */
+.tile{
+  position:relative;
+  display:block;
+  padding:0;
+  flex:0 0 auto;
+  border-radius:var(--ui-r-icon);
+  overflow:visible;
+}
+/* icons.ts now normalises every baked PNG to a fixed 0.90 ink fill, so these
+ * percentages finally mean what they say: drawn ink lands at width × 0.90 ×
+ * (padding box / border box) of the tile. At 88% that is 74% on the 88px CTA
+ * and 71% on a 56px utility tile — the band the reference actually occupies
+ * (its Shop art measures 62% of its tile, the Attack map ~74%).
+ *
+ * The art is SUPPOSED to cross the gloss boundary and nearly touch the frame.
+ * That fullness is what makes a Clash button read as an object rather than as
+ * a container with a token rattling around inside it. */
+.tile__art{
+  position:absolute; left:50%; top:52%;
+  width:88%; height:auto;
+  transform:translate(-50%,-50%);
+  /* Hard offset, no blur (§1.9, §6). A blurred drop under a flat-shaded voxel
+   * prop is the single fastest way to look like a generic mobile game. */
+  filter:drop-shadow(0 2px 0 rgba(0,0,0,.42));
+  pointer-events:none;
+}
+.tile__cap{
+  position:absolute; left:0; right:0; bottom:4px;
+  text-align:center;
+  font-size:17px;
+  pointer-events:none;
+}
+/* With a caption, the art rides up into the top ~62% of the tile. */
+.tile--captioned .tile__art{ top:34%; width:80%; }
+@media (orientation:landscape){ .tile__cap{ font-size:19px; } }
+
+.tile--cta{
+  width:var(--ui-cta); height:var(--ui-cta);
+  border-radius:18px;
+  --brk:47%;
+  /* §3.5: BOTH inner rims — the bright #FECDA2 line just inside the bottom is
+   * what makes the orange tile read as moulded rather than printed.
+   * Over 80px, so the top of the elevation ladder: this object casts visibly
+   * further than the 56px tile beside it, which is how depth carries rank. */
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim),
+    inset 0 -2px 0 rgba(254,205,162,.55),
+    var(--ui-drop-lg), var(--ui-cast-lg);
+}
+.tile--cta:active,
+.tile--cta.is-pressed{
+  transform:translateY(4px);
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.35),
+             0 2px 0 rgba(0,0,0,.30), 0 3px 2px rgba(0,0,0,.32);
+}
+.tile--sub{
+  width:var(--ui-cta-sub); height:var(--ui-cta-sub);
+  border-radius:14px; --brk:52%;
+}
+.tile--icon{
+  width:var(--ui-icon-btn); height:var(--ui-icon-btn);
+  border-radius:var(--ui-r-icon); --brk:52%;
+}
+/* The lower inner rim stays at THIS size. Scanned down the reference's 60px
+ * confirm button (x=506): the face bottoms out at L=132 and then climbs back
+ * 137 → 143 → 148 → 150 → 155 over the last six rows before the contour. The
+ * small buttons are moulded exactly like the big ones; only the extrusion
+ * shortens, which is what the ladder is for. */
+.tile--sub, .tile--icon{
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim),
+    inset 0 -2px 0 var(--ui-rim-low),
+    var(--ui-drop), var(--ui-cast);
+}
+.tile--icon .tile__art,
+.tile--sub .tile__art{ width:86%; }
+
+/* Locked CTA (§3.5): the same object in the passive hue plus a padlock.
+ *
+ * It used to swap to the grey2 family AND apply saturate(.25), which drained
+ * the primary action into the weakest object on the screen while the SECONDARY
+ * (Construir) stayed full-chroma orange — the colour hierarchy inverted, with
+ * the attention cue then pointing at the thing that looked disabled. §6.10 says
+ * a secondary is the same object in a duller hue, never that object with a
+ * layer removed. So the CTA keeps its family and its four layers; the lock is
+ * communicated by the padlock prop and the reason line, which is the half of
+ * §3.5 that was actually missing. */
+.tile--locked{
+  filter:saturate(.86) brightness(.95);
+}
+/* The padlock is a BAKED PROP (icons.ts), not a CSS shape — a drawn lock next
+ * to flat-shaded voxel icons is the loudest possible "HTML pasted over a game".
+ * It overhangs the top-left corner and breaks the silhouette (§6.8). */
+.tile__lock{
+  position:absolute; left:-12px; top:-12px;
+  width:38px; height:38px;
+  display:none;
+  pointer-events:none;
+}
+.tile--locked .tile__lock{ display:block; }
+@media (orientation:landscape){ .tile__lock{ width:42px; height:42px; } }
+
+/* --- §3.7 the one featured tile — the ivory frame ------------------------
+ * Exactly one button on the HUD gets this. It marks our premium-currency sink
+ * (Cofres). It is never on two things at once. */
+.tile--featured{
+  --a:#FFD966; --b:var(--ui-gold-a); --c:var(--ui-gold-b); --d:#C3830E;
+  --lip:var(--ui-gold-lip); --brk:47%;
+  /* The chest model is near-black, and at the size the art now runs it was a
+   * dark blob on gold. Same fix the tray slot uses for the same chest. */
+  --halo:radial-gradient(circle at 50% 38%,
+      rgba(255,250,232,.92) 0%, rgba(255,250,232,.55) 34%, rgba(255,250,232,0) 60%);
+  border:3px solid var(--ui-ink);
+  background-clip:padding-box;
+  box-shadow:
+    inset 0 0 0 4px var(--ui-ivory),        /* the ivory frame — black outside, ivory in */
+    inset 0 6px 0 rgba(255,255,250,.55),
+    var(--ui-drop-lg), var(--ui-cast-lg);
+}
+.tile--featured:active,
+.tile--featured.is-pressed{
+  transform:translateY(4px);
+  box-shadow:inset 0 0 0 4px var(--ui-ivory),
+             inset 0 4px 0 rgba(255,255,250,.4),
+             0 2px 0 rgba(0,0,0,.30), 0 3px 2px rgba(0,0,0,.32);
+}
+/* §5.6 allows exactly three idle attention loops and "chest ready bob" is one
+ * of them — the one object in the game permitted to keep asking.
+ *
+ * The bob lived only on `.slot--ready .slot__art` in the tray, and §10.8 hides
+ * the tray outside landscape. So in the orientation that ships first, a chest
+ * going ready produced one badge pop and then perfect stillness. The signal
+ * belongs on the tile the tray collapses INTO. */
+.tile--featured.is-ready .tile__art{ animation:ui-bob-t .9s ease-in-out infinite; }
+
+/* mini timer caption under the art while a chest is unlocking */
+.tile__timer{
+  position:absolute; left:0; right:0; bottom:4px;
+  text-align:center; font-size:13px;
+  text-shadow:0 2px 0 rgba(0,0,0,.85);
+  pointer-events:none;
+}
+/* Caption AND a running timer means two text rows under the art, so the art
+ * gives back the height rather than sitting on top of its own label. */
+.tile--featured.has-timer .tile__cap{ bottom:19px; }
+.tile--featured.has-timer .tile__art{ top:29%; width:70%; }
+
+/* --- attention cue for the next-action resolver (§4.8) -------------------
+ * Slow and sparse (§5.6): a continuous fast animation reads as broken. */
+@keyframes ui-cue {
+  0%, 74%, 100% { box-shadow:0 0 0 0 rgba(240,183,34,0); }
+  84%           { box-shadow:0 0 0 4px rgba(240,183,34,.6); }
+}
+/* A ring on ::before, so the tile keeps its own four layers untouched — a cue
+ * must never cost an object its contour, gloss, rim or extrusion. */
+.is-cued::before{
+  content:''; position:absolute; inset:-4px;
+  border-radius:inherit;
+  animation:ui-cue 2.5s ease-in-out infinite;
+  pointer-events:none;
+}

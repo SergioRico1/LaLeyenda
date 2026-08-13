@@ -1,0 +1,1942 @@
+/**
+ * seaHud.css — the voyage readouts, the two instruments, and the stick.
+ *
+ * LAYOUT_SPEC's resolution applies to the READOUTS: the four-layer rule governs
+ * anything the player can press, and a read-only value is a LABEL. The capsule
+ * across the top is therefore Kingshot's language — one dark translucent group
+ * with thin separators, letting the sea through — rather than a row of Clash
+ * pills, because at sea the world is the thing worth looking at.
+ *
+ * Everything DRAWN carries the full four layers of UI_SPEC §0.2: ink contour,
+ * hard gloss step at ~50% of height, warm top rim, dark lip plus a zero-x-offset
+ * extrusion shadow. That is the helm sign, the compass dial, the stick's base
+ * and knob, the abandon button and the end card — every object with a body,
+ * pressable or not. A translucent label may skip layers; a thing may not.
+ *
+ * WHAT WAS MISSING BEFORE THIS ROUND, because it explains the shape of the file
+ *
+ *   .stick / .stick__base / .stick__knob   NO RULES EXISTED ANYWHERE. The
+ *       steering control created three elements on every voyage and not one of
+ *       them had a width. The owner's phone screenshot had no control on it
+ *       because the control was a zero-by-zero div under their thumb.
+ *   .sea__hurt   Also unstyled. `setHurt()` has been writing an opacity onto an
+ *       empty box, so taking a hit has been silent on screen for the whole of
+ *       PRODUCTION.md §3's "hurt veil" line.
+ */
+
+.sea {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-family: var(--ui-font-display);
+  color: #fff;
+
+  /* One place to move the two bottom instruments. The helm sits under the arc
+     a right thumb already sweeps, the compass balances it across the screen,
+     and the whole middle stays water. */
+  --helm-size: 108px;
+  --helm-right: 30px;
+  --helm-bottom: 58px;
+  --dial-size: 86px;
+}
+
+/* ==========================================================================
+ * 1 · The readout capsule — one group, and a hierarchy that moves
+ *
+ * Three chips of equal weight was the complaint, and it was right: a hull at
+ * 20% is the only thing on the screen that matters at that moment, and it was
+ * being given exactly as much light as the zone number. The three now share one
+ * capsule and `data-focus` decides which of them is lit.
+ * ======================================================================== */
+
+.sea__bar {
+  position: absolute;
+  top: calc(var(--ui-safe-t) + 10px);
+  left: var(--ui-edge);
+  right: var(--ui-edge);
+  display: flex;
+  align-items: stretch;
+  padding: 5px 6px 6px;
+  border-radius: 16px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  /* Layer 2 rides over the whole capsule, translucent body and all. */
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0 50%, rgba(0, 0, 0, 0.16) 50% 100%),
+    rgba(10, 22, 34, 0.66);
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim-low),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.36),
+    var(--ui-drop-xs);
+  backdrop-filter: blur(3px);
+  transition: border-color 0.2s linear;
+}
+
+.sea__cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 10px;
+  min-width: 0;
+  transition: opacity 0.22s ease-out;
+}
+
+.sea__cell--hull { flex: 1; }
+.sea__cell--hold,
+.sea__cell--ring { flex: 0 0 auto; align-items: center; }
+/* The manifest wants the cell's whole width, which `align-items: center` on a
+   column flexbox otherwise shrink-wraps away from it. */
+.sea__cell--hold { align-items: stretch; text-align: center; }
+
+/* Thin separators rather than a gap: Kingshot's capsule reads as ONE object
+   with divisions, which is what stops four readouts becoming four decisions. */
+.sea__sep {
+  flex: 0 0 1px;
+  align-self: stretch;
+  margin: 3px 0;
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: 1px 0 0 rgba(0, 0, 0, 0.28);
+}
+
+.sea__cellLabel {
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0.62;
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+  transition: color 0.2s linear, opacity 0.2s linear;
+}
+
+.sea__cellValue {
+  font-size: 16px;
+  line-height: 1.05;
+  -webkit-text-stroke-width: 1.9px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
+
+/* --- the hull track ------------------------------------------------------ */
+/* A bar rather than a number: a player under fire has no attention to spare
+   for arithmetic, and the RATE it empties is the information that matters. The
+   numeral beside it is for the other half of the job — deciding whether there
+   is enough left to reach the next island. */
+
+.sea__hullRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: stretch;
+}
+
+.sea__hull {
+  position: relative;
+  flex: 1;
+  height: 13px;
+  border-radius: 999px;
+  background: var(--ui-track-well);
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  transition: height 0.2s ease-out;
+}
+
+.sea__hullFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background:
+    var(--ui-fill-gloss),
+    linear-gradient(180deg, var(--ui-ok-gloss-a) 0 50%, var(--ui-ok-a) 50% 100%);
+  transition: width 0.18s ease-out, background 0.3s linear;
+}
+
+.sea__hullPct {
+  font-size: 13px;
+  line-height: 1;
+  min-width: 34px;
+  text-align: right;
+  -webkit-text-stroke-width: 1.7px;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+  transition: font-size 0.2s ease-out, color 0.2s linear;
+}
+
+/* --- the hold's manifest ------------------------------------------------- */
+/* The numeral says how full; this says of what. Four segments in the same four
+   colours the island rail uses, so a player reads one manifest in one language
+   on both screens — and a bar rather than four labelled chips because on a
+   320px phone the capsule has no room for another row, and "mostly wood" is a
+   thing you should be able to see without reading. */
+
+.sea__holdTrack {
+  display: flex;
+  width: 100%;
+  min-width: 46px;
+  height: 6px;
+  margin-top: 3px;
+  border-radius: 999px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  background: var(--ui-track-well);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+/* No rounding on the segments themselves: they butt against each other and a
+   rounded end mid-bar reads as a gap in the cargo. The TRACK is what has the
+   shape, which is the same rule the hull bar follows. */
+.sea__holdSeg {
+  height: 100%;
+  transition: width 0.18s ease-out;
+}
+
+.sea__holdSeg[data-res='oro'] {
+  background: linear-gradient(180deg, var(--ui-gold-a) 0 50%, var(--ui-gold-b) 50% 100%);
+}
+
+.sea__holdSeg[data-res='madera'] {
+  background: linear-gradient(180deg, #C08A4A 0 50%, #8A5A2B 50% 100%);
+}
+
+.sea__holdSeg[data-res='ron'] {
+  background: linear-gradient(180deg, #E07BC8 0 50%, #B44E9C 50% 100%);
+}
+
+.sea__holdSeg[data-res='metal'] {
+  background: linear-gradient(180deg, #D6DCE4 0 50%, #98A3B0 50% 100%);
+}
+
+/* The capsule dims the hold cell when something else is shouting, and the
+   manifest goes with it — it is the same readout. */
+
+/* --- the hierarchy ------------------------------------------------------- */
+/* `data-focus` names the one readout that is shouting. Nothing here changes
+   what is measured — it changes which of three true things the eye lands on
+   first, which is the whole difference between a HUD and a dashboard. */
+
+.sea__bar[data-focus='hull'] .sea__cell--hold,
+.sea__bar[data-focus='hull'] .sea__cell--ring,
+.sea__bar[data-focus='hold'] .sea__cell--ring { opacity: 0.44; }
+
+.sea__bar[data-focus='hull'] .sea__hull { height: 17px; }
+.sea__bar[data-focus='hull'] .sea__hullPct { font-size: 17px; }
+.sea__bar[data-focus='hull'] .sea__cell--hull .sea__cellLabel { opacity: 0.92; }
+
+/* Below a third the bar turns and starts breathing. Colour alone is not enough
+   on a phone in sunlight, and this is the last warning before the hold halves. */
+.sea__bar[data-hull='low'] .sea__hullFill,
+.sea__bar[data-hull='crit'] .sea__hullFill {
+  background:
+    var(--ui-fill-gloss),
+    linear-gradient(180deg, var(--ui-red-gloss-a) 0 50%, var(--ui-red-a) 50% 100%);
+  animation: sea-pulse 0.7s ease-in-out infinite;
+}
+
+/* At critical the capsule itself is the alarm: the contour goes red so the
+   warning is the size of the readout rather than the size of the bar. */
+.sea__bar[data-hull='crit'] {
+  border-color: var(--ui-red-a);
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim-low),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.36),
+    var(--ui-drop-xs),
+    0 0 0 2px rgba(212, 20, 26, 0.32);
+}
+
+.sea__bar[data-hull='crit'] .sea__hullPct { color: #FFC9C6; }
+
+.sea__bar[data-focus='hold'] .sea__cell--hold .sea__cellLabel,
+.sea__bar[data-focus='hold'] .sea__cell--hold .sea__cellValue { color: var(--ui-res-gold); }
+.sea__bar[data-focus='hold'] .sea__cell--hold .sea__cellLabel { opacity: 1; }
+
+@keyframes sea-pulse {
+  50% { filter: brightness(1.45); }
+}
+
+/* --- the one line that names the remedy ---------------------------------- */
+/* A number says what is happening. This says what to DO about it, which is the
+   only reason to spend a second line on a screen this busy. Right margin keeps
+   it clear of the abandon button. */
+
+/* --- the voyage strip: the tide, and the ladder it is paying for ---------- */
+/* One capsule with a division rather than two objects, for the same reason the
+   bar above is one capsule: two floating readouts are two decisions, and the
+   sea already asks for enough of those. It hangs off the bottom of the bar so
+   the pair read as ONE instrument stack, which is also what keeps a 320px
+   phone from acquiring a third row of chrome. */
+
+.sea__strip {
+  position: absolute;
+  top: calc(var(--ui-safe-t) + 66px);
+  left: var(--ui-edge);
+  /* Clear of the abandon button, which owns this row's right-hand end. The
+     same 104px `.sea__alert` reserves, so the two things that live under the
+     capsule agree about where the screen stops. */
+  right: 104px;
+  display: flex;
+  align-items: stretch;
+  padding: 4px 6px 5px;
+  border-radius: 13px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0 50%, rgba(0, 0, 0, 0.14) 50% 100%),
+    rgba(10, 22, 34, 0.58);
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim-low),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.32),
+    var(--ui-drop-xs);
+  backdrop-filter: blur(3px);
+  transition: opacity 0.22s ease-out, border-color 0.25s linear;
+}
+
+/* Alongside there is no voyage clock yet and nothing has been earned, so the
+   strip is a caption on zero. It arrives with the departure the same way the
+   dock card leaves with it. */
+.sea:not(.is-departed) .sea__strip { opacity: 0; pointer-events: none; }
+
+.sea__gauge {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px;
+  min-width: 0;
+}
+
+.sea__gauge--tide { flex: 1 1 58%; }
+.sea__gauge--gear { flex: 1 1 42%; }
+
+.sea__gaugeLabel {
+  font-size: 9px;
+  line-height: 1;
+  opacity: 0.58;
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+}
+
+.sea__gaugeTrack {
+  position: relative;
+  flex: 1;
+  min-width: 22px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--ui-track-well);
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.sea__gaugeFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background:
+    var(--ui-fill-gloss),
+    linear-gradient(180deg, var(--ui-blue-rim) 0 50%, var(--ui-blue-b) 50% 100%);
+  /* Slow on purpose. The tide takes three minutes to come in and a fill that
+     eases like a health bar reads as something that just happened; this has to
+     read as something that is happening. */
+  transition: width 0.5s linear, background 0.4s linear;
+}
+
+/* Where the sea changes its name. Drawn as an ink notch rather than a light
+   line so it survives the fill passing under it — a tick that vanishes once
+   the bar reaches it is a tick that is missing exactly when it matters. */
+.sea__gaugeTick {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  width: 2px;
+  margin-left: -1px;
+  background: rgba(12, 10, 8, 0.62);
+  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.18);
+}
+
+.sea__gaugeValue {
+  font-size: 11px;
+  line-height: 1;
+  min-width: 30px;
+  text-align: right;
+  -webkit-text-stroke-width: 1.5px;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+  transition: color 0.25s linear;
+}
+
+/* The pertrechos side stays grey until something has actually been taken —
+   an empty ladder is a promise, and a gold one is a run. */
+.sea__gauge--gear .sea__gaugeFill {
+  background:
+    var(--ui-fill-gloss),
+    linear-gradient(180deg, var(--ui-grey-gloss-b) 0 50%, var(--ui-grey2-gloss-b) 50% 100%);
+}
+
+.sea__strip.is-geared .sea__gauge--gear .sea__gaugeFill {
+  background:
+    var(--ui-fill-gloss),
+    linear-gradient(180deg, var(--ui-gold-a) 0 50%, var(--ui-gold-b) 50% 100%);
+}
+
+.sea__strip.is-geared .sea__gauge--gear .sea__gaugeValue { color: var(--ui-gold-text); }
+
+/* THE FOUR NAMED WATERS, and the ramp is the whole warning. Cyan is the sea
+   the fleet table measured; it walks through gold to red as the tide makes, so
+   a player who never reads the caption still learns what colour means "go
+   home". Only the FILL changes — a strip that turned red entire would be a
+   third alarm competing with the hull bar and the zone plate. */
+.sea__strip[data-stage='1'] .sea__gauge--tide .sea__gaugeFill {
+  background:
+    var(--ui-fill-gloss),
+    linear-gradient(180deg, var(--ui-gold-a) 0 50%, var(--ui-gold-b) 50% 100%);
+}
+
+.sea__strip[data-stage='2'] .sea__gauge--tide .sea__gaugeFill {
+  background:
+    var(--ui-fill-gloss),
+    linear-gradient(180deg, var(--ui-orange-gloss-a) 0 50%, var(--ui-orange-gloss-b) 50% 100%);
+}
+
+.sea__strip[data-stage='2'] .sea__gauge--tide .sea__gaugeValue { color: #FFD9A8; }
+
+.sea__strip[data-stage='3'] .sea__gauge--tide .sea__gaugeFill {
+  background:
+    var(--ui-fill-gloss),
+    linear-gradient(180deg, var(--ui-red-gloss-a) 0 50%, var(--ui-red-a) 50% 100%);
+}
+
+.sea__strip[data-stage='3'] .sea__gauge--tide .sea__gaugeValue { color: #FFD9D6; }
+.sea__strip[data-stage='3'] { border-color: var(--ui-red-lip); }
+
+.sea__alert[data-kind='tide'] {
+  color: #FFE0C6;
+  border-color: var(--ui-orange-lip, var(--ui-gold-lip));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0 50%, rgba(0, 0, 0, 0.14) 50% 100%),
+              rgba(74, 34, 6, 0.86);
+}
+
+.sea__alert {
+  position: absolute;
+  /* Under the voyage strip, not through it. */
+  top: calc(var(--ui-safe-t) + 106px);
+  left: var(--ui-edge);
+  right: 104px;
+  /* A CHIP, not a second HUD bar. Stretched edge to edge it read as another
+     row of chrome; sized to its sentence and centred in the space the abandon
+     button leaves, it reads as something that just arrived. */
+  width: max-content;
+  max-width: 100%;
+  margin-inline: auto;
+  padding: 5px 13px 6px;
+  border-radius: 999px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0 50%, rgba(0, 0, 0, 0.14) 50% 100%),
+              rgba(10, 22, 34, 0.82);
+  box-shadow: inset 0 1px 0 var(--ui-rim-low), var(--ui-drop-xs);
+  font-size: 12.5px;
+  line-height: 1.1;
+  text-align: center;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+  animation: sea-alert-in 0.22s ease-out;
+}
+
+.sea__alert[hidden] { display: none; }
+
+.sea__alert[data-kind='hull'] {
+  color: #FFD9D6;
+  border-color: var(--ui-red-lip);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0 50%, rgba(0, 0, 0, 0.14) 50% 100%),
+              rgba(86, 12, 14, 0.86);
+  animation: sea-alert-in 0.22s ease-out, sea-pulse 0.7s ease-in-out 0.22s infinite;
+}
+
+.sea__alert[data-kind='hold'] {
+  color: var(--ui-gold-text);
+  border-color: var(--ui-gold-lip);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0 50%, rgba(0, 0, 0, 0.14) 50% 100%),
+              rgba(66, 44, 8, 0.86);
+}
+
+/* The boarding wait: the same gold register as the hold, because it is the
+   same subject — cargo — and the one alert whose remedy is to stay put. */
+.sea__alert[data-kind='board'] {
+  color: var(--ui-gold-text);
+  border-color: var(--ui-gold-lip);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0 50%, rgba(0, 0, 0, 0.14) 50% 100%),
+              rgba(66, 44, 8, 0.86);
+}
+
+@keyframes sea-alert-in {
+  0%   { transform: translateY(-8px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+/* --- the boss bar ----------------------------------------------------------
+ * El Kraken's name, phase pips and health, top centre where every boss bar in
+ * the genre lives. A raised object, so it carries the full four layers: ink
+ * contour, gloss step across the middle, warm rim inside the top edge, dark
+ * lip and the extrusion drop. The family is the deep wine of a danger that is
+ * not YOUR hull — red is the player's own alarm and the two must not read as
+ * one voice. */
+
+.sea__boss {
+  position: absolute;
+  top: calc(var(--ui-safe-t) + 64px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(56vw, 248px);
+  padding: 6px 12px 9px;
+  border-radius: 13px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.15) 0 50%, rgba(0, 0, 0, 0.2) 50% 100%),
+    linear-gradient(180deg, #57202B, #331016);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 186, 164, 0.42),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.5),
+    var(--ui-drop-sm);
+  animation: sea-alert-in 0.24s ease-out;
+}
+
+.sea__boss[hidden] { display: none; }
+
+/* The alert chip lives on the same latitude; while the kraken has the stage
+   the remedy line steps one row down instead of fighting it — and the zone
+   warning, which sits under the chip, steps down with it. Three rows of
+   standing information, in the order they matter: what is fighting you, what
+   is wrong with your ship, what the water ahead is. */
+.sea.has-boss .sea__alert { top: calc(var(--ui-safe-t) + 132px); }
+.sea.has-boss .sea__banner[data-kind='zone'] { top: calc(var(--ui-safe-t) + 172px); }
+
+.sea__bossHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.sea__bossName {
+  font-size: 15px;
+  line-height: 1;
+  -webkit-text-stroke-width: 1.9px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.75);
+}
+
+/* Phase pips: one per phase, the second lights when the pattern turns. */
+.sea__bossPips {
+  display: flex;
+  gap: 5px;
+}
+
+.sea__bossPip {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #4A2A30;
+  border: 2px solid var(--ui-ink);
+  box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.18);
+}
+
+.sea__bossPip.is-on {
+  background: linear-gradient(180deg, #FFE9A8 0 50%, #F5B92E 50% 100%);
+}
+
+.sea__boss[data-phase='frenzy'] .sea__bossPip.is-on:last-child {
+  background: linear-gradient(180deg, #FF8A70 0 50%, #D4141A 50% 100%);
+}
+
+.sea__bossTrack {
+  position: relative;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--ui-track-well);
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.sea__bossFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background:
+    var(--ui-fill-gloss),
+    linear-gradient(180deg, var(--ui-red-gloss-a) 0 50%, var(--ui-red-a) 50% 100%);
+  transition: width 0.18s ease-out, opacity 0.3s linear;
+}
+
+/* The turn: the fill burns brighter and breathes. */
+.sea__boss[data-phase='frenzy'] .sea__bossFill {
+  animation: sea-pulse 0.7s ease-in-out infinite;
+}
+
+/* Dived, the kraken cannot be shot; the bar says so by standing at ease. */
+.sea__boss[data-dived='1'] .sea__bossFill { opacity: 0.55; }
+
+/* --- the dock card — the shipyard's product, named -------------------------
+ * Shown only in home water (the router adds .is-departed the moment the
+ * voyage is really on), so the one moment it occupies the screen is the one
+ * moment nothing is shooting at anybody. A raised object, so it carries the
+ * full four layers. */
+
+.sea__dock {
+  position: absolute;
+  top: calc(var(--ui-safe-t) + 78px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 6px 16px 8px;
+  border-radius: 13px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0 50%, rgba(0, 0, 0, 0.18) 50% 100%),
+    linear-gradient(180deg, #93673A, #6B4423);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 232, 190, 0.65),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.38),
+    var(--ui-drop-sm);
+  transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+}
+
+.sea.is-departed .sea__dock {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-8px);
+  pointer-events: none;
+}
+
+.sea__dockName {
+  font-size: 16px;
+  line-height: 1.1;
+  -webkit-text-stroke-width: 1.9px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.7);
+}
+
+.sea__dockStats {
+  font-size: 10.5px;
+  line-height: 1.1;
+  letter-spacing: 0.4px;
+  opacity: 0.88;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.7);
+  /* One line always: "Bodega" orphaned from its own number read as a typo. */
+  white-space: nowrap;
+}
+
+/* --- the sea's two shouted lines ------------------------------------------
+ * The boss's phase turn and the chest of the deep. Big, central, and brief —
+ * a moment either announces itself or it did not happen. */
+
+.sea__banner {
+  position: absolute;
+  top: 30%;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 86vw;
+  padding: 9px 20px 11px;
+  border-radius: 999px;
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  font-size: 18px;
+  line-height: 1.1;
+  text-align: center;
+  white-space: nowrap;
+  -webkit-text-stroke-width: 2px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6);
+}
+
+.sea__banner[hidden] { display: none; }
+
+.sea__banner.is-live { animation: sea-banner-in 0.34s cubic-bezier(0.2, 1.6, 0.4, 1); }
+
+/* Gold for the reward, the same family as the chest it names. */
+.sea__banner[data-kind='deep-chest'] {
+  color: #FFF3D0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0 50%, rgba(0, 0, 0, 0.12) 50% 100%),
+    linear-gradient(180deg, #F5B92E, #D9880F);
+  box-shadow:
+    inset 0 3px 0 rgba(255, 240, 200, 0.75),
+    inset 0 -4px 0 rgba(112, 62, 4, 0.85),
+    var(--ui-drop);
+}
+
+/* Red for the frenzy: the same alarm register as the hull, because it is one. */
+.sea__banner[data-kind='frenzy'] {
+  color: #FFD9D6;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0 50%, rgba(0, 0, 0, 0.16) 50% 100%),
+    linear-gradient(180deg, #C0261C, #8E1410);
+  box-shadow:
+    inset 0 3px 0 rgba(255, 190, 180, 0.55),
+    inset 0 -4px 0 rgba(64, 6, 6, 0.9),
+    var(--ui-drop);
+}
+
+/* Cold steel for the zone plate: deep water naming itself. A caution rather
+   than an alarm — red stays reserved for a hull actually dying — with the red
+   held to the lip so the register still reads as danger's family. */
+/* THE ZONE WARNING IS A CAUTION, NOT AN ANNOUNCEMENT, and until this round it
+ * wore the same object as both of the sea's genuine shouts. The banner's place
+ * — 30% down the glass, 18px, edge to edge — belongs to the two moments the
+ * game stops for: the kraken turning, and the chest of the deep. A note about
+ * the water ahead is a different register, and drawn at that weight it crossed
+ * the fight it was warning about. Photographed at the lair it lay straight over
+ * the islet, the tentacles and half the hull.
+ *
+ * So it keeps the banner's mechanism (one shout, one timer, one voice) and
+ * steps up into the top band with the boss bar and the alert chip, where every
+ * other piece of standing information on this HUD lives. Same words, same
+ * seconds, same sound; it simply stops standing in front of the thing it is
+ * about. The persistent red ZONA chip in the status bar is what carries the
+ * condition for as long as it lasts — this only has to announce it. */
+.sea__banner[data-kind='zone'] {
+  color: #EAF4FF;
+  font-size: 13.5px;
+  /* One row under the alert chip, which sits at +72. The two can be up at
+     once — a hull warning and a zone warning are different sentences about
+     different problems — so they cascade rather than share a latitude. */
+  top: calc(var(--ui-safe-t) + 112px);
+  padding: 6px 15px 8px;
+  border-width: var(--ui-ink-w-sm);
+  -webkit-text-stroke-width: 1.4px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0 50%, rgba(0, 0, 0, 0.2) 50% 100%),
+    linear-gradient(180deg, #2C4C68, #14283E);
+  box-shadow:
+    inset 0 3px 0 rgba(196, 228, 255, 0.4),
+    inset 0 -4px 0 rgba(120, 22, 26, 0.85),
+    var(--ui-drop);
+}
+
+@keyframes sea-banner-in {
+  0%   { transform: translateX(-50%) scale(0.7); opacity: 0; }
+  100% { transform: translateX(-50%) scale(1); opacity: 1; }
+}
+
+/* ==========================================================================
+ * 2 · The compass — a brass instrument, not a debug readout
+ *
+ * "50 m" beside a 22px triangle was a number in a corner. This is the object
+ * that decides whether a loaded player banks their cargo or loses it, so it is
+ * built like an object: gold bezel with the four layers, a recessed navy face
+ * with eight rim notches, and a distance a player can read at arm's length.
+ * ======================================================================== */
+
+.sea__compass {
+  position: absolute;
+  left: var(--ui-edge);
+  bottom: calc(var(--ui-safe-b) + var(--helm-bottom));
+  width: calc(var(--dial-size) + 10px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.sea__compassCap {
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  opacity: 0.88;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.85);
+}
+
+.sea__dial {
+  position: relative;
+  display: block;
+  width: var(--dial-size);
+  height: var(--dial-size);
+  border-radius: 50%;
+  /* The four layers on a round body: contour, hard step at half height, warm
+     rim inside the top edge, lip inside the bottom plus a zero-x extrusion. */
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  background: linear-gradient(180deg, var(--ui-gold-a) 0 50%, var(--ui-gold-b) 50% 100%);
+  box-shadow:
+    inset 0 3px 0 var(--ui-rim),
+    inset 0 -4px 0 var(--ui-gold-lip),
+    var(--ui-drop);
+  transition: background 0.3s linear, box-shadow 0.3s linear;
+}
+
+/* The recessed face. Two pseudo-elements make the notch ring: a full disc of
+   ticks, then a smaller disc of the face colour laid back over the middle. */
+.sea__face {
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 26%, rgba(255, 255, 255, 0.12), transparent 64%),
+    #0A1B2C;
+  box-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.6), inset 0 -2px 0 rgba(255, 255, 255, 0.09);
+}
+
+.sea__face::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: repeating-conic-gradient(from -1.7deg,
+      rgba(255, 240, 205, 0.7) 0 3.4deg, transparent 3.4deg 45deg);
+}
+
+.sea__face::after {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: #0A1B2C;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.sea__arrow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
+  display: block;
+  /* Rotated by seaHud.ts, in degrees, toward the harbour. */
+  transform: rotate(var(--sea-bearing, 0deg));
+  transition: transform 0.16s linear;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.45));
+}
+
+/* The dock card's last line: where to go. Green, because it is the same fact
+   the compass notch carries and the two must read as one instrument. */
+.sea__dockGo {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--ui-ok-gloss-a);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
+
+.sea__dockGo[hidden] { display: none; }
+
+.sea__dockGo u { font-size: 10px; text-decoration: none; opacity: 0.75; }
+
+/* --- el rumbo: where the next prize is, on the same dial ------------------ */
+/* The needle is home and always was. This is the other heading — the nearest
+   thing worth sailing to — and it is a NOTCH ON THE RIM rather than a second
+   needle on purpose: two needles on one face is a puzzle, and the player only
+   ever needs to know which way round the rim it sits. Green against the
+   needle's gold, because the two must never be confused at a glance. */
+
+.sea__notch {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  /* INSIDE the brass ring, not on it. At the dial's full width the mark swings
+     out over the distance pill at the bottom of the sweep and reads as a badge
+     on the pill rather than as a bearing. 0.74 keeps it on the face. */
+  height: calc(var(--dial-size) * 0.74);
+  margin: calc(var(--dial-size) * -0.37) 0 0 -1px;
+  /* Rotated by seaHud.ts, in degrees, toward the prize. */
+  transform: rotate(var(--sea-bearing, 0deg));
+  transition: transform 0.2s linear;
+  pointer-events: none;
+}
+
+.sea__notch[hidden] { display: none; }
+
+/* The mark itself lives at the TOP of that 2px column, so rotating the column
+   sweeps it round the rim. Drawn with the four layers like everything else with
+   a body: ink contour, a gloss step, a warm rim. */
+.sea__notch::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 1px;
+  width: 9px;
+  height: 11px;
+  margin-left: -4.5px;
+  border-radius: 2px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  background: linear-gradient(180deg, var(--ui-ok-gloss-a) 0 50%, var(--ui-ok-a) 50% 100%);
+  box-shadow: inset 0 1px 0 var(--ui-rim), 0 1px 0 rgba(0, 0, 0, 0.5);
+}
+
+/* The chip above the dial, naming what the notch is pointing at. Without it the
+   mark is a green tick with no meaning — "there is something over there" is
+   half an instrument, and "an islet, 140 m" is the whole one. */
+.sea__prize {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 2px);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 9px 4px;
+  border-radius: 999px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0 50%, rgba(0, 0, 0, 0.14) 50% 100%),
+              rgba(10, 22, 34, 0.82);
+  box-shadow: inset 0 1px 0 var(--ui-rim-low), var(--ui-drop-xs);
+  white-space: nowrap;
+  animation: sea-alert-in 0.22s ease-out;
+}
+
+.sea__prize[hidden] { display: none; }
+
+.sea__prizeName {
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--ui-ok-gloss-a);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+}
+
+.sea__prizeDist {
+  font-size: 12px;
+  line-height: 1;
+  -webkit-text-stroke-width: 1.5px;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+}
+
+.sea__prizeDist u {
+  font-size: 9px;
+  text-decoration: none;
+  opacity: 0.7;
+  -webkit-text-stroke-width: 0;
+}
+
+/* IT DOES NOT WAIT FOR THE DEPARTURE, and the first draft did — copied from
+   the voyage strip and the zafarrancho button, which hide alongside because
+   there is no clock yet and nothing to fight yet. This is the opposite case:
+   the moment a player most needs to know which way is the moment before they
+   have moved. Shot at t=0 with the rule in, the departure frame was still an
+   empty blue rectangle with a stat card on it. */
+
+.sea__dist {
+  margin-top: -11px;
+  padding: 3px 10px 4px;
+  border-radius: 999px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.15) 0 50%, rgba(0, 0, 0, 0.15) 50% 100%),
+              rgba(10, 22, 34, 0.9);
+  box-shadow: inset 0 1px 0 var(--ui-rim-low), var(--ui-drop-xs);
+  font-size: 15px;
+  line-height: 1;
+  -webkit-text-stroke-width: 1.8px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.85);
+  white-space: nowrap;
+}
+
+/* Still tied up. Nothing to point at yet, so the instrument stays quiet — but
+   it stays LEGIBLE: a compass whose needle has faded out reads as broken, and
+   the first frame of a first voyage is the worst frame to look broken on. */
+.sea__compass[data-compass='port'] { opacity: 0.86; }
+.sea__compass[data-compass='port'] .sea__arrow { opacity: 0.6; }
+
+/* Carrying something worth losing: the bezel warms and the needle grows, so
+   the way home gets louder exactly as it starts to matter. */
+.sea__compass[data-compass='laden'] .sea__dial {
+  background: linear-gradient(180deg, #FFD75E 0 50%, #E9A417 50% 100%);
+  box-shadow:
+    inset 0 3px 0 var(--ui-rim),
+    inset 0 -4px 0 var(--ui-gold-lip),
+    var(--ui-drop),
+    0 0 0 3px rgba(245, 213, 70, 0.24);
+}
+.sea__compass[data-compass='laden'] .sea__arrow { animation: sea-needle 1.5s ease-in-out infinite; }
+
+/* Home water. The instrument goes green: you may stop now. */
+.sea__compass[data-compass='arrived'] .sea__dial {
+  background: linear-gradient(180deg, var(--ui-green-gloss-a) 0 50%, var(--ui-green-a) 50% 100%);
+  box-shadow: inset 0 3px 0 var(--ui-rim), inset 0 -4px 0 var(--ui-green-lip), var(--ui-drop);
+}
+.sea__compass[data-compass='arrived'] .sea__arrow { opacity: 0; }
+.sea__compass[data-compass='arrived'] .sea__dist { font-size: 13px; }
+/* The needle has nothing left to point at, and an instrument with an empty face
+   reads as a broken one. A pip marks the harbour under your own keel. */
+.sea__compass[data-compass='arrived'] .sea__face::after {
+  background:
+    radial-gradient(circle 8px at 50% 50%, var(--ui-green-a) 0 6.5px, transparent 7px),
+    #0A1B2C;
+}
+
+@keyframes sea-needle {
+  50% { transform: rotate(var(--sea-bearing, 0deg)) scale(1.16); }
+}
+
+/* ==========================================================================
+ * 3 · The helm sign — the resting state the eye can find
+ *
+ * The control was invisible until touched, which on a first voyage means there
+ * is no control. This is the sign that it exists: a wheel where a thumb already
+ * rests, with four chevrons saying the gesture is a DIRECTION and not a rudder
+ * you hold left to turn.
+ *
+ * It is a SIGN, not a button. `.sea` takes no pointer events and nothing here
+ * opts back in, so a thumb that lands on the wheel falls straight through to
+ * the stick and summons it in place — the sign becomes the control with no
+ * seam, which is the one interaction a player never has to be taught.
+ * ======================================================================== */
+
+/* --- el sondeo: the one panel that exists to be decided on ---------------- */
+/* SEA_PLAY.md §5. Everything else on this screen reports; this one asks. It sits
+   under the voyage strip on the left, clear of the abandon button, and it is the
+   only readout allowed to be four numbers — because "is the next tier worth
+   another few seconds" is not answerable against a percentage.
+
+   It appears when a survey starts and leaves when it ends. It is never
+   summonable, has no controls, and takes no pointer events: the verb is the
+   helm, and a panel that could be tapped would be a second one. */
+
+.sea__sondeo {
+  position: absolute;
+  /* BELOW the zone/hull plate rather than beside it. The plate is transient and
+     centred in the space the abandon button leaves; a survey lives for eight
+     seconds and would sit under it. Stacked, both are readable and neither has
+     to know the other exists. */
+  top: calc(var(--ui-safe-t) + 148px);
+  left: var(--ui-edge);
+  width: min(212px, 58%);
+  padding: 7px 10px 8px;
+  border-radius: 14px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0 50%, rgba(0, 0, 0, 0.14) 50% 100%),
+    rgba(10, 22, 34, 0.8);
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim-low),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.34),
+    var(--ui-drop-xs);
+  backdrop-filter: blur(3px);
+  animation: sea-alert-in 0.22s ease-out;
+  transition: border-color 0.25s linear, box-shadow 0.25s linear;
+}
+
+.sea__sondeo[hidden] { display: none; }
+
+.sea__sondeoHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.sea__sondeoTitle {
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--ui-gold-text);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* One pip per rung, so the shape of the run is legible without reading: one lit
+   of three is a drive-by, three is a stripped site. */
+.sea__sondeoPips { display: flex; gap: 3px; flex: 0 0 auto; }
+
+.sea__sondeoPip {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  background: rgba(255, 255, 255, 0.16);
+  transition: background 0.2s linear, box-shadow 0.2s linear;
+}
+
+.sea__sondeoPip.is-on {
+  background: linear-gradient(180deg, var(--ui-gold-a) 0 50%, var(--ui-gold-b) 50% 100%);
+  box-shadow: 0 0 0 1px rgba(245, 213, 70, 0.4);
+}
+
+.sea__sondeoTrack {
+  position: relative;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--ui-track-well);
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+/* The bar runs to the NEXT rung, not across the whole ladder: what the player
+   is waiting for is the next tier, and a bar that crawls across a whole survey
+   says nothing about the only wait they are actually in. */
+.sea__sondeoFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background:
+    var(--ui-fill-gloss),
+    linear-gradient(180deg, var(--ui-gold-a) 0 50%, var(--ui-gold-b) 50% 100%);
+  transition: width 0.16s linear;
+}
+
+.sea__sondeoRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 5px;
+}
+
+.sea__sondeoSecured {
+  font-size: 15px;
+  line-height: 1;
+  -webkit-text-stroke-width: 1.8px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.8);
+  color: var(--ui-res-gold);
+}
+
+.sea__sondeoSecured u {
+  font-size: 9px;
+  text-decoration: none;
+  opacity: 0.66;
+  letter-spacing: 0.5px;
+  -webkit-text-stroke-width: 0;
+  margin-left: 3px;
+}
+
+.sea__sondeoNext {
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.82;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
+
+.sea__sondeo.is-full .sea__sondeoNext { color: var(--ui-gold-text); opacity: 1; }
+
+/* WHAT THE NOISE DREW, and it is the loudest thing in the panel because it is
+   the reason to leave. Everything above is bookkeeping. */
+.sea__sondeoHeard {
+  margin-top: 6px;
+  padding: 3px 8px 4px;
+  border-radius: 999px;
+  border: var(--ui-ink-w-sm) solid var(--ui-red-lip);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0 50%, rgba(0, 0, 0, 0.12) 50% 100%),
+              rgba(86, 12, 14, 0.88);
+  color: #FFD9D6;
+  font-size: 11px;
+  line-height: 1.1;
+  text-align: center;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+  animation: sea-alert-in 0.2s ease-out, sea-pulse 0.9s ease-in-out 0.2s infinite;
+}
+
+.sea__sondeoHeard[hidden] { display: none; }
+
+.sea__sondeo.is-heard {
+  border-color: var(--ui-red-lip);
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim-low),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.34),
+    var(--ui-drop-xs),
+    0 0 0 2px rgba(212, 20, 26, 0.26);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sea__sondeoHeard { animation: sea-alert-in 0.2s ease-out; }
+}
+
+/* --- zafarrancho: the one button on this screen ---------------------------- */
+/* Inboard of the helm, on the arc the same right thumb already sweeps, and
+   deliberately the ONLY button out here — SEA_PLAY.md refuses a fire button and
+   a second stick both, so this one has to carry the whole idea of "something to
+   press". It is drawn with the four layers because it is a THING, and it is the
+   only pressable object in the lower half of the sea. */
+
+.sea__dash {
+  position: absolute;
+  right: calc(var(--helm-right) + var(--helm-size) + 6px);
+  bottom: calc(var(--ui-safe-b) + var(--helm-bottom) + 14px);
+  width: 72px;
+  height: 72px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  color: #fff;
+  pointer-events: auto;
+  cursor: pointer;
+  /* No tap highlight and no text selection: this is a control that gets
+     hammered, and a blue flash over it reads as a web page. */
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  touch-action: none;
+  transition: opacity 0.16s ease-out, transform 0.12s ease-out;
+}
+
+/* Like the helm sign, it stands down while a stick is live — the thumb that
+   would press it is busy, and a lit button under a dragging finger is a
+   mis-tap waiting to happen. */
+html.is-steering .sea__dash { opacity: 0.34; }
+
+/* Alongside there is nothing to fight. It arrives with the voyage. */
+.sea:not(.is-departed) .sea__dash { opacity: 0; pointer-events: none; }
+
+.sea__dashRing {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  background: rgba(18, 14, 10, 0.62);
+  box-shadow: inset 0 3px 4px rgba(0, 0, 0, 0.55);
+}
+
+/* The wait, filling from the bottom like water coming back into a glass. Height
+   rather than a conic gradient on purpose: a sweep hand needs a hand to read as
+   one, and at 72px a filling level is legible where an arc is not. */
+.sea__dashSweep {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0%;
+  background: linear-gradient(180deg, rgba(143, 224, 245, 0.5) 0 50%, rgba(62, 159, 192, 0.5) 50% 100%);
+  transition: height 0.2s linear;
+}
+
+.sea__dashBody {
+  position: absolute;
+  inset: 7px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  /* The four layers. Warm wood and brass, the family the helm already speaks. */
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0 50%, rgba(0, 0, 0, 0.16) 50% 100%),
+    linear-gradient(180deg, #8A5A2B 0 50%, #6B4320 50% 100%);
+  box-shadow:
+    inset 0 3px 0 var(--ui-rim),
+    inset 0 -4px 0 rgba(0, 0, 0, 0.4),
+    var(--ui-drop-sm);
+  transition: filter 0.2s linear, box-shadow 0.12s ease-out, transform 0.12s ease-out;
+}
+
+.sea__dashMark {
+  width: 40px;
+  height: 32px;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.45));
+}
+
+.sea__dashWait {
+  position: absolute;
+  font-size: 22px;
+  line-height: 1;
+  -webkit-text-stroke-width: 2.2px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.8);
+}
+
+.sea__dashWait[hidden] { display: none; }
+
+.sea__dashCap {
+  position: absolute;
+  left: 50%;
+  bottom: -17px;
+  transform: translateX(-50%);
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  opacity: 0.66;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.75);
+  white-space: nowrap;
+}
+
+/* WAITING. The mark goes quiet and the number takes the middle, because during
+   the wait the only information is how long. */
+.sea__dash:disabled { cursor: default; }
+.sea__dash:not(.is-ready):not(.is-running) .sea__dashBody { filter: grayscale(0.7) brightness(0.62); }
+.sea__dash:not(.is-ready):not(.is-running) .sea__dashMark { opacity: 0.22; }
+
+/* READY. It breathes — slowly, because a button that flashes at a player who is
+   being chased is one more thing shouting. */
+.sea__dash.is-ready .sea__dashRing { border-color: var(--ui-gold-lip); }
+.sea__dash.is-ready .sea__dashBody { animation: sea-dash-ready 2.2s ease-in-out infinite; }
+
+@keyframes sea-dash-ready {
+  50% { box-shadow: inset 0 3px 0 var(--ui-rim), inset 0 -4px 0 rgba(0, 0, 0, 0.4), var(--ui-drop-sm), 0 0 0 3px rgba(245, 213, 70, 0.34); }
+}
+
+/* RUNNING. Lit, and unmistakably a different state from ready — this is the
+   three seconds the player paid for and they must be able to see them. */
+.sea__dash.is-running .sea__dashRing {
+  border-color: var(--ui-gold-a);
+  background: rgba(90, 58, 12, 0.7);
+}
+
+.sea__dash.is-running .sea__dashBody {
+  animation: none;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.26) 0 50%, rgba(0, 0, 0, 0.12) 50% 100%),
+    linear-gradient(180deg, var(--ui-gold-a) 0 50%, var(--ui-gold-b) 50% 100%);
+  box-shadow:
+    inset 0 3px 0 var(--ui-rim),
+    inset 0 -4px 0 rgba(0, 0, 0, 0.4),
+    var(--ui-drop-sm),
+    0 0 0 4px rgba(245, 213, 70, 0.28);
+}
+
+/* Pressed: the same 2px drop every other object in the game gives by. */
+.sea__dash:active .sea__dashBody {
+  transform: translateY(2px);
+  box-shadow: inset 0 2px 0 var(--ui-rim), inset 0 -2px 0 rgba(0, 0, 0, 0.4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sea__dash.is-ready .sea__dashBody { animation: none; }
+}
+
+.sea__helm {
+  position: absolute;
+  right: var(--helm-right);
+  bottom: calc(var(--ui-safe-b) + var(--helm-bottom));
+  width: var(--helm-size);
+  height: var(--helm-size);
+  transition: opacity 0.16s ease-out, transform 0.16s ease-out;
+}
+
+/* It never argues with the control it advertises: the moment a real stick is
+   live anywhere on the glass, the sign stands down. `stick.ts` sets the class. */
+html.is-steering .sea__helm {
+  opacity: 0;
+  transform: scale(0.9);
+}
+
+.sea__helmRing {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  /* Warm wood so it separates from a blue sea, brass inside it. Four layers,
+     and the step across the middle is the whole reason it reads as turned oak
+     rather than as a brown circle. */
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  background: linear-gradient(180deg, #93673A 0 50%, #4A3018 50% 100%);
+  box-shadow:
+    inset 0 3px 0 rgba(255, 232, 190, 0.7),
+    inset 0 -5px 0 rgba(0, 0, 0, 0.4),
+    var(--ui-drop-lg);
+}
+
+.sea__wheel {
+  width: 78%;
+  height: 78%;
+  display: block;
+}
+
+/* The four chevrons: any direction, not a turn rate. */
+.sea__chevrons {
+  position: absolute;
+  inset: -19px;
+  width: auto;
+  height: auto;
+  opacity: 0.85;
+  animation: sea-chev 2.4s ease-in-out infinite;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.4));
+}
+
+@keyframes sea-chev {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50%      { transform: scale(1.07); opacity: 1; }
+}
+
+/* A slow breath outward. Its RESTING state is a visible ring, so a frozen
+   capture — and a player who has motion reduced — still gets the halo. */
+.sea__halo {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 233, 168, 0.42);
+  animation: sea-halo 2.4s ease-out infinite;
+}
+
+@keyframes sea-halo {
+  0%   { transform: scale(0.95); opacity: 0.55; }
+  70%  { transform: scale(1.22); opacity: 0; }
+  100% { transform: scale(1.22); opacity: 0; }
+}
+
+.sea__helmCap {
+  position: absolute;
+  top: calc(100% + 22px);
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  opacity: 0.7;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.75);
+}
+
+/* ==========================================================================
+ * 4 · The coach mark — once, on a first-ever voyage, and never again
+ *
+ * One line and one gesture. It leaves the instant a thumb goes down (seaHud.ts
+ * listens for the stick's HELM_STEER) and the fact is written to localStorage,
+ * because a hint that reappears on a fiftieth voyage is an insult, not help.
+ * ======================================================================== */
+
+.sea__coach {
+  position: absolute;
+  inset: 0;
+  transition: opacity 0.22s ease-out, transform 0.22s ease-out;
+}
+
+.sea__coach.is-gone {
+  opacity: 0;
+  transform: scale(0.94);
+}
+
+.sea__coachLine {
+  position: absolute;
+  bottom: calc(100% + 54px);
+  right: 0;
+  white-space: nowrap;
+  padding: 7px 14px 8px;
+  border-radius: 999px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0 50%, rgba(0, 0, 0, 0.16) 50% 100%),
+              rgba(10, 22, 34, 0.86);
+  box-shadow: inset 0 2px 0 var(--ui-rim-low), var(--ui-drop-xs);
+  font-size: 14px;
+  line-height: 1;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.72);
+  animation: sea-coach-bob 2.4s ease-in-out infinite;
+}
+
+@keyframes sea-coach-bob {
+  0%, 100% { translate: 0 0; }
+  50%      { translate: 0 -4px; }
+}
+
+/* The path the thumb takes, drawn from the wheel out into open water. The
+   viewBox is aligned so that local (140,112) sits on the wheel's centre, and it
+   ends where the hand rests — the drag has to leave the wheel by a clear margin
+   or the whole gesture happens inside the object it is explaining. */
+.sea__coachTrail {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 160px;
+  height: 130px;
+  transform: translate(-140px, -112px);
+}
+
+/* The hand's RESTING position is mid-drag, not at the start: a frozen capture
+   and a reduced-motion player both need the frame that shows the gesture, not
+   the frame before it begins. The animation returns to this pose every cycle. */
+.sea__hand {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 42px;
+  height: 42px;
+  /* The fingertip, not the box centre, is what lands on the target. */
+  margin: -5px 0 0 -20px;
+  transform: translate(-96px, -70px);
+  filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.45));
+  animation: sea-hand 2.6s ease-in-out infinite;
+}
+
+@keyframes sea-hand {
+  0%   { transform: translate(0, 0) scale(0.86); }
+  10%  { transform: translate(0, 0) scale(1); }
+  50%  { transform: translate(-96px, -70px) scale(1); }
+  74%  { transform: translate(-96px, -70px) scale(1); }
+  90%  { transform: translate(0, 0) scale(0.86); }
+  100% { transform: translate(0, 0) scale(0.86); }
+}
+
+/* ==========================================================================
+ * 5 · The stick itself
+ *
+ * Positioned entirely by `stick.ts`, which writes a page-coordinate translate
+ * onto each element. The negative margins turn that corner-anchored translate
+ * into a centred one, so the JS never has to know how big any of this is.
+ * ======================================================================== */
+
+.stick {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: var(--z-hud);
+  opacity: 0;
+  transition: opacity 0.12s ease-out;
+}
+
+.stick.is-held { opacity: 1; }
+
+.stick__base,
+.stick__knob {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: 50%;
+  will-change: transform;
+}
+
+/* 128px so the knob's centre rides the rim at full deflection — REACH is 64.
+ *
+ * A BAND, not a plate. The first version filled the whole disc and blurred what
+ * was behind it, which put an opaque grey coin over the exact patch of sea the
+ * player is steering through — the control was legible and the game was not.
+ * The middle is now barely tinted, so the thumb rests over water it can still
+ * read, and the weight lives in the rim where the knob travels. */
+.stick__base {
+  width: 128px;
+  height: 128px;
+  margin: -64px 0 0 -64px;
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.17) 0 50%, rgba(0, 0, 0, 0.16) 50% 100%),
+    radial-gradient(circle 66px at 50% 50%,
+      rgba(6, 20, 36, 0.13) 0 42px, rgba(6, 20, 36, 0.5) 50px 100%);
+  box-shadow:
+    inset 0 3px 0 var(--ui-rim-low),
+    inset 0 -4px 0 rgba(0, 0, 0, 0.34),
+    var(--ui-drop);
+}
+
+/* The heading band, from the base's centre out to the knob.
+ *
+ * It shows the two things a thumb hides from its owner: WHICH WAY the helm is
+ * being asked to go, and HOW FAR out — which is the throttle. The first attempt
+ * drew this as a wedge on the rim and it was invisible in every capture, for the
+ * obvious reason once seen: the wedge and the knob point the same way, and the
+ * knob is a 56px opaque disc sitting exactly on top of it.
+ *
+ * `--stick-angle` and `--stick-force` are written by stick.ts and are
+ * presentation only; the vector the scene reads is untouched. The pivot is the
+ * band's top edge and the band hangs downward, so the extra half-turn is what
+ * makes an angle of zero point UP the screen. */
+.stick__base::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 11px;
+  height: calc(64px * var(--stick-force, 0));
+  margin-left: -5.5px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 236, 176, 0.92), rgba(240, 176, 32, 0.82));
+  box-shadow: 0 0 0 2px rgba(23, 19, 14, 0.55);
+  transform-origin: 50% 0;
+  transform: rotate(calc(var(--stick-angle, 0deg) + 180deg));
+}
+
+/* A hairline at the inner edge of the band: the contour that tells the band it
+   is a band. Painted after the wedge so the wedge cannot swallow it. */
+.stick__base::after {
+  content: '';
+  position: absolute;
+  inset: 20px;
+  border-radius: 50%;
+  border: 2px solid rgba(23, 19, 14, 0.5);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.14);
+}
+
+.stick__knob {
+  width: 56px;
+  height: 56px;
+  margin: -28px 0 0 -28px;
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  background: linear-gradient(180deg, var(--ui-gold-a) 0 50%, var(--ui-gold-b) 50% 100%);
+  box-shadow:
+    inset 0 3px 0 var(--ui-rim),
+    inset 0 -4px 0 var(--ui-gold-lip),
+    var(--ui-drop);
+}
+
+/* A small hub so the knob is not a plain disc — it reads as the same brass the
+   wheel on the helm sign is made of, which is what ties sign to control. */
+.stick__knob::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: 50%;
+  background: #C57C2A;
+  box-shadow: inset 0 2px 0 rgba(255, 233, 168, 0.55), 0 0 0 2.4px var(--ui-ink);
+}
+
+/* ==========================================================================
+ * 6 · Damage, the abandon button, the end card
+ * ======================================================================== */
+
+/* The hurt veil. `setHurt()` has been writing an opacity onto this element
+   since the sea shipped and it had no rules, so every hit has been invisible.
+   At the EDGE rather than over the middle: the player is steering and reading
+   the water, so the only place damage can be shown without hiding what they
+   need is the border they are not looking at. */
+.sea__hurt {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 92% at 50% 50%,
+      transparent 46%, rgba(150, 12, 14, 0.28) 74%, rgba(120, 6, 8, 0.72) 100%);
+  box-shadow: inset 0 0 0 3px rgba(212, 20, 26, 0.5);
+  transition: opacity 0.1s linear;
+}
+
+.sea__leave {
+  position: absolute;
+  /* Below the readout capsule, which grew a row when the cells gained labels. */
+  top: calc(var(--ui-safe-t) + 72px);
+  right: var(--ui-edge);
+  pointer-events: auto;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  color: #fff;
+  padding: 7px 14px 9px;
+  border-radius: 12px;
+  /* The four layers, because this one is pressed. The family is the mid-stone
+     SECONDARY, not red: leaving is the least urgent thing on the screen, and
+     red is reserved for the hull. A loud red button beside a red hull alarm is
+     two alarms, and the player reads neither. */
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  background:
+    linear-gradient(180deg, var(--ui-grey2-gloss-a) 0 50%, var(--ui-grey2-a) 50% 100%);
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim),
+    inset 0 -3px 0 var(--ui-grey-lip-2),
+    var(--ui-drop-sm);
+  color: var(--ui-ink);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.sea__leave:active {
+  transform: translateY(2px);
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim),
+    inset 0 -3px 0 var(--ui-grey-lip-2),
+    0 1px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* The price of leaving from here, on the button that charges it. A second line
+   inside the same object rather than a chip beside it: two objects would be two
+   things to read, and this is one fact about one button. */
+.sea__leaveWord {
+  display: block;
+  line-height: 1.05;
+}
+
+.sea__leaveShare {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  line-height: 1;
+  /* The one hot colour on a mid-stone object, which is what makes a percentage
+     read as a PRICE rather than as another readout. It is not the hull's red:
+     nothing here is an emergency, it is a bill. */
+  color: var(--ui-ink);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.sea__leaveShare u {
+  font-size: 0.72em;
+  text-decoration: none;
+  opacity: 0.7;
+}
+
+/* The `hidden` attribute loses to any explicit display, and this file has been
+   round-tripping that lesson since the alert plate: `display: block` above beat
+   the UA's `[hidden] { display: none }` outright, and the price stayed on the
+   button behind the end-of-voyage card, quoting a decision that had already
+   been made. Same one-line rule the banner, the alert and the boss bar carry. */
+.sea__leaveShare[hidden] { display: none; }
+
+/* Priced, i.e. there is a hold aboard and home water is somewhere else.
+   The object GROWS INTO its second line and changes nothing else: the family
+   stays mid-stone secondary for the reason it was chosen — a loud button beside
+   a red hull bar is two alarms, and the player reads neither. The information
+   is a numeral, so a numeral is what carries it. */
+.sea__leave.is-priced {
+  padding: 5px 13px 7px;
+}
+
+/* --- the sheet that asks before it charges -------------------------------- */
+
+.sea__sheet {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--ui-scrim);
+  pointer-events: auto;
+  z-index: var(--z-celebrate);
+}
+
+.sea__sheetCard {
+  min-width: 262px;
+  max-width: 80vw;
+  padding: 18px 20px 18px;
+  border-radius: 16px;
+  text-align: center;
+  background: var(--ui-panel);
+  color: var(--ui-ink);
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  box-shadow: inset 0 3px 0 var(--ui-rim), inset 0 -4px 0 var(--ui-lip), var(--ui-drop-lg);
+}
+
+.sea__sheetTitle {
+  font-size: 20px;
+  margin-bottom: 4px;
+}
+
+.sea__sheetNote {
+  font-size: 13px;
+  line-height: 1.35;
+  opacity: 0.78;
+  margin-bottom: 12px;
+}
+
+.sea__sheetNote b {
+  opacity: 1;
+}
+
+/* Two rows, one over the other, so the trade is read as a trade: what lands,
+   and directly under it what does not. Same chip language as the end card. */
+.sea__sheetRow {
+  margin-bottom: 8px;
+}
+
+.sea__sheetTag {
+  display: block;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  margin-bottom: 4px;
+}
+
+.sea__sheetRow--lost .sea__sheetTag {
+  color: var(--ui-red-a);
+  opacity: 1;
+}
+
+.sea__sheetRow .sea__endList {
+  margin-bottom: 0;
+}
+
+/* The primary is CARRYING ON, not quitting: the sheet exists to make the trip
+   home the obvious answer, and the loud object is the one the player should
+   want. Leaving keeps all four layers in a duller family — UI_SPEC anti-goal
+   10: a secondary is the same physical thing in a quieter hue, never a
+   flattened one. */
+/* THE THREE BUTTONS BELOW ARE `position: relative` AND IT IS LOAD-BEARING.
+ *
+ * `.tap::after` in base.css is the finger-sized hit area every control in this
+ * game carries: `position: absolute; left: 50%; top: 50%; width: max(100%,
+ * var(--ui-tap-min))`. Its 100% — and its anchor — resolve against the nearest
+ * POSITIONED ancestor, and a `static` button is not one. On this sheet the
+ * nearest positioned ancestor is `.sea__sheet`, the full-screen scrim, so both
+ * buttons' hit areas came out 430x932 centred on the whole screen.
+ *
+ * The gate's cold walk hit it on the first tap and Playwright named it exactly:
+ * *"<button data-quit> intercepts pointer events"*. Measured in the live page,
+ * `elementFromPoint` at the dead centre of the green "Seguimos a puerto"
+ * returned `data-quit` — so tapping the SAFE choice performed the destructive
+ * one, and a player who read the price and decided to sail on lost a tenth of
+ * the hold for saying so. `data-quit` won only because it is last in the DOM.
+ *
+ * The end card's CTA had the same 430x932 hit area. There it was invisible —
+ * one button on a modal card, so "tap anywhere to continue" is what it looked
+ * like — but it is the same fault and it is fixed in the same breath, because
+ * the next control added to that card would inherit the bug.
+ *
+ * Same family as round 13's tutorial finding, and the same lesson: a hit area
+ * is not what you can see. */
+.sea__sheetCta {
+  position: relative;
+  width: 100%;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 16px;
+  color: #fff;
+  margin-top: 6px;
+  padding: 11px 16px 13px;
+  border-radius: 13px;
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  background: linear-gradient(180deg, var(--ui-green-gloss-a) 0 50%, var(--ui-green-a) 50% 100%);
+  box-shadow:
+    inset 0 3px 0 var(--ui-rim),
+    inset 0 -4px 0 var(--ui-green-lip),
+    var(--ui-drop);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.4);
+}
+
+.sea__sheetAlt {
+  position: relative;
+  width: 100%;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 15px;
+  margin-top: 8px;
+  padding: 9px 16px 11px;
+  border-radius: 12px;
+  color: var(--ui-ink);
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  background:
+    linear-gradient(180deg, var(--ui-grey2-gloss-a) 0 50%, var(--ui-grey2-a) 50% 100%);
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim),
+    inset 0 -3px 0 var(--ui-grey-lip-2),
+    var(--ui-drop-sm);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.sea__sheetCta:active,
+.sea__sheetAlt:active {
+  transform: translateY(2px);
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.22),
+    0 1px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* --- the end-of-voyage card ---------------------------------------------- */
+
+.sea__end {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--ui-scrim);
+  pointer-events: auto;
+  /* Above the stick, which lives on `body` and would otherwise paint over it. */
+  z-index: var(--z-celebrate);
+}
+
+.sea__endCard {
+  min-width: 250px;
+  max-width: 78vw;
+  padding: 18px 20px 20px;
+  border-radius: 16px;
+  text-align: center;
+  background: var(--ui-panel);
+  color: var(--ui-ink);
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  box-shadow: inset 0 3px 0 var(--ui-rim), inset 0 -4px 0 var(--ui-lip), var(--ui-drop-lg);
+}
+
+.sea__endTitle {
+  font-size: 21px;
+  margin-bottom: 4px;
+}
+
+.sea__endNote {
+  font-size: 13px;
+  opacity: 0.72;
+  margin-bottom: 12px;
+}
+
+.sea__endList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.sea__endItem {
+  font-size: 14px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--ui-well);
+  color: #fff;
+}
+
+/* The loss, said at the dock (round 11's finding 1): what the caps will
+   refuse is printed BEFORE the tap that lands the cargo, in the same chip
+   language as the loot — worn dim and struck through so it reads as GONE
+   rather than as more treasure. The note takes the game's one danger red. */
+.sea__endSpillNote {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ui-red-a);
+  margin: -2px 0 8px;
+}
+
+.sea__endList--spill {
+  margin-bottom: 14px;
+}
+
+.sea__endList--spill .sea__endItem {
+  opacity: 0.62;
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+  text-decoration-color: rgba(255, 255, 255, 0.75);
+}
+
+.sea__endCta {
+  /* See the note on .sea__sheetCta: without this the finger area is the whole
+     screen instead of the button. */
+  position: relative;
+  width: 100%;
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 16px;
+  color: #fff;
+  padding: 11px 16px 13px;
+  border-radius: 13px;
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  background: linear-gradient(180deg, var(--ui-green-gloss-a) 0 50%, var(--ui-green-a) 50% 100%);
+  box-shadow:
+    inset 0 3px 0 var(--ui-rim),
+    inset 0 -4px 0 var(--ui-green-lip),
+    var(--ui-drop);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.4);
+}
+
+/* ==========================================================================
+ * 7 · Sizes that are not a 430pt portrait phone
+ * ======================================================================== */
+
+/* Landscape is short: the instruments come in from the bottom edge and shrink
+   so they never crowd the waterline the player is actually steering along. */
+@media (orientation: landscape) {
+  .sea {
+    --helm-size: 92px;
+    --helm-right: 26px;
+    --helm-bottom: 26px;
+    --dial-size: 66px;
+  }
+  .sea__coachLine { font-size: 13px; bottom: calc(100% + 24px); }
+  .sea__helmCap { top: calc(100% + 14px); }
+}
+
+/* iPhone SE and below: the capsule is already tight, so the compass gives up
+   its caption before anything a player steers by gives up anything. */
+@media (max-width: 359px) {
+  .sea {
+    --helm-size: 94px;
+    --helm-right: 20px;
+    --dial-size: 68px;
+  }
+  .sea__compassCap { display: none; }
+  .sea__coachLine { font-size: 12.5px; padding: 6px 11px 7px; }
+  .sea__alert { right: 96px; font-size: 11px; }
+}

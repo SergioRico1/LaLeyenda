@@ -1,0 +1,103 @@
+/* ============================================================================
+ * timer.css — the world-anchored build/craft timer (UI_SPEC §3.11, revised by
+ * LAYOUT_SPEC item 3).
+ *
+ * It WAS a green fill bar with the numeral floating above it. It is now a dark
+ * translucent capsule with the numeral inside it and a thin progress line along
+ * the bottom edge, because of the reason LAYOUT_SPEC gives:
+ *
+ *   > Over a busy, saturated world a green bar competes with the world; a dark
+ *   > capsule recedes and its white numerals stay legible at any zoom.
+ *
+ * Our island is turquoise sea, warm sand and orange roofs. A 130px slab of
+ * #A6E04B over that read as the brightest object on screen — brighter than the
+ * ¡Zarpar! tile, which is the one thing allowed to be. The capsule inverts that
+ * relationship: it is a hole in the picture, and the numerals are what you see.
+ *
+ * The four-layer rule (§0.2) is not being dropped here. LAYOUT_SPEC settles the
+ * apparent conflict: the rule governs anything the player can PRESS. This is a
+ * readout that also happens to be a route into the finish-now decision, so it
+ * keeps the ink contour, the top rim and the hard extrusion — the layers that
+ * make it a physical thing — and loses only the gloss step, which belonged to
+ * the tube of liquid that no longer exists.
+ *
+ * Direction still encodes meaning: STOCK DRAINS LEFTWARD (the resource pills),
+ * PROGRESS GROWS RIGHTWARD (this line). Getting those backwards is anti-goal
+ * §6.2 and the change of shape does not license it.
+ * ========================================================================== */
+
+.timerbar{
+  --pct:0;
+  position:relative;
+  width:108px;
+  display:grid; place-items:center;
+  /* Asymmetric on purpose: the bottom 4px is the progress line's lane, so the
+   * numeral stays optically centred in the capsule rather than sitting on top
+   * of its own progress. */
+  padding:5px 15px 8px;
+  /* 2px of ink, not 3. §1.1 reserves --ui-ink-w-sm for elements under ~28px and
+   * this capsule is ~33px: at 3px the contour started to close around an 18px
+   * numeral that already carries its own outline. */
+  border:var(--ui-ink-w-sm) solid var(--ui-ink);
+  border-radius:var(--ui-r-pill);
+  /* Denser than the pills' --ui-track-well. Those sit over open sea, which is
+   * flat; this one is world-anchored and routinely lands on top of a building,
+   * where a 46% wash let every scaffolding beam read straight through the
+   * numerals. Still translucent — LAYOUT_SPEC's whole point is that the world
+   * stays visible through anything that is merely read. */
+  background:rgba(18,14,10,.66);
+  box-shadow:var(--ui-drop-xs);
+  overflow:hidden;
+  pointer-events:auto;
+}
+
+/* The capsule is a route into §3.16's finish-now decision, so it is a button
+ * and presses like one — it used to absorb the tap and show nothing. */
+.timerbar[role="button"]{ transition:transform .06s ease-out, filter .06s ease-out; }
+/* 2px of travel — the short rung of the ladder for a ~33px object — but the
+ * SAME .94 dim as every other pressed object. It sat at .88, which over a dark
+ * translucent face read as a blink rather than as the shared give. */
+.timerbar[role="button"]:active,
+.timerbar[role="button"].is-pressed{ transform:translateY(2px); filter:brightness(.94); }
+
+/* Layer 3 — the warm rim on the top inner edge. Inset from the caps so it
+ * follows the straight part of the stadium instead of crossing the curve. */
+.timerbar__rim{
+  position:absolute; left:14px; right:14px; top:0; height:1px;
+  background:var(--ui-rim); border-radius:999px; pointer-events:none;
+  opacity:.42;
+}
+
+/* The numeral, WHITE and INSIDE the capsule — the whole point of the change.
+ * It keeps its near-black outline: the capsule is translucent, so the ground
+ * behind the digits is the world at 38% and is not uniform. */
+.timerbar__label{
+  position:relative;
+  line-height:1;
+  white-space:nowrap;
+}
+
+/* The thin progress line along the bottom edge. Inset to the stadium's straight
+ * span rather than full-bleed: at a 999px radius the caps are semicircles, and
+ * a full-width line would be clipped to a lens that reads 0% and 100% almost
+ * identically — which is the one thing this line exists to distinguish. */
+.timerbar__rail{
+  position:absolute; left:14px; right:14px; bottom:3px; height:3px;
+  border-radius:999px;
+  background:rgba(255,255,255,.13);
+  overflow:hidden;
+  pointer-events:none;
+}
+.timerbar__line{
+  display:block; height:100%;
+  width:calc(var(--pct) * 100%);
+  border-radius:999px;
+  background:var(--ui-timer-a);
+  /* Driven every frame from the scene clock, so this is deliberately a SHORT
+   * smoothing pass and not the pills' 450ms ramp: it only exists to stop the
+   * line stepping when the sim re-syncs the figure every 250ms. */
+  transition:width .12s linear;
+}
+html.shot:not(.motion) .timerbar__line{ transition:none; }
+
+@media (orientation:landscape){ .timerbar{ width:120px; } }

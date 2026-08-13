@@ -1,0 +1,48 @@
+/* ============================================================================
+ * badge.css — §3.8.
+ *
+ * "El badge rojo es media batalla de la retención."
+ *
+ * A rounded SQUARE that widens into a stadium, never a circle (§6.7); the
+ * warm-white ring plus the dark edge outside the red is the distinctive part.
+ * ~40% of it hangs outside the host's top-right corner — it BREAKS the
+ * silhouette, it is never tucked in politely (§6.8).
+ *
+ * STRICT RULE: a badge appears only for something claimable in 1–2 taps.
+ * Never for "there is new content" (§6.22) — that burns the channel in a week
+ * and it never comes back.
+ * ========================================================================== */
+
+/* The badge is the same physical object as everything else, just small — so it
+ * carries all four layers, not one and a half.
+ *
+ * It shipped with a FAKE contour: `0 0 0 4px rgba(0,0,0,.55)` outside the cream
+ * ring composites to a translucent mid-grey about 1.5px wide, which over the
+ * cream Diario tile read as a soft edge rather than as ink. Layers 3 and 4 were
+ * missing outright, and the drop was blurred. Only the gloss step was real. */
+.badge{
+  position:absolute; top:0; right:0; transform:translate(40%,-40%);
+  min-width:24px; height:24px; padding:0 6px; border-radius:var(--ui-r-badge);
+  display:grid; place-items:center;
+  background:linear-gradient(180deg,
+    #F0463C 0%, #F0463C 48%,
+    #DD2016 48.01%, #C81A12 92%,
+    #8E1109 92.01%, #8E1109 100%);          /* + the dark lip inside the bottom */
+  box-shadow:
+    inset 0 1px 0 var(--ui-rim),                  /* 3 — top inner rim */
+    0 0 0 2.5px var(--ui-badge-ring),             /* the warm-white ring */
+    0 0 0 4.5px var(--ui-ink),                    /* 1 — real ink, not a wash */
+    0 2px 0 rgba(0,0,0,.42);                      /* 4 — hard, zero blur */
+  pointer-events:none;
+}
+.badge span{
+  font-size:15px; line-height:1;
+  -webkit-text-stroke-width:var(--ui-txt-stroke-x);
+  text-shadow:0 2px 0 rgba(0,0,0,.82);
+  margin-top:-1px;
+}
+.badge[hidden]{ display:none; }
+
+/* Entrance: scale 0 → 1.25 overshoot, then ONE 6% pulse. Do not loop it —
+ * permanent motion reads as a bug, not as urgency (§6.19). */
+.badge.is-entering{ animation:ui-pop-badge 260ms cubic-bezier(.2,1.5,.4,1); }

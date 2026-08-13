@@ -1,0 +1,180 @@
+/* ============================================================================
+ * navbar.css — LAYOUT_SPEC §1, the bottom navigation bar.
+ *
+ * THE BAR IS THE OBJECT. Five destinations printed on one physical ledge, with
+ * the primary action raised off it. That is the whole trade: the corner
+ * clusters spent five contours, five gloss steps and five extrusions to say
+ * what one bar and one tile now say, and they said it from the four worst
+ * places on a phone screen for a thumb.
+ * ========================================================================== */
+
+:root{
+  --ui-nav-h:64px;      /* the bar's own height, before the safe area */
+  --ui-nav-cta:78px;    /* slot 3's raised tile */
+  --ui-nav-lift:9px;    /* how far the bar floats above the bottom edge */
+  --ui-nav-sit:10px;    /* the tile's bottom inside the bar — the rest pokes out */
+}
+@media (orientation:landscape){
+  :root{ --ui-nav-h:66px; --ui-nav-cta:84px; }
+}
+@media (max-width:359px){
+  :root{ --ui-nav-h:60px; --ui-nav-cta:70px; }
+}
+
+.navbar{
+  /* The taupe stone of the modal frame band (§1.2), which is the one surface
+   * in the palette that is already a structural element rather than a button
+   * hue — the HUD's ledge is made of the same stone as the panel frames.
+   * Stops declared locally, the way .tile--featured declares the ivory frame:
+   * tokens.css is §1 verbatim and takes no additions. */
+  --a:#837868; --b:var(--ui-frame); --c:#4C453E; --d:#403A34;
+  --lip:var(--ui-frame-dark);
+  /* The step sits high because the label row lives in the lower half — the
+   * lit plate reads behind the props, the body behind the words. */
+  --brk:40%;
+
+  position:absolute;
+  left:calc(var(--ui-edge) + var(--ui-safe-l));
+  right:calc(var(--ui-edge) + var(--ui-safe-r));
+  bottom:calc(var(--ui-nav-lift) + var(--ui-safe-b));
+  margin-inline:auto;
+
+  border:var(--ui-ink-w) solid var(--ui-ink);
+  border-radius:22px;
+  background:linear-gradient(180deg,
+    var(--a) 0%,  var(--b) var(--brk),
+    var(--c) calc(var(--brk) + .01%), var(--d) 92%,
+    var(--lip) 92.01%, var(--lip) 100%);
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim),
+    inset 0 -2px 0 var(--ui-rim-low),
+    var(--ui-drop), var(--ui-cast);
+
+  /* A solid ledge, not a gap: taps land on the bar instead of dragging the
+   * island underneath it. §1.10's rule is that the island stays pannable
+   * through every GAP in the HUD, and this is not one. */
+  pointer-events:auto;
+  /* Slot 3 pokes out of the top. */
+  overflow:visible;
+}
+/* Landscape is two-handed, and a 844pt bar would put Ajustes an entire screen
+ * away from Isla. The object stays one object; its span is capped and centred
+ * so both ends sit inside a thumb's arc. */
+@media (orientation:landscape){ .navbar{ max-width:640px; } }
+
+.navbar__inner{
+  display:flex; align-items:stretch;
+  height:var(--ui-nav-h);
+}
+
+/* --- a flat slot ---------------------------------------------------------
+ * No contour, no gloss, no extrusion of its own: it is a region of the bar.
+ * Everything that would have framed it is spent once, on the bar. */
+.navslot{
+  position:relative;
+  flex:1 1 0; min-width:0;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:1px;
+  padding:6px 2px 5px;
+  border-radius:18px;
+  pointer-events:auto;
+  transition:background .08s ease-out;
+}
+.navslot__prop{
+  position:relative;
+  display:block;
+  width:30px; height:30px;
+  transition:translate .06s ease-out;
+}
+.navslot__art{
+  width:100%; height:100%;
+  object-fit:contain;
+  /* Hard offset, no blur (§1.9, §6) — the same drop every baked prop wears. */
+  filter:drop-shadow(0 2px 0 rgba(0,0,0,.42));
+  pointer-events:none;
+}
+/* The contour is a CONSTANT WEIGHT IN PIXELS (§1.6), and at 13px the label
+ * ladder's 2.4px closes Lilita One's counters — `t-micro`'s 1.6px is the step
+ * measured for text this size. Named here rather than borrowed as a class so
+ * the size and its stroke stay together. */
+.navslot__label{
+  font-size:13px;
+  line-height:1.05;
+  -webkit-text-stroke-width:1.7px;
+  text-shadow:0 1px 0 rgba(0,0,0,.82);
+  white-space:nowrap;
+  transition:translate .06s ease-out;
+  pointer-events:none;
+}
+
+/* §3.0's press rule, applied to a region rather than to an object: the
+ * contents travel DOWN and the face dents. Nothing scales, nothing changes
+ * hue, there is no ripple. */
+.navslot:active,
+.navslot.is-pressed{ background:rgba(0,0,0,.22); }
+.navslot:active .navslot__prop,
+.navslot.is-pressed .navslot__prop,
+.navslot:active .navslot__label,
+.navslot.is-pressed .navslot__label{ translate:0 2px; }
+
+/* §5.6's permitted idle loop — a ready chest keeps asking. `ui-bob-t` drives
+ * the `translate` property, so it composes with the press travel above. */
+.navslot.is-ready .navslot__prop{ animation:ui-bob-t .9s ease-in-out infinite; }
+
+/* §4.8's attention cue. Slow and sparse (§5.6): a continuous fast animation
+ * reads as broken. The ring is on ::before so the BAR keeps its own four
+ * layers untouched — a cue must never cost an object a layer. */
+.navslot.is-cued::before{
+  content:''; position:absolute; inset:4px 2px;
+  border-radius:16px;
+  animation:ui-cue 2.5s ease-in-out infinite;
+  pointer-events:none;
+}
+
+/* The badge breaks the PROP's silhouette (§3.8): ~40% hangs outside its
+ * top-right, never tucked in. */
+.navslot .badge{ top:-2px; right:-8px; }
+
+/* --- slot 3, proud of the bar -------------------------------------------
+ * The one element on the bar allowed the full four-layer treatment, and it is
+ * `createTile`'s §3.5 CTA unchanged — same hues, same both-rims, same padlock
+ * when it is locked. It merely sits 20px higher than everything else. */
+.navslot--proud{ pointer-events:none; }
+.navslot--proud .tile--cta{
+  position:absolute;
+  /* Centred on `left` + a negative margin rather than on a transform: `.btn`'s
+   * press travel owns `transform`, and a centring transform there is replaced
+   * by it — the tile would jump half its own width on every press. */
+  left:50%;
+  margin-left:calc(var(--ui-nav-cta) / -2);
+  bottom:var(--ui-nav-sit);
+  width:var(--ui-nav-cta); height:var(--ui-nav-cta);
+  pointer-events:auto;
+}
+.navslot--proud .tile__cap{ font-size:15px; bottom:4px; }
+/* §3.5 wants the art to cross the gloss boundary and nearly touch the frame —
+ * that fullness is what makes the tile read as an object rather than as a
+ * container with a token in it. At 34% the skiff's mast was touching the top
+ * rim, which is one pixel past "nearly". */
+.navslot--proud .tile--captioned .tile__art{ top:37%; width:72%; }
+/* The padlock is drawn for an 88px CTA (§3.5). On a tile this size it stopped
+ * being a prop hung on a corner and became a second object competing with the
+ * ship, so it scales with the tile it belongs to — the overhang is what carries
+ * the meaning (§6.8), not the padlock's absolute size. */
+.navslot--proud .tile__lock{ width:30px; height:30px; left:-9px; top:-9px; }
+@media (orientation:landscape){
+  .navslot--proud .tile__cap{ font-size:16px; }
+  .navslot--proud .tile__lock{ width:34px; height:34px; left:-10px; top:-10px; }
+}
+
+/* --- §3.15 — the build bar replaces the nav while a ghost is on the island
+ * Clash slides the action bar up and slides the controls it replaces OFF the
+ * screen; the swap is a physical exchange, not a cross-fade (§5 law 1, §6).
+ * The extra 26px is the raised tile's overhang, which a push of exactly the
+ * bar's own height would leave stuck to the bottom edge. */
+.navbar{ transition:transform .18s cubic-bezier(.2,1.1,.4,1); }
+#ui.is-placing .navbar{
+  transform:translateY(calc(100% + 26px + var(--ui-nav-lift) + var(--ui-safe-b)));
+  pointer-events:none;
+  transition:transform .16s ease-in;
+}

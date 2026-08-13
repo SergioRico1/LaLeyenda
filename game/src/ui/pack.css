@@ -1,0 +1,99 @@
+/* ============================================================================
+ * pack.css — optional artwork from the third-party vector UI pack.
+ *
+ * Everything here is scoped to `html.has-uipack`, which src/ui/pack.ts sets
+ * only when public/assets/ui/ actually contains the processed images. The pack
+ * is licensed for use but not for redistribution, so it is not in the
+ * repository: a clone without it renders the CSS treatment underneath and
+ * nothing breaks. Never put a rule here that the HUD needs to be correct.
+ *
+ * Only four shapes are taken, and only where CSS genuinely falls short:
+ * a radial ray burst, a chunky pointer, a parchment panel and a nameplate.
+ * The pack's buttons and pills are deliberately NOT used — ours are built
+ * against Clash's four-layer rule and are closer to the bar than the pack's
+ * flat casual style is.
+ * ========================================================================== */
+
+/* --- the ray burst behind a reward reveal --------------------------------- */
+html.has-uipack .burst-host {
+  position: relative;
+  isolation: isolate;
+}
+
+html.has-uipack .burst-host::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 260%;
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  background: url('/assets/ui/burst.webp') center / contain no-repeat;
+  opacity: .85;
+  z-index: -1;
+  pointer-events: none;
+  animation: burst-turn 14s linear infinite;
+}
+
+@keyframes burst-turn {
+  to { rotate: 360deg; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.has-uipack .burst-host::before { animation: none; }
+}
+
+/* --- the next-action pointer ---------------------------------------------
+ * §4.8's resolver already decides which affordance is being nagged about; the
+ * tile only carries `is-cued`. This gives that state a physical arrow instead
+ * of a glow, which is what Clash does and what reads at arm's length. */
+html.has-uipack .tile.is-cued::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  width: 34px;
+  height: 34px;
+  translate: -50% 0;
+  background: url('/assets/ui/pointer.webp') center / contain no-repeat;
+  rotate: 180deg;                 /* the source points up; nudge downward */
+  filter: drop-shadow(0 3px 0 rgba(0, 0, 0, .32));
+  animation: pointer-bob .9s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes pointer-bob {
+  0%, 100% { translate: -50% 0; }
+  50%      { translate: -50% -5px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.has-uipack .tile.is-cued::after { animation: none; }
+}
+
+/* --- the parchment ledger: REMOVED ---------------------------------------
+ *
+ * Tried and rejected. Pasting the pack's notebook page behind the build
+ * catalogue gave the panel two headers (the sheet's own, plus the artwork's
+ * orange band), spiral rings drawn at a different scale and perspective from
+ * everything around them, two sets of rounded corners fighting each other, and
+ * a cream page that drained the rows sitting on it. It read as a sticker over
+ * the panel rather than as the panel.
+ *
+ * The lesson generalises: a panel shape has to be designed with its header,
+ * its rows and its corners, not borrowed. The catalogue's finish belongs in
+ * the sheet's own CSS.
+ * ------------------------------------------------------------------------ */
+
+/* --- the nameplate: REMOVED ----------------------------------------------
+ *
+ * Same failure as the parchment. The plate is sized by its artwork, the title
+ * is sized by its text, and nothing makes the two agree — "Construir"
+ * overflowed the plate at both ends, so it read as a stray beige pill stuck
+ * behind the middle of the word, its contour colliding with the text's own.
+ *
+ * Container artwork has to marry with geometry the CSS already owns, and every
+ * attempt to borrow one has failed for the same reason. What survives from the
+ * pack is only the free-standing pieces — a burst and a pointer — which sit
+ * over the interface without having to fit anything.
+ * ------------------------------------------------------------------------ */

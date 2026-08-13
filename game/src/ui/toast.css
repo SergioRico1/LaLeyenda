@@ -1,0 +1,110 @@
+/* ============================================================================
+ * toast.css — the answer to a tap that cannot do what it asked.
+ *
+ * §3.5 is unambiguous: tapping a locked CTA NAMES THE KEY ("Construye el
+ * Muelle") — never a dead tap. The picker's blocked rows already did this; the
+ * locked ¡Zarpar!, a capped store and every unbuilt route did not, which made
+ * the same gesture answer in one place and die in another.
+ *
+ * `--z-toast` had a token and no users. This is its one user.
+ *
+ * It is a physical object like everything else (§0.2): ink contour, hard gloss
+ * step, top rim, lip and a zero-x extrusion. A translucent grey capsule with
+ * rounded corners is the web-toast look and is exactly what §6 is about.
+ * ========================================================================== */
+
+.layer-toast{
+  position:absolute;
+  left:0; right:0;
+  /* Above the Zone C clusters and clear of them: a message that covers the
+   * button the player is about to correct themselves with is a message in the
+   * way. 248px is the tallest cluster (§2.1) plus its 20px anchor. */
+  bottom:calc(var(--ui-cluster-y) + var(--ui-safe-b) + 268px);
+  z-index:var(--z-toast);
+  display:flex; flex-direction:column; align-items:center; gap:8px;
+  pointer-events:none;
+}
+@media (orientation:landscape){
+  .layer-toast{ bottom:calc(var(--ui-cluster-y) + var(--ui-safe-b) + 128px); }
+}
+
+.toast{
+  max-width:min(86vw, 340px);
+  padding:9px 18px;
+  border:var(--ui-ink-w) solid var(--ui-ink);
+  border-radius:var(--ui-r-btn);
+  background:linear-gradient(180deg,
+    #4E4A44 0%, #4E4A44 52%,
+    #302C29 52.01%, #26231F 92%,
+    #14110E 92.01%, #14110E 100%);
+  box-shadow:inset 0 2px 0 rgba(255,255,250,.42), 0 4px 0 rgba(0,0,0,.34);
+  text-align:center;
+  will-change:transform, opacity;
+}
+.toast .t{ font-size:17px; }
+
+/* Arrives by scaling with an overshoot — nothing fades in (§5 law 1). */
+@keyframes ui-toast-in{
+  0%   { transform:scale(.6) translateY(14px); opacity:0; }
+  55%  { transform:scale(1.06) translateY(0);  opacity:1; }
+  100% { transform:scale(1) translateY(0);     opacity:1; }
+}
+/* …and leaves by ACCELERATING away, not by easing out and lingering. */
+@keyframes ui-toast-out{
+  0%   { transform:scale(1) translateY(0); opacity:1; }
+  100% { transform:scale(.9) translateY(-16px); opacity:0; }
+}
+.toast{ animation:ui-toast-in 240ms cubic-bezier(.2,1.4,.4,1); }
+.toast.is-leaving{ animation:ui-toast-out 160ms ease-in forwards; }
+
+/* --- §3.4 the idle-builder tooltip ---------------------------------------
+ * The other half of the free-builder signal. The carpenter tilt in Zone A is
+ * the nag; this is the bridge from that nag to the tile that can act on it,
+ * and the escalation is what stops the tilt becoming wallpaper. */
+/* Host for the tooltip: the HUD is pointer-events:none and full-bleed, so the
+   tip is positioned against this rather than against the document. */
+.layer-guide-host{
+  position:absolute; inset:0;
+  z-index:var(--z-guide);
+  pointer-events:none;
+}
+.guide-tip{
+  position:absolute;
+  z-index:var(--z-guide);
+  max-width:210px;
+  padding:8px 14px;
+  border:var(--ui-ink-w) solid var(--ui-ink);
+  border-radius:var(--ui-r-btn);
+  background:linear-gradient(180deg,
+    var(--ui-panel-2) 0%, var(--ui-panel-2) 52%,
+    var(--ui-panel) 52.01%, #D8D8CE 92%,
+    #A7A79C 92.01%, #A7A79C 100%);
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.7), 0 4px 0 rgba(0,0,0,.32);
+  pointer-events:none;
+  transform-origin:0 50%;
+}
+.guide-tip .t{
+  font-size:16px; color:#3A3430;
+  -webkit-text-stroke:0; text-shadow:none;
+}
+/* The arrow that points down at the Construir tile. Same silhouette rule as
+ * the bubble tail: contour and body are one shape, drawn with a clip-path. */
+.guide-tip__arrow{
+  position:absolute; left:24px; bottom:-13px;
+  width:22px; height:14px;
+  background:var(--ui-ink);
+  clip-path:polygon(0 0, 100% 0, 50% 100%);
+}
+.guide-tip__arrow::after{
+  content:''; position:absolute; left:3px; top:-3px;
+  width:16px; height:10px;
+  background:#D8D8CE;
+  clip-path:polygon(0 0, 100% 0, 50% 100%);
+}
+@keyframes ui-tip-in{
+  0%   { transform:scale(.5) translateY(8px); opacity:0; }
+  60%  { transform:scale(1.05) translateY(0); opacity:1; }
+  100% { transform:scale(1) translateY(0); opacity:1; }
+}
+.guide-tip{ animation:ui-tip-in 260ms cubic-bezier(.2,1.4,.4,1); }
+.guide-tip.is-leaving{ animation:ui-toast-out 140ms ease-in forwards; }

@@ -1,0 +1,134 @@
+{
+  "title": "La Leyenda Pirata — Gauntlet Loop",
+  "goal": "Mobile Three.js pirate game (island builder + open-sea sailing + raids) built from the CC0 Pirate Nation voxel assets.",
+  "bar": "Art direction: official Pirate Nation media (the shipped game built from these exact assets). UI objects and retention: Clash of Clans / Clash Royale. HUD layout and restraint: Kingshot. Our screenshots must win a blind side-by-side against them.",
+  "pieces": [
+    {
+      "id": "pipeline",
+      "name": "Asset pipeline",
+      "bar": "Every model loads at a sane size with its animation clips intact, under 300KB.",
+      "status": "in_progress",
+      "rounds": [
+        {
+          "n": 1,
+          "summary": "36 models fetched from the CC0 library and optimized to .glb (9.5MB total, animations preserved). Models rendered at wildly wrong scales.",
+          "gap": "Model normalization is broken: three.js, the glTF node transforms, and the GPU disagree about how big a skinned model is — the foundry rendered ~200 units instead of 5.",
+          "shot": null
+        },
+        {
+          "n": 2,
+          "summary": "Root cause found and split in two: gltf-transform's flatten/join double-applied armature transforms on skinned models, and no analytical method measures these models correctly. Pipeline now skips flatten/join for skinned documents, and sizes are calibrated from rendered pixels.",
+          "gap": "Calibration running.",
+          "shot": null
+        },
+        {
+          "n": 3,
+          "summary": "Sizes calibrated by rendering each model's silhouette under an orthographic camera of known extent. Found the last cause of the scale bug: every clip re-asserts the armature's normalizing scale on frame one, so a model's size was only valid until the mixer ticked. The pipeline now drops root scale tracks; parts still animate as authored.",
+          "gap": "Fourteen models remain over the 300KB budget. Voxel models carry tiny palette textures, so converting them to vertex colours should collapse those to one material each.",
+          "shot": null
+        }
+      ]
+    },
+    {
+      "id": "island",
+      "name": "Island scene (builder)",
+      "bar": "reference/island_hero.png",
+      "status": "in_progress",
+      "rounds": [
+        {
+          "n": 1,
+          "summary": "Terrain, stepped beach/grass plateaus, sand paths and the voxel water shader render correctly. Buildings blocked on the scale bug.",
+          "gap": "Water reads too dark and too uniformly blue; foam is evenly scattered where the reference clusters it near the shore. No buildings visible yet.",
+          "shot": "shots/v1_bare.png"
+        },
+        {
+          "n": 2,
+          "summary": "Terrain rebuilt to the measured recipe: island scaled to 26 cells with taller steps, beach ring stepping up to a plateau, grass plots stamped as rounded rectangles with sand between them reading as paths, sun/shade wall colours baked into vertex colours, and lighting retuned to the reference's bright low-contrast exposure.",
+          "gap": "The terrain still has no surface noise at all - the reference has 25 unique colours in a patch where we have 1 - and the plots are laid out arbitrarily rather than composed.",
+          "shot": "shots/v3_water.png"
+        },
+        {
+          "n": 3,
+          "summary": "With the chrome fixed, the verification found the gap had moved to the world: our HUD is now the better-looking half of our own screenshot. Measured, not asserted - sea luminance std-dev 10.7 against the reference's 26.9, detail pixels 10.1% against 24.9%, and empty grass plots reading as unpainted rectangles.",
+          "gap": "The amount of water is right (40.2% of frame against the reference's 43.1%). The texture is not. A round is running with those numbers as its acceptance criteria.",
+          "shot": "shots/layout_after.png"
+        }
+      ]
+    },
+    {
+      "id": "water",
+      "name": "Ocean",
+      "bar": "reference/island_hero.png",
+      "status": "in_progress",
+      "rounds": [
+        {
+          "n": 1,
+          "summary": "Ocean rewritten from measurements taken off the reference: flat surface, 12-step dithered depth ramp keyed to a true shoreline distance field, view ramp fogging toward the horizon, near-camera darkening, clustered two-tier elongated foam decaying exponentially from the shore, and a solid waterline collar.",
+          "gap": "Open-water foam is still denser than the reference's 0.7-1.5%, and the shallow shelf reads flatter than the measured 90-110px gradient.",
+          "shot": "shots/v3_water.png"
+        }
+      ]
+    },
+    {
+      "id": "sea",
+      "name": "Open sea + combat",
+      "bar": "reference/sea_combat.png",
+      "status": "pending",
+      "rounds": []
+    },
+    {
+      "id": "ui",
+      "name": "HUD and panels (Clash objects, Kingshot layout)",
+      "bar": "reference/clash/coc_hud_collect.jpg",
+      "status": "in_progress",
+      "rounds": [
+        {
+          "n": 1,
+          "summary": "Clash UI language reverse-engineered into a 1600-line implementation spec (src/ui/UI_SPEC.md): full token palette, the four-layer rule that makes a surface read as Clash (constant-weight ink contour, hard gloss step at ~50%, warm top rim, dark lip with zero-offset extrusion), portrait and landscape layouts, and component specs.",
+          "gap": "Nothing implemented yet - the spec exists, the HUD does not.",
+          "shot": null
+        },
+        {
+          "n": 2,
+          "summary": "HUD restructured to Kingshot's layout: four corner clusters became one bottom bar with five slots, seven separately-framed pills became one translucent capsule with dividers, building timers became dark capsules, and the sim's next-action verdict is now stated in words above the bar. Chrome hides 16.9% of the portrait screen; against Clash we win on chrome.",
+          "gap": "The four-layer rule was being applied per component by hand, so each round fixed some objects and regenerated the defect in others. Now enforced by npm run audit:layers, which measures the rendered pixels.",
+          "shot": "shots/layout_after.png"
+        }
+      ]
+    },
+    {
+      "id": "economy",
+      "name": "Economy, save and daily hooks",
+      "bar": "A session leaves a timer running and something to collect; reopening applies offline production. See RETENTION.md.",
+      "status": "in_progress",
+      "rounds": [
+        {
+          "n": 1,
+          "summary": "Economy, persistence and the daily hooks built: balance.json holds every tuning number, src/sim/ is pure and deterministic, IndexedDB persistence with export/import, and 88 tests including the storage invariant at every town hall level and a greedy 24h playthrough that must never strand the player.",
+          "gap": "Verified by finger in a real browser: a builder can be spent both ways and the retention rule holds for 0 minutes of violation. Missing: the tutorial director, so a new game ships the opening session's result rather than its performance.",
+          "shot": null
+        }
+      ]
+    },
+    {
+      "id": "hooks",
+      "name": "Retention loops",
+      "bar": "reference/clash/cr_chest_reward.jpg",
+      "status": "in_progress",
+      "rounds": [
+        {
+          "n": 1,
+          "summary": "Retention design made concrete: beat-by-beat first three minutes (first tap before 10s, two buildings and two collections inside 32s, first real timer at 45s, first chest pre-aged so opening costs exactly 1 gem), plus full balance tables for producers, storages, town hall and chests.",
+          "gap": "Corrections to RETENTION.md not yet folded in: start with 2 builders not 1, producer cap and storage cap are two different mechanics, and total storage must exceed the most expensive unlock by 25% or the player hits a hard wall.",
+          "shot": null
+        },
+        {
+          "n": 2,
+          "summary": "Build mode and the upgrade sheet shipped, so the builder - the scarce resource the whole loop hangs on - can finally be spent. Picker, ghost placement on the grid, confirm/cancel, and a sheet with a 2x2 stat grid and the cost on the CTA.",
+          "gap": "Four economy defects found by verification and fixed: paying gems charged and did nothing, chest loot was destroyed while the reveal announced the roll, level 1 was free and instant for every copy, and the Lleno chip upgraded the wrong store.",
+          "shot": "shots/layout_sheet.png"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,172 @@
+/* ============================================================================
+ * pill.css — §3.1 storage pill, §3.2 wallet pill, §3.3 gem pill.
+ *
+ * The anatomy most implementations get wrong:
+ *   · the fill is ANCHORED RIGHT and drains LEFTWARD, with a hard vertical
+ *     left edge and no rounded cap (§6.2)
+ *   · the empty track is translucent WHITE over the live 3D scene — never an
+ *     opaque grey, which is what severs a HUD from its world (§6.3)
+ *   · the icon OVERHANGS the capsule (§6.6), and its overhang is measured from
+ *     the DRAWN ink, not from the PNG's box (§1.7)
+ *   · the hard step belongs to the TUBE, not to the liquid in it: the empty
+ *     half of a Clash bar is as carved as the full half (§0.2 layer 2)
+ * ========================================================================== */
+
+.pill{
+  --pct:0;
+  --fill:var(--ui-res-gold);
+  position:relative;
+  width:var(--ui-pill-w);
+  height:var(--ui-pill-h);
+  border:var(--ui-ink-w) solid var(--ui-ink);
+  border-radius:var(--ui-r-pill);
+  flex:0 0 auto;
+  /* Layer 4. The header of this file used to say a HUD pill takes no shadow
+   * because it "sits ON the world" — but nothing in the reference sits on the
+   * world without casting, and a capsule with no extrusion is a printed shape.
+   * It is the SHORT rung of the ladder (2px), not the tile's 6px. */
+  box-shadow:var(--ui-drop-xs);
+  /* Never tappable — which is exactly why it may live out of thumb reach. */
+  pointer-events:none;
+}
+
+/* The track is a TUBE, and layer 2 belongs to the tube — not to the liquid in
+ * it. Shipped, only the filled fraction carried a step, which on a HUD holding
+ * a 17%-full gold pill and two empty ones meant about an eighth of the pill
+ * area had any modelling at all: a column scan through the gold pill found the
+ * same rgb(92,158,190) held for 25 consecutive rows, no ramp, no break.
+ *
+ * The reference's empty gold track, scanned top to bottom, runs L≈128 → 104
+ * with the break just under halfway. So: the wash, then the step over it, then
+ * the lip inside the bottom. The empty half of a Clash bar is as carved as the
+ * full half. */
+.pill__track{
+  position:absolute; inset:0;
+  border-radius:var(--ui-r-pill);
+  overflow:hidden;
+  background:var(--ui-track-empty);
+}
+.pill__track::after{
+  content:'';
+  position:absolute; inset:0;
+  background:var(--ui-track-gloss);
+  /* layer 4 — the dark lip inside the bottom of the tube */
+  box-shadow:inset 0 -2px 0 var(--ui-lip);
+  pointer-events:none;
+}
+.pill__fill{
+  position:absolute; right:0; top:0; bottom:0;
+  width:calc(var(--pct) * 100%);
+  background-color:var(--fill);
+  background-image:var(--ui-fill-gloss);   /* top-lit split at 56% */
+  /* Hard vertical left edge, no feather, no rounded cap — the 1px darkening
+   * keeps that edge legible where fill and track are close in value (the
+   * metal pill over open water). */
+  box-shadow:inset 1px 0 0 rgba(0,0,0,.28);
+  transition:width .45s cubic-bezier(.2,.9,.3,1);
+}
+/* 1px warm-white rim along the top inside, across empty AND filled. */
+.pill__rim{
+  position:absolute; left:7px; right:7px; top:0; height:1px;
+  background:rgba(255,255,255,.5);
+  border-radius:999px;
+  pointer-events:none;
+}
+/* The centring is the `translate` PROPERTY, not a `transform`, so §5.3's punch
+ * can own `transform`/`scale` without cancelling the layout. When both lived on
+ * `transform`, every count-up dropped the numeral 12px for its whole 120ms and
+ * snapped it back — four times a second while production ticks. */
+.pill__num{
+  position:absolute; right:46px; top:50%;
+  translate:0 -50%;
+  transform-origin:100% 50%;
+  font-size:20px;
+  white-space:nowrap;
+  pointer-events:none;
+}
+/* The icon OVERHANGS the capsule (§6.6), and §1.7's edge rule is about DRAWN
+ * extent — so the overhang is measured from the ink, not from the PNG's box.
+ * `--ink-x1` is where this prop's ink ends inside its own canvas (icons.ts,
+ * alignInk); subtracting the leftover margin puts every pill's drawn right
+ * edge on the same pixel instead of on a 6px ragged line. */
+.pill__icon{
+  position:absolute; top:50%;
+  /* `right` is measured from the PADDING edge, so the capsule's own contour has
+   * to be added back or every overhang is 3px shy of where it was specified. */
+  right:calc(-18px - var(--ui-ink-w) - (1 - var(--ink-x1,1)) * var(--ui-pill-icon));
+  width:var(--ui-pill-icon); height:var(--ui-pill-icon);
+  transform:translateY(-50%);
+  pointer-events:none;
+}
+.pill__icon img{ width:100%; height:100%; object-fit:contain; }
+
+@media (orientation:landscape){
+  .pill__num{ font-size:22px; right:50px; }
+  .pill__icon{ right:calc(-20px - var(--ui-ink-w) - (1 - var(--ink-x1,1)) * var(--ui-pill-icon)); }
+}
+
+/* Counters punch when they change (§5.3) — the shared `.is-punching` rule in
+ * base.css does it, so there is one implementation for every numeral. */
+/* The pill flashes white when a collected value lands on it (§3.9). */
+.pill.is-hit .pill__track{ box-shadow:inset 0 0 0 999px rgba(255,255,255,.30); }
+/* The flash has to LEAVE on a curve, or the arrival is a 120ms strobe. */
+.pill__track{ transition:box-shadow .16s ease-out; }
+
+/* §3.1 states: at cap the fill lifts 6% and, while TWO OR MORE producers of
+ * that resource are capped, the pill pulses amber every 3s. One full producer
+ * does not pulse — the cue has to stay worth reading. */
+.pill.is-full .pill__fill{ filter:brightness(1.06); }
+@keyframes ui-pill-pulse{
+  0%, 84%, 100% { filter:brightness(1); }
+  92%           { filter:brightness(1.12); }
+}
+.pill.is-pressing{ animation:ui-pill-pulse 3s ease-in-out infinite; }
+
+/* --- §3.2 wallet variant / §3.3 gem pill ---------------------------------
+ * No fill bar: this variant shows what you HAVE, not how full you are.
+ * Interior is translucent BLACK, with a light rim on top and bottom. */
+.pill--well .pill__track{ background:var(--ui-track-well); }
+.pill--well .pill__rim--low{
+  top:auto; bottom:0;
+  background:rgba(255,255,255,.28);
+}
+
+/* The `+` sits on the end OPPOSITE the icon (§3.3.2). */
+.plus{
+  --brk:60%;
+  position:absolute; left:-10px; top:50%;
+  width:34px; height:34px;
+  transform:translateY(-50%);
+  border:var(--ui-ink-w) solid var(--ui-ink);
+  border-radius:10px;
+  display:grid; place-items:center;
+  background:linear-gradient(180deg,
+    #8FD13C 0%, #79BE2A var(--brk),
+    #5C910F calc(var(--brk) + .01%), #4E7D0E 92%,
+    #33570A 92.01%, #33570A 100%);
+  box-shadow:inset 0 2px 0 var(--ui-rim), 0 3px 0 rgba(0,0,0,.32);
+  pointer-events:auto;
+  transition:transform .06s ease-out, box-shadow .06s ease-out;
+}
+.plus:active,
+.plus.is-pressed{
+  transform:translateY(calc(-50% + 3px));
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.35), 0 1px 0 rgba(0,0,0,.3);
+  /* The shared give: every pressed object travels AND dims by the same .94.
+   * This one travelled without dimming — the odd tap out on the whole HUD. */
+  filter:brightness(.94);
+}
+.plus span{
+  font-size:20px; line-height:1;
+  -webkit-text-stroke-width:var(--ui-txt-stroke-x);
+  text-shadow:0 2px 0 rgba(0,0,0,.82);
+  margin-top:-2px;
+}
+.plus.tap::after{ width:48px; height:48px; }
+
+@media (orientation:landscape){
+  .plus{ width:38px; height:38px; border-radius:10px; }
+}
+
+/* New pills slide in from the right and settle (§4.1 staged reveal). */
+.pill.is-revealing{ animation:ui-slide-in-right 280ms cubic-bezier(.2,1.3,.4,1); }

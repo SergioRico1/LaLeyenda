@@ -1,0 +1,42 @@
+{
+  "name": "la-leyenda-pirata",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "test": "node tools/test.mjs",
+    "preview": "vite preview",
+    "assets:fetch": "node tools/fetch-assets.mjs",
+    "assets:optimize": "node tools/optimize.mjs",
+    "assets": "npm run assets:fetch && npm run assets:optimize",
+    "shoot": "node tools/shoot.mjs",
+    "assets:ui": "node tools/ui-assets.mjs",
+    "audit:layers": "node tools/audit-layers.mjs",
+    "audit:sea": "npm run shoot -- island --mobile --hud 0 --out shots/sea.png && node tools/sea-metrics.mjs reference/island_hero.png shots/sea.png --bands",
+    "test:roundtrip": "node tools/roundtrip.mjs",
+    "perf": "node tools/perf.mjs",
+    "perf:calls": "node tools/perf.mjs --calls-only",
+    "perf:where": "node tools/perf.mjs --by-material --calls-only",
+    "bundle": "node tools/bundle.mjs",
+    "bundle:boot": "node tools/bundle.mjs --boot",
+    "ship": "node tools/bundle.mjs && node tools/perf.mjs",
+    "deploy": "cd .. && VERCEL_ORG_ID=team_AJv516WEUzoN5kxHzVKhqoiC VERCEL_PROJECT_ID=prj_cwAZ4E8WKcpmPNAtAfCJuY0cz8jq npx vercel@latest --prod --yes --scope sergiorico1-s-team",
+    "health": "node tools/health.mjs"
+  },
+  "dependencies": {
+    "three": "^0.171.0"
+  },
+  "devDependencies": {
+    "@gltf-transform/core": "^4.1.0",
+    "@gltf-transform/extensions": "^4.1.0",
+    "@gltf-transform/functions": "^4.1.0",
+    "@types/three": "^0.171.0",
+    "meshoptimizer": "^0.22.0",
+    "playwright": "^1.49.0",
+    "sharp": "^0.33.5",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0"
+  }
+}

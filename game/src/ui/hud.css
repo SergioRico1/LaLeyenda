@@ -1,0 +1,144 @@
+/* ============================================================================
+ * hud.css — §2 Layout, restructured to LAYOUT_SPEC.
+ *
+ * Portrait first, one-handed (§2.1):
+ *   ZONE A  top      read-only, deliberately out of reach
+ *   ZONE B  middle   the island. No screen-anchored chrome at all.
+ *   ZONE C  bottom   the thumb zone. EVERYTHING actionable lives here.
+ *
+ * What changed, and why the zones survived it:
+ *
+ * Zone A used to be two columns — a level row, a builder chip and a status
+ * chip on the left, a stack of up to five framed resource pills on the right —
+ * which at Ayuntamiento 4 was seven separately-contoured objects fighting along
+ * the top edge for information nobody presses. LAYOUT_SPEC §2 groups them into
+ * ONE translucent capsule with thin dividers, and spends the remaining frame on
+ * the two things Kingshot also frames: the level/XP row and the premium
+ * currency. Two rows in portrait, one in landscape, and the island gains back
+ * about 90px of sky.
+ *
+ * Zone C used to be four corner clusters. LAYOUT_SPEC §1 makes it one bar with
+ * five slots and one raised primary, plus §4's objective line above it. The
+ * corners were the worst part of a phone for a thumb and nothing there said how
+ * many destinations the game has; a bar answers both by existing.
+ *
+ * Both bottom objects live in components/navbar.css and components/objective.css
+ * — this file only places Zone A and the two strays that belong to neither.
+ * ========================================================================== */
+
+.hud{
+  position:absolute; inset:0;
+  z-index:var(--z-hud);
+  pointer-events:none;
+}
+
+/* --- ZONE A --------------------------------------------------------------
+ * One stack, full width, so the world-anchored layer has a single ceiling to
+ * measure against (hud.ts's `spread`) rather than the taller of two columns. */
+.zone-a{
+  position:absolute;
+  left:calc(var(--ui-edge) + var(--ui-safe-l));
+  right:calc(var(--ui-edge) + var(--ui-safe-r));
+  top:calc(10px + var(--ui-safe-t));
+  display:flex; flex-direction:column;
+  gap:8px;
+  pointer-events:none;
+}
+
+/* Row 1 — the two things that keep their own frame.
+ *
+ * LAYOUT_SPEC §2: "Heavy framing is spent only on the avatar portrait and the
+ * premium currency." Ours are the level badge with its XP capsule (the figure
+ * that says who you are) and the gem pill. Everything else in Zone A groups. */
+.zone-a__row{
+  display:flex; align-items:center; justify-content:space-between;
+  gap:12px;
+}
+/* The gem pill is the only pill left on the HUD, so it is no longer sized to
+ * match a stack it used to belong to — it is sized to its own contents. The
+ * width holds four digits clear of the `+` that overhangs its left cap. */
+.zone-a__row .pill{ width:124px; margin-right:18px; }
+@media (orientation:landscape){ .zone-a__row .pill{ width:150px; margin-right:20px; } }
+
+@media (orientation:landscape){
+  /* Landscape has the width for Kingshot's real arrangement — ONE row, with the
+   * capsule centred between the framed level badge and the framed gem pill,
+   * exactly as ks_02 lays out avatar · capsule · gold.
+   *
+   * `display:contents` promotes row 1's two children into this grid rather than
+   * building a second DOM shape for one orientation; `order` then puts the
+   * capsule between them. */
+  .zone-a{
+    display:grid;
+    grid-template-columns:auto 1fr auto;
+    align-items:center;
+    gap:16px;
+  }
+  .zone-a__row{ display:contents; }
+  .zone-a .level-row{ order:0; }
+  .zone-a .readout{ order:1; justify-self:center; }
+  .zone-a__row .pill{ order:2; }
+}
+
+/* --- ZONE B · the island ------------------------------------------------
+ * No screen-anchored chrome. Only world-anchored objects, re-projected every
+ * frame and clamped to the viewport minus 16px so a bubble at the island's
+ * edge never renders half off-screen. */
+.zone-b{
+  position:absolute; inset:0;
+  z-index:var(--z-world-ui);
+  pointer-events:none;
+}
+.world-item{
+  position:absolute; left:0; top:0;
+  will-change:transform;            /* one translate3d per frame, never left/top */
+}
+.world-item__anchor{
+  transform:translate(var(--ax,-50%), var(--ay,-100%));
+}
+.world-item.is-off{ display:none; }
+
+/* --- §3.9 Recoger Todo ---------------------------------------------------
+ * A green wide pill in the CENTRE CHANNEL, and only at 4+ pending bubbles.
+ * Below that it never appears: a shortcut that shows up for two bubbles
+ * teaches the player to stop tapping the island.
+ *
+ * It clears the objective line, which clears the raised CTA, which clears the
+ * bar — the whole bottom stack is measured off the two nav tokens so moving
+ * one of them moves everything above it. */
+.collect-all{
+  position:absolute;
+  left:50%;
+  bottom:calc(var(--ui-nav-lift) + var(--ui-nav-sit) + var(--ui-nav-cta) + 62px + var(--ui-safe-b));
+  transform:translateX(-50%);
+  min-height:52px; padding:10px 30px;
+  --brk:60%;
+  pointer-events:auto;
+  /* §5 law 1 — it used to materialise in one frame. The `scale` property, not
+   * `transform`, so the -50% centring above survives the entrance. Un-hiding
+   * flips `display`, which is what restarts this each time it is offered. */
+  animation:ui-pop-s 260ms cubic-bezier(.2,1.4,.4,1);
+}
+.collect-all[hidden]{ display:none; }
+/* AND THE POSITION HAS TO BE OUT-SPECIFIED TOO — the same trap as the one
+ * below, one property along, and this one cost the pill its whole existence.
+ *
+ * `.btn` sets `position:relative` (components/button.css). Both selectors are
+ * (0,1,0), `button.css` is imported after this file, so `.btn` won — and on a
+ * RELATIVE box `bottom:159px` does not mean "159px up from the bottom of the
+ * screen", it means "shift 159px up from where you would have sat". The pill
+ * sits at the top of `.hud` in normal flow (every one of its siblings is
+ * absolute, so nothing pushes it down), and it was therefore drawn at
+ * y = -159, entirely off the top edge, at EVERY viewport size measured:
+ * 320x568, 360x640, 390x844, 430x932 and all three landscapes.
+ *
+ * §3.9's shortcut for four or more pending bubbles has never been tappable.
+ * Found by walking the tiny-screen path, but it was never about small screens. */
+.collect-all.btn{ position:absolute; }
+/* Pressing it must still travel, and `transform` is spoken for by the centring.
+ * `.btn:active` sets `transform:translateY(4px)`, which REPLACES that centring
+ * — so the pill jumped half its own width to the left on every press. The
+ * `.btn` selector is in a later stylesheet, so this has to out-specify it, and
+ * the travel goes on `translate` where it composes instead of competing. */
+.collect-all.btn:active,
+.collect-all.btn.is-pressed{ transform:translateX(-50%); translate:0 4px; }

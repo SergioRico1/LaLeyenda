@@ -1,0 +1,518 @@
+/* ============================================================================
+ * store.css — la Tienda: the gem shelf, over a dimmed island.
+ *
+ * The reference is Clash's gem shop (reference/clash/coc_shop_gems.jpg): blue
+ * item cards on a dark well, each one carrying a name, a count, the goods and
+ * a price band — inside the cream sheet Ajustes established, at Kingshot's
+ * chrome budget. Every raised object below carries §0.2's four layers: ink
+ * contour, HARD gloss step, warm top rim, dark lip + zero-x extrusion.
+ *
+ * The goods are the reference's real trick: each tier is its own rendered
+ * PROP over a radial burst (store.ts draws them), so the escalation puñado →
+ * bolsa → cofre → arcón is read from the art before any number.
+ *
+ * Deliberately absent, because their absence is a design requirement (no dark
+ * patterns): no ribbon, no countdown, no fake discount, no tier drawn louder
+ * than its neighbours. Four equal cards whose CONTENTS escalate; the one chip
+ * ("Popular", on the bolsa) states a fact quietly and is the ceiling.
+ * ========================================================================== */
+
+.store {
+  /* Same overlay altitude as Ajustes (settings.css): above the guide layer,
+     below toasts, and the two never stack — each is closed before the other
+     opens (src/main.ts). */
+  --store-z: 940;
+  --store-dim: rgba(5, 8, 12, 0.58);
+
+  position: absolute;
+  inset: 0;
+  z-index: var(--store-z);
+  display: flex;
+  justify-content: center;
+  /* CENTRED, not stretched — unlike Ajustes this sheet holds four cards and
+     two lines, and stretching it to the viewport left half a screen of blank
+     cream under them the first time it was photographed. It hugs its content
+     and lets the island show above and below, which is also how the reference
+     panel sits over its village. */
+  align-items: center;
+  padding: calc(var(--ui-safe-t) + 34px) 14px calc(var(--ui-safe-b) + 22px);
+}
+
+.store__scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--store-dim);
+  /* The shared overlay grammar (see settings.css): sheet pops, dim fades in
+     over the same 200ms. One enter for every panel in the game. */
+  opacity: 0;
+  animation: ui-scrim-in 0.2s ease-out forwards;
+}
+/* Shot mode kills animations; freeze the scrim at its resting (opaque) state. */
+html.shot:not(.motion) .store__scrim { opacity: 1; }
+
+/* --- the sheet — the same three-layer edge as Ajustes --------------------- */
+.store__sheet {
+  position: relative;
+  z-index: 1;
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 100%;
+  background: linear-gradient(180deg, #F3F2EB 0%, var(--ui-panel) 24%, #DFDED4 100%);
+  border: var(--ui-frame-w) solid var(--ui-frame);
+  border-radius: var(--ui-r-panel);
+  box-shadow:
+    0 0 0 3px var(--ui-frame-dark),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.55),
+    0 8px 0 rgba(0, 0, 0, 0.32),
+    var(--ui-cast-lg);
+  animation: ui-pop-s 0.2s cubic-bezier(0.2, 1.35, 0.4, 1);
+  transform-origin: 50% 42%;
+}
+
+.store__head {
+  position: relative;
+  flex: 0 0 auto;
+  padding: 12px 58px 8px;
+  text-align: center;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.14);
+}
+
+/* Ink on cream — outlined white display type on a light panel is a sticker. */
+.store__title {
+  margin: 0;
+  color: var(--ui-ink);
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 2px 0 rgba(255, 255, 255, 0.6);
+}
+
+/* --- the balance strip ----------------------------------------------------
+ * One dark capsule under the header: the player's own ledger, and the landing
+ * pad the paid face punches. Label left, framed gem count right — the same
+ * grammar as the HUD's readout, so it needs no explaining. */
+.store__balance {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 12px 4px;
+  padding: 8px 8px 8px 14px;
+  border-radius: 12px;
+  background: var(--ui-well);
+  box-shadow:
+    inset 0 3px 0 rgba(0, 0, 0, 0.42),
+    inset 0 -2px 0 rgba(255, 255, 255, 0.07),
+    0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.store__balance-label { opacity: 0.8; }
+
+/* The count wears the gem family's own frame — a small §0.2 object. */
+.store__balance-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 12px 4px 8px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  border-radius: 999px;
+  background: linear-gradient(180deg,
+    #4A5A3A 0%, #3C4A30 60%,
+    #2A351F 60.01%, #2A351F 100%);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 250, 0.28),
+    0 2px 0 rgba(0, 0, 0, 0.3);
+}
+.store__balance-icon { width: 24px; height: 24px; }
+.store__balance-num { font-size: 20px; white-space: nowrap; }
+
+/* --- the scrolling body --------------------------------------------------- */
+.store__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 8px 12px 16px;
+  border-radius: 0 0 15px 15px;
+}
+
+.store__what {
+  margin: 0 4px 10px;
+  line-height: 1.34;
+  color: #5A5148;
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+/* --- the shelf ------------------------------------------------------------ */
+.store__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 11px;
+  transition: opacity 0.14s ease-out;
+}
+/* While the confirm card is up the shelf steps back and stops taking taps —
+   one decision on screen at a time. */
+.store__grid.is-behind {
+  opacity: 0.42;
+  pointer-events: none;
+}
+
+/* --- a card ---------------------------------------------------------------
+ * §0.2 in the blue item family (tokens §1.3: "BLUE = information and item
+ * tiles (cards)"): contour, gloss plate ending in a hard step, top rim, and a
+ * dark lip the extrusion falls from. The card IS the button. */
+.store__card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 9px 8px 0;
+  min-height: 158px;
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  border-radius: var(--ui-r-card);
+  overflow: hidden;               /* the price band squares its own corners */
+  background: linear-gradient(180deg,
+    #A6E6F6 0%,               #64CFE9 46%,
+    var(--ui-blue-a) 46.01%,  var(--ui-blue-b) 88%,
+    #17505F 88.01%,           #17505F 100%);
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim),
+    inset 0 -2px 0 var(--ui-rim-low),
+    var(--ui-drop-sm), var(--ui-cast);
+  transition: transform 0.06s ease-out, box-shadow 0.06s ease-out, filter 0.06s ease-out;
+}
+.store__card:active,
+.store__card.is-pressed {
+  transform: translateY(3px);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.35),
+    0 1px 0 rgba(0, 0, 0, 0.3);
+  filter: brightness(0.94);
+}
+
+.store__card-name {
+  font-size: 15px;
+  -webkit-text-stroke-width: 1.9px;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+  /* §3.20 — "title colour follows the card hue: lime with a dark green outline
+     on a blue card". The picker's blue rows already obey it; these are the
+     same blue item family and had plain white names — the one place the two
+     blue card sets visibly disagreed. Body numerals stay white. */
+  color: #A6F02B;
+  -webkit-text-stroke-color: #20430C;
+}
+
+.store__card-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+.store__card-gem { width: 21px; height: 21px; filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.35)); }
+/* The thousands separator is a THIN SPACE (format.ts) and it BREAKS: in the
+   landscape 4-up grid "1 200" wrapped into "1 / 200" the first time it was
+   photographed. Counts never wrap. */
+.store__card-num { font-size: 21px; white-space: nowrap; }
+
+/* The goods: this tier's own prop (store.ts draws it) standing on a common
+   ground line, a radial burst glowing behind it — the reference's card center,
+   where ours used to be a gradient void. */
+.store__card-art {
+  position: relative;
+  flex: 1 0 auto;
+  align-self: stretch;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-height: 86px;
+  padding: 4px 0 7px;
+}
+
+/* The burst: soft radial core + faint spokes, masked so it dies before the
+   card edge. Light, not chrome — it has no contour and casts nothing. */
+.store__card-burst {
+  position: absolute;
+  left: 50%;
+  top: var(--burst-y, 52%);
+  width: var(--burst, 96px);
+  height: var(--burst, 96px);
+  translate: -50% -50%;
+  background:
+    repeating-conic-gradient(from 8deg,
+      rgba(255, 255, 255, 0.27) 0deg 10deg,
+      rgba(255, 255, 255, 0) 10deg 26deg),
+    radial-gradient(closest-side,
+      rgba(255, 255, 255, 0.62) 0%,
+      rgba(255, 255, 255, 0.22) 52%,
+      rgba(255, 255, 255, 0) 74%);
+  -webkit-mask-image: radial-gradient(closest-side, #000 32%, rgba(0, 0, 0, 0.42) 62%, transparent 80%);
+  mask-image: radial-gradient(closest-side, #000 32%, rgba(0, 0, 0, 0.42) 62%, transparent 80%);
+  pointer-events: none;
+}
+/* The burst grows with the treasure — tier 4 announces itself from across
+   the room, which is escalation by light rather than by shouting chrome —
+   and each burst is centred on ITS prop's mass, not on the block. */
+.store__card-art--punado { --burst: 92px;  --burst-y: 62%; }
+.store__card-art--bolsa  { --burst: 116px; --burst-y: 57%; }
+.store__card-art--cofre  { --burst: 130px; --burst-y: 54%; }
+.store__card-art--arcon  { --burst: 146px; --burst-y: 52%; }
+
+.store__prop { position: relative; display: block; height: auto; }
+.store__prop--punado { width: 62px; }
+.store__prop--bolsa  { width: 70px; }
+.store__prop--cofre  { width: 86px; }
+.store__prop--arcon  { width: 100px; }
+
+/* §0.2 layer 1 for the drawn props: constant-weight ink on every silhouette
+   (vector-effect holds it at 3px whatever size the prop renders at). */
+.store__ink {
+  stroke: var(--ui-ink);
+  stroke-width: 3px;
+  paint-order: stroke;
+  stroke-linejoin: round;
+}
+
+/* The one merchandising chip the shelf allows: a small gold statement of
+   fact on the bolsa's art corner. No pulse, no rotation, no arrow. */
+.store__card-pop {
+  position: absolute;
+  top: 0;
+  right: 2px;
+  padding: 2px 9px 3px;
+  font-size: 11px;
+  color: #5A3A06;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  border-radius: 999px;
+  background: linear-gradient(180deg,
+    #FFE083 0%, var(--ui-gold-a) 55%,
+    var(--ui-gold-b) 55.01%, var(--ui-gold-b) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 250, 0.6),
+    0 2px 0 rgba(0, 0, 0, 0.25);
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(255, 255, 250, 0.5);
+}
+
+/* The price band: a dark slab across the card's foot, lit by its own top
+   line — the same treatment as the reference's, and the one place on the
+   card where a price could not be mistaken for a gem count. */
+.store__card-price {
+  align-self: stretch;
+  margin: 4px -8px 0;
+  padding: 7px 4px 9px;
+  text-align: center;
+  background: #17505F;
+  box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.35), inset 0 -1px 0 rgba(255, 255, 255, 0.10);
+}
+.store__card-price-text {
+  font-size: 18px;
+  -webkit-text-stroke-width: 2px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.8);
+}
+
+/* --- the confirm card -----------------------------------------------------
+ * The raised parchment object settings.css established for decisions: its own
+ * four layers, a lit head band with a hard step at its foot, ink on paper. */
+.store__confirm {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0 2px;
+  padding: 12px 13px 13px;
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  border-radius: 12px;
+  overflow: hidden;
+  background: linear-gradient(180deg,
+    #E9D8BA 0%,      #DCC8A2 93%,
+    #A98F68 93.01%,  #A98F68 100%);
+  box-shadow:
+    inset 0 -2px 0 rgba(255, 255, 255, 0.3),
+    var(--ui-drop-sm), var(--ui-cast);
+}
+.store__confirm[hidden] { display: none !important; }
+
+.store__confirm-title {
+  margin: -12px -13px 2px;
+  padding: 12px 13px 10px;
+  text-align: center;
+  color: #6B4A12;
+  background: linear-gradient(180deg, #FFF9EE 0%, #F4E6CE 100%);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.9),
+    0 1px 0 rgba(23, 19, 14, 0.22);
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+.store__confirm-title--paid { color: #2E7A0C; }
+
+/* The product on the decision card: same prop, one size, and the burst warmed
+   to parchment — white light on cream reads as a smudge, gold reads as glow. */
+.store__confirm-art {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-height: 62px;
+  padding: 2px 0 1px;
+}
+.store__confirm-art .store__prop { width: 62px; }
+.store__confirm-art .store__prop--punado { width: 54px; }
+.store__confirm-burst {
+  --burst: 96px;
+  top: 55%;
+  background:
+    repeating-conic-gradient(from 8deg,
+      rgba(233, 178, 58, 0.20) 0deg 10deg,
+      rgba(233, 178, 58, 0) 10deg 26deg),
+    radial-gradient(closest-side,
+      rgba(255, 219, 122, 0.55) 0%,
+      rgba(255, 219, 122, 0.18) 52%,
+      rgba(255, 219, 122, 0) 72%);
+}
+
+/* Both sides of the trade, side by side, in one recessed strip. */
+.store__confirm-trade {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-radius: 9px;
+  overflow: hidden;
+  background: rgba(102, 78, 44, 0.16);
+  box-shadow: inset 0 2px 0 rgba(102, 78, 44, 0.22), 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.store__confirm-cell {
+  padding: 8px 6px 9px;
+  text-align: center;
+}
+.store__confirm-cell + .store__confirm-cell { border-left: 1px solid rgba(102, 78, 44, 0.28); }
+.store__confirm-key {
+  margin: 0 0 3px;
+  color: #6B5335;
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+.store__confirm-val {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.store__confirm-gem { width: 24px; height: 24px; filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.25)); }
+.store__confirm-num { font-size: 22px; white-space: nowrap; }
+.store__confirm-val--paid { padding: 2px 0; }
+.store__confirm-val--paid .store__confirm-num { font-size: 30px; }
+.store__confirm-val--paid .store__confirm-gem { width: 30px; height: 30px; }
+
+.store__confirm-body,
+.store__confirm-plat {
+  margin: 0;
+  text-align: center;
+  line-height: 1.32;
+  -webkit-text-stroke-width: 0;
+  text-shadow: none;
+}
+.store__confirm-body { color: #3B2C1E; }
+.store__confirm-plat { color: #6B5335; }
+
+.store__confirm-status {
+  margin: 0;
+  text-align: center;
+  color: #4A6B2A;
+  -webkit-text-stroke-width: 0;
+  text-shadow: none;
+}
+.store__confirm-status.is-bad { color: #8E1A17; }
+.store__confirm-status[hidden] { display: none !important; }
+
+.store__confirm-acts {
+  display: flex;
+  gap: 9px;
+  margin-top: 2px;
+}
+.store__confirm-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 46px;
+  padding: 8px 10px;
+  --brk: 60%;
+}
+.store__confirm-btn .t-btn { font-size: 16px; }
+/* The committing button carries the price, so it runs a size down from a
+   plain verb — two words and a figure have to fit a half-width button. */
+.store__confirm-buy .t-btn { font-size: 15.5px; letter-spacing: -0.02em; }
+
+/* --- the footer notes ----------------------------------------------------- */
+.store__earned {
+  margin: 12px 4px 0;
+  line-height: 1.34;
+  text-align: center;
+  color: #5A5148;
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+/* --- the red X, breaking the corner (§3.14) ------------------------------- */
+.store__x {
+  position: absolute;
+  right: 10px;
+  top: 0;
+  translate: 0 -46%;
+  width: 48px;
+  height: 48px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 11px;
+  overflow: visible;
+  z-index: 2;
+  background: linear-gradient(180deg,
+    var(--ui-red-a) 0%, var(--ui-red-b) 92%,
+    var(--ui-red-lip) 92.01%, var(--ui-red-lip) 100%);
+}
+.store__x::before {
+  content: '';
+  position: absolute;
+  inset: 3px 4px auto 4px;
+  height: 52%;
+  border-radius: 8px 8px 4px 4px;
+  background: linear-gradient(180deg, var(--ui-red-gloss-a), var(--ui-red-gloss-b));
+  pointer-events: none;
+}
+.store__x .mark--x { width: 46%; }
+.store__x .mark { position: relative; z-index: 1; }
+
+/* --- iPhone SE and below -------------------------------------------------- */
+@media (max-width: 379px) {
+  .store__body { padding: 8px 9px 12px; }
+  .store__grid { gap: 9px; }
+  .store__card { min-height: 146px; }
+  .store__card-num { font-size: 19px; }
+  .store__card-art { min-height: 72px; }
+  .store__prop--punado { width: 50px; }
+  .store__prop--bolsa  { width: 57px; }
+  .store__prop--cofre  { width: 71px; }
+  .store__prop--arcon  { width: 85px; }
+  .store__card-art--punado { --burst: 72px; }
+  .store__card-art--bolsa  { --burst: 86px; }
+  .store__card-art--cofre  { --burst: 100px; }
+  .store__card-art--arcon  { --burst: 114px; }
+}
+
+/* --- landscape ------------------------------------------------------------ */
+@media (orientation: landscape) {
+  .store { padding-top: calc(var(--ui-safe-t) + 26px); }
+  .store__head { padding: 8px 58px 6px; }
+  .store__grid { grid-template-columns: repeat(4, 1fr); }
+  /* Four-up: a quarter-width card holds a smaller prop, same escalation. */
+  .store__card-art { min-height: 64px; }
+  .store__prop--punado { width: 42px; }
+  .store__prop--bolsa  { width: 48px; }
+  .store__prop--cofre  { width: 58px; }
+  .store__prop--arcon  { width: 68px; }
+  .store__card-art--punado { --burst: 62px; }
+  .store__card-art--bolsa  { --burst: 72px; }
+  .store__card-art--cofre  { --burst: 82px; }
+  .store__card-art--arcon  { --burst: 92px; }
+}

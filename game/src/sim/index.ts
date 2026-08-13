@@ -1,0 +1,394 @@
+import { BALANCE, type ResourceId } from './balance';
+import {
+  buildersFree, finishNowCost, gemSpeedupCost, placeInPlace, placeRefusal, spotRefusalNow,
+  startUpgradeInPlace, upgradeRefusal,
+} from './build';
+import { sanitizeCaptain } from './captain';
+import { clearRefusal, startClearInPlace } from './obstacles';
+import {
+  awardChestInPlace, openChestInPlace, skipCost, startChestInPlace, startRefusal,
+} from './chests';
+import { clone, collectInPlace, isProducer, spilledStoreNeeded } from './economy';
+import { advanceInPlace, type OfflineSummary } from './offline';
+import { claimDailyInPlace, claimQuestInPlace, dailyAvailable, noteInPlace } from './progression';
+import type { ActionResult, Captain, GameState, SimEvent, SimResult } from './types';
+
+/**
+ * sim/index.ts — the whole public surface of the simulation.
+ *
+ * Every function here is pure: it takes a state (and a time, always passed IN)
+ * and returns a NEW state plus the events that happened. Nothing mutates the
+ * argument, nothing reads a clock, nothing touches the DOM or three.js.
+ * ui/ dispatches into these; render/ only reads the result.
+ */
+
+export * from './balance';
+export * from './types';
+export { createNewGame, createDemoIsland } from './state';
+export {
+  AVATAR_PARTS, AVATAR_SLOTS, NAME_MAX, OPTIONAL_SLOTS, createCaptain, cycleSlot, isValidLook,
+  looksParts, nameAgrees, rollLook, rollName, sanitizeCaptain, sanitizeLook, sanitizeName,
+  slotOptional, slotOptions,
+} from './captain';
+export { advanceInPlace, applyLongAbsenceGiftInPlace, type OfflineSummary } from './offline';
+export {
+  buildersFree, buildersTotal, buildersBusy, gemSpeedupCost, finishNowCost, upgradePlan, placeable,
+  buildCatalog, upgradeGains, upgradeRefusal, townHallUnlocks, placeRefusal, spotRefusal,
+  spotRefusalNow, plotHalf, plotsOverlap, plotsTooClose,
+  type CatalogEntry, type UpgradeGain, type UpgradePlan,
+} from './build';
+export {
+  obstacleAt, obstacleUnder, obstacleTier, obstaclesBusy, clearRefusal,
+  seedObstaclesInPlace, reseedObstaclesInPlace, islandCentreCell, islandRadius,
+  type SeedOptions,
+} from './obstacles';
+export {
+  storeCap, storeCaps, producerCapacity, producerRate, producerResource, isProducer, isFull,
+  landCargoInPlace, previewLanding, spilledStoreNeeded,
+  townHallLevel, fillTimeMs, canAfford, productionMultiplier,
+} from './economy';
+export { chestTrayHint, readyCount, unlockingSlot, skipCost, type ChestTrayHint, type Loot } from './chests';
+export {
+  dailyAvailable, dailyReward, claimableQuests, questComplete, localDayIndex, xpForLevel,
+} from './progression';
+export { checkStorageInvariant, checkStoreLadder, auditStorage } from './invariant';
+export { parseDuration, SECOND, MINUTE, HOUR, DAY } from './duration';
+
+const fail = (state: GameState, refusal: ActionResult['refusal']): ActionResult =>
+  ({ state, events: [], ok: false, refusal });
+
+/* --------------------------------------------------------------------------
+ * time
+ * ----------------------------------------------------------------------- */
+
+/** Advance the world to `now`. A frame and a three-day absence are the same
+ *  call; only the summary is interesting for the second one. */
+export function tick(state: GameState, now: number): SimResult & { summary: OfflineSummary } {
+  const next = clone(state);
+  const { events, summary } = advanceInPlace(next, now);
+  return { state: next, events, summary };
+}
+
+/* --------------------------------------------------------------------------
+ * the minutes clock — collecting
+ * ----------------------------------------------------------------------- */
+
+export function collect(state: GameState, buildingId: number): ActionResult & { amount: number; spilled: number } {
+  const next = clone(state);
+  const building = next.buildings.find((b) => b.id === buildingId);
+  if (!building) return { ...fail(next, 'unknown-building'), amount: 0, spilled: 0 };
+  if (!isProducer(building) || building.stock <= 0) {
+    return { ...fail(next, 'nothing-to-collect'), amount: 0, spilled: 0 };
+  }
+
+  const { resource, moved, spilled } = collectInPlace(next, building);
+  if (!resource) return { ...fail(next, 'nothing-to-collect'), amount: 0, spilled: 0 };
+
+  const events: SimEvent[] = [{ type: 'collected', buildingId, resource, amount: moved, spilled }];
+  if (moved > 0) {
+    noteInPlace(next, 'collects');
+    noteInPlace(next, `collected.${resource}` as keyof GameState['stats'], moved);
+  }
+  // moved === 0 with stock left is the store being full: a real refusal the UI
+  // turns into `Almacén al máximo`, not a silent no-op.
+  return {
+    state: next, events, ok: moved > 0,
+    refusal: moved > 0 ? undefined : 'store-full',
+    amount: moved, spilled,
+  };
+}
+
+/** §3.9 — offered only at 4+ pending bubbles, and unlocked at Ayto 4. */
+export function collectAll(state: GameState): ActionResult & { totals: Partial<Record<ResourceId, number>> } {
+  let current = state;
+  const events: SimEvent[] = [];
+  const totals: Partial<Record<ResourceId, number>> = {};
+  for (const building of state.buildings) {
+    if (!isProducer(building) || building.stock <= 0) continue;
+    const result = collect(current, building.id);
+    if (!result.ok) continue;
+    current = result.state;
+    events.push(...result.events);
+    for (const event of result.events) {
+      if (event.type !== 'collected') continue;
+      totals[event.resource] = (totals[event.resource] ?? 0) + event.amount;
+    }
+  }
+  return { state: current, events, ok: events.length > 0, totals };
+}
+
+/* --------------------------------------------------------------------------
+ * the hours clock — builders and timers
+ * ----------------------------------------------------------------------- */
+
+export function startUpgrade(state: GameState, buildingId: number, now: number): ActionResult {
+  const next = clone(state);
+  const building = next.buildings.find((b) => b.id === buildingId);
+  if (!building) return fail(next, 'unknown-building');
+  const refusal = upgradeRefusal(next, building, now);
+  if (refusal) return fail(next, refusal);
+  startUpgradeInPlace(next, building, now);
+  return { state: next, events: [], ok: true };
+}
+
+/**
+ * §3.15 — the confirm tap. Both halves of the refusal are re-checked here even
+ * though the ghost has been asking them on every pointer move: the picker's
+ * answer can go stale between opening the sheet and the ✓ (another timer
+ * finished and took the last builder), and an action that trusts the UI's last
+ * word is an action that can be raced.
+ */
+export function place(state: GameState, type: string, x: number, z: number, now: number): ActionResult {
+  const next = clone(state);
+  const refusal = placeRefusal(next, type, now) ?? spotRefusalNow(next, type, x, z);
+  if (refusal) return fail(next, refusal);
+  placeInPlace(next, type, x, z, now);
+  return { state: next, events: [], ok: true };
+}
+
+/**
+ * OPENING.md part 3 — taking a palm, a rock or a wreck off a buildable cell.
+ *
+ * Costs nothing, occupies a builder for a short timer, and pays a little madera
+ * when it finishes. It is the one action a brand-new player can always afford,
+ * which is why it is what the first thirty seconds are made of; the payout does
+ * not land here but in the tick, exactly like a build does, so a clear that
+ * finishes while the app is shut pays the same as one watched.
+ */
+export function clearObstacle(state: GameState, obstacleId: number, now: number): ActionResult {
+  const next = clone(state);
+  const refusal = clearRefusal(next, obstacleId, buildersFree(next, now));
+  if (refusal) return fail(next, refusal);
+  startClearInPlace(next.obstacles.find((o) => o.id === obstacleId)!, now);
+  return { state: next, events: [], ok: true };
+}
+
+/**
+ * What "Terminar Ya" costs on a RUNNING clear, or null when there is nothing
+ * to rush. Round 11's playtest, finding 3: a fifteen-minute peñasco job had no
+ * visible state and no way out, "it reads as a soft-lock". The price rides
+ * §4.4's one ladder — the same curve a construction pays, golden rule included
+ * — because a second price list for the same wait would be a second thing to
+ * learn and a first thing to exploit.
+ */
+export function clearNowCost(state: GameState, obstacleId: number, now: number): number | null {
+  const target = state.obstacles.find((o) => o.id === obstacleId);
+  if (!target?.work) return null;
+  return gemSpeedupCost(target.work.endsAt - now);
+}
+
+/** The gem rush on a clear job — the exact shape of a building's finishNow:
+ *  pay, land the timer on `now`, and let the tick own completion and payout. */
+export function finishClearNow(state: GameState, obstacleId: number, now: number): ActionResult & { gems: number } {
+  const next = clone(state);
+  const target = next.obstacles.find((o) => o.id === obstacleId);
+  if (!target) return { ...fail(next, 'unknown-obstacle'), gems: 0 };
+  if (!target.work) return { ...fail(next, 'not-ready'), gems: 0 };
+  const cost = gemSpeedupCost(target.work.endsAt - now);
+  if (next.gems < cost) return { ...fail(next, 'not-enough-gems'), gems: cost };
+  next.gems -= cost;
+  target.work.endsAt = now;
+  // Completion, the madera payout, XP and the obstacle-cleared event all
+  // belong to the tick, so a paid clear celebrates exactly like a waited one.
+  const { events } = advanceInPlace(next, now);
+  return { state: next, events, ok: true, gems: cost };
+}
+
+/** "Terminar Ya" — pay gems, and the last five minutes always cost exactly 1. */
+export function finishNow(state: GameState, buildingId: number, now: number): ActionResult & { gems: number } {
+  const next = clone(state);
+  const building = next.buildings.find((b) => b.id === buildingId);
+  if (!building || !building.work) return { ...fail(next, 'unknown-building'), gems: 0 };
+  const cost = finishNowCost(building, now) ?? 0;
+  if (next.gems < cost) return { ...fail(next, 'not-enough-gems'), gems: cost };
+  next.gems -= cost;
+  building.work.endsAt = now;
+  // Completion, XP and the finished event all belong to the tick.
+  const { events } = advanceInPlace(next, now);
+  return { state: next, events, ok: true, gems: cost };
+}
+
+/* --------------------------------------------------------------------------
+ * the captain
+ * ----------------------------------------------------------------------- */
+
+/**
+ * The creation screen's ✓, and the only way a captain reaches a save.
+ *
+ * The look is sanitized rather than trusted — this is the one action whose
+ * argument is assembled by a screen from arrow taps and a text field, and an
+ * unknown part id would reach the renderer as a 404 on a model nobody can see.
+ *
+ * The SEED is taken from the state, never from the argument: by the time this
+ * runs the island has already been generated, so a captain claiming a different
+ * seed is describing an island that is not under them.
+ */
+export function setCaptain(state: GameState, captain: Captain): ActionResult {
+  const next = clone(state);
+  next.captain = sanitizeCaptain(captain, next.seed);
+  return { state: next, events: [], ok: true };
+}
+
+/**
+ * One-shot UI flags, through the sim like everything else.
+ *
+ * The tutorial is the first caller: "seen" has to survive a reload or the
+ * director replays its opening line every time the app is backgrounded, and
+ * `flags` is already the field on GameState that exists for exactly this.
+ */
+export function setFlag(state: GameState, key: string, value = true): ActionResult {
+  const next = clone(state);
+  next.flags = { ...next.flags, [key]: value };
+  return { state: next, events: [], ok: true };
+}
+
+/**
+ * The island has said the landing out loud — round 11's finding 1.
+ *
+ * Marks the report seen so a reload does not repeat the toast, WITHOUT
+ * forgetting the loss: the report itself stays until the next voyage replaces
+ * it, because `spilledStoreNeeded` keeps pointing at the missing store for as
+ * long as the spill is the island's live problem. Idempotent and never
+ * refused — acknowledging news twice is not an error a player should hear.
+ */
+export function markLandingSeen(state: GameState): ActionResult {
+  const next = clone(state);
+  if (next.landing) next.landing = { ...next.landing, seen: true };
+  return { state: next, events: [], ok: true };
+}
+
+/* --------------------------------------------------------------------------
+ * chests
+ * ----------------------------------------------------------------------- */
+
+export function startChest(state: GameState, slot: number, now: number): ActionResult {
+  const next = clone(state);
+  const refusal = startRefusal(next, slot);
+  if (refusal) return fail(next, refusal);
+  startChestInPlace(next, slot, now);
+  return { state: next, events: [], ok: true };
+}
+
+export function skipChest(state: GameState, slot: number, now: number): ActionResult & { gems: number } {
+  const next = clone(state);
+  const cost = skipCost(next, slot, now);
+  if (cost === null) return { ...fail(next, 'not-ready'), gems: 0 };
+  if (next.gems < cost) return { ...fail(next, 'not-enough-gems'), gems: cost };
+  next.gems -= cost;
+  next.chests[slot].endsAt = now;
+  const { events } = advanceInPlace(next, now);
+  return { state: next, events, ok: true, gems: cost };
+}
+
+export function openChest(state: GameState, slot: number): ActionResult & { loot: ReturnType<typeof openChestInPlace> } {
+  const next = clone(state);
+  const chest = next.chests[slot]?.type ?? '';
+  const loot = openChestInPlace(next, slot);
+  if (!loot) return { ...fail(next, 'not-ready'), loot: null };
+  noteInPlace(next, 'chestsOpened');
+  const { rolled, ...granted } = loot;
+  return {
+    state: next, ok: true, loot,
+    // The event carries what LANDED. `rolled` stays on the action result for a
+    // UI that wants to point out the store cap ate the difference.
+    events: [{ type: 'chest-opened', slot, chest, loot: { ...granted } }],
+  };
+}
+
+/** Moves a banked Cofre Libre from the Muelle into a free tray slot. */
+export function claimFreeChest(state: GameState): ActionResult {
+  const next = clone(state);
+  if (next.freeChestsBanked <= 0) return fail(next, 'not-ready');
+  if (awardChestInPlace(next, BALANCE.chests.freeChest.type) < 0) return fail(next, 'slot-busy');
+  next.freeChestsBanked--;
+  return { state: next, events: [], ok: true };
+}
+
+/* --------------------------------------------------------------------------
+ * the days clock
+ * ----------------------------------------------------------------------- */
+
+export function claimDaily(state: GameState, now: number): ActionResult {
+  const next = clone(state);
+  if (!dailyAvailable(next, now)) return fail(next, 'already-claimed');
+  const claim = claimDailyInPlace(next, now);
+  return { state: next, events: [{ type: 'daily-claimed', day: claim.day }], ok: true };
+}
+
+export function claimQuest(state: GameState, index: number): ActionResult {
+  const next = clone(state);
+  const quest = next.quests.daily[index];
+  if (!claimQuestInPlace(next, index)) return fail(next, 'not-ready');
+  return { state: next, events: [{ type: 'quest-complete', questId: quest.id }], ok: true };
+}
+
+/* --------------------------------------------------------------------------
+ * §4.8 — the next-action resolver, as a mechanism rather than an intention
+ * ----------------------------------------------------------------------- */
+
+export type NextAction =
+  | 'construir' | 'almacen' | 'cofres' | 'diario' | 'pills' | 'zarpar' | 'recoger' | 'obras' | 'none';
+
+/**
+ * Evaluated on every session start and after every state change; the first hit
+ * wins. If it ever returns 'none' the loop is broken and that is a bug — the
+ * caller is expected to log it.
+ */
+export function nextAction(state: GameState, now: number): NextAction {
+  // Round 11's playtest, finding 1: the last voyage lost cargo to a store that
+  // does not exist. While that report stands, the store is genuinely buildable
+  // and a carpenter is free, the first thing to say is BUILD IT — the loss is
+  // the live problem, and 'construir' alone would leave the picker to explain
+  // why. Same tap as rule 1 (the picker), sharper words on the objective line.
+  if (buildersFree(state, now) > 0 && spilledStoreNeeded(state) !== null) return 'almacen';
+
+  if (buildersFree(state, now) > 0) return 'construir';
+
+  // §4.8 #2: a chest sitting in the tray with nothing brewing, or one already
+  // open-able. Both are one tap from a reward; a chest mid-timer is not.
+  const ready = state.chests.some((s) => s.state === 'ready');
+  const waiting = state.chests.some((s) => s.state === 'waiting');
+  const unlocking = state.chests.some((s) => s.state === 'unlocking');
+  if (ready || state.freeChestsBanked > 0 || (waiting && !unlocking)) return 'cofres';
+
+  if (dailyAvailable(state, now) || state.quests.daily.some((q) => !q.claimed && q.progress >= q.target)) {
+    return 'diario';
+  }
+
+  const fullByResource = new Map<ResourceId, number>();
+  for (const b of state.buildings) {
+    if (!isProducer(b)) continue;
+    const spec = BALANCE.buildings[b.type];
+    const resource = spec.resource;
+    if (!resource) continue;
+    const cap = spec.levels[b.level - 1]?.capacity ?? 0;
+    if (cap > 0 && b.stock >= cap - 1e-6) fullByResource.set(resource, (fullByResource.get(resource) ?? 0) + 1);
+  }
+  // §3.1: one full producer does not earn a pulse; two or more do.
+  for (const count of fullByResource.values()) if (count >= 2) return 'pills';
+
+  const producers = state.buildings.filter(isProducer);
+  const idle = producers.length > 0 && producers.every((b) => {
+    const cap = BALANCE.buildings[b.type].levels[b.level - 1]?.capacity ?? 1;
+    return b.stock < cap * 0.2;
+  });
+  if (idle) return 'zarpar';
+
+  // ✎ §4.8's five rules leave one hole: every builder busy, every chest
+  // brewing, nothing claimable, and producers sitting between 20% and full.
+  // There IS something to do there — collect — and the bubbles are already
+  // saying so, so this hit surfaces no chrome. It exists so that 'none' keeps
+  // meaning "the loop is genuinely broken" rather than "the list is short".
+  if (producers.some((b) => b.stock >= 1)) return 'recoger';
+
+  // ✎ OPENING.md's island opens a second hole in §4.8's five rules, and it is
+  // the mirror of the first: every builder out clearing obstacles, no producer
+  // built yet, so there is no bubble to point at and nothing claimable. The loop
+  // is emphatically NOT broken there — two carpenters are working and the timers
+  // on them are the reason to come back — so 'none' would be a lie. Like
+  // 'recoger' it surfaces no chrome; the timer bars over the island are already
+  // saying it. It is last so it can never mask a hook that is actually tappable.
+  if (state.buildings.some((b) => b.work) || state.obstacles.some((o) => o.work)) return 'obras';
+
+  return 'none';
+}

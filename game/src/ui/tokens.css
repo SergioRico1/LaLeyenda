@@ -1,0 +1,228 @@
+/* ============================================================================
+ * tokens.css — UI_SPEC §1, verbatim. No additions.
+ *
+ * Do not add a token that does not do a job. An extra "brand" hue, a second
+ * font, or a decorative accent is the thing that makes a clone look like a
+ * clone (§6.20).
+ * ========================================================================== */
+
+/* --- §1.1 Ink, light and shadow — the four layers ------------------------ */
+:root {
+  /* --- 1. CONTOUR --- */
+  --ui-ink:        #17130E;   /* warm near-black. NEVER #000 — that reads as a hole. */
+  --ui-ink-w:      3px;       /* constant at every size: 24px badge and 340px card alike */
+  --ui-ink-w-sm:   2px;       /* elements under ~28px only */
+
+  /* --- 2. GLOSS STEP (set --brk per element, see table below) --- */
+  --brk:           52%;
+
+  /* --- 3. RIM ---
+   * Scanned down the reference's 60px confirm button (coc_build_mode, x=506):
+   * contour L=10, then the rim row at L=245 — very nearly pure white, not the
+   * 62%-opacity wash we shipped, which composited to about L=218 over green.
+   * The rim is the brightest pixel on a Clash button; at 62% it was reading as
+   * part of the gloss instead of as the lit edge. */
+  --ui-rim:        rgba(255,255,250,.88);  /* top inner edge, every raised surface */
+  --ui-rim-low:    rgba(255,255,240,.34);  /* bottom inner edge — ALL sizes, see §3.0 */
+
+  /* --- 4. LIP + EXTRUSION ---
+   * The extrusion is a LADDER, not a constant: in the reference the Attack tile
+   * casts visibly further than the small button beside it, so depth carries
+   * hierarchy. Pick by drawn height, not by importance. */
+  --ui-lip:        rgba(0,0,0,.32);
+  --ui-drop-xs:    0 2px 0 rgba(0,0,0,.30);    /* under 32px — chips, pills, badges */
+  --ui-drop-sm:    0 3px 0 rgba(0,0,0,.30);    /* 32–52px */
+  --ui-drop:       0 4px 0 rgba(0,0,0,.30);    /* 52–80px — hard, zero blur, ZERO x */
+  --ui-drop-lg:    0 6px 0 rgba(0,0,0,.32);    /* over 80px — the primary CTA */
+  /* The ground shadow is a HARD offset with a 1–2px soft edge and nothing more.
+   * Measured under the reference's Attack tile: contour, then L=35 → 91 → 92 →
+   * 109 → full grass. Four rows. §1.9 names blur as the fastest way to look
+   * like a generic mobile game, and 16px of it was exactly that. */
+  --ui-cast:       0 5px 2px rgba(0,0,0,.30);
+  --ui-cast-lg:    0 7px 3px rgba(0,0,0,.32);
+}
+
+/* `--brk` is a function of height, not a constant:
+ *   > 80px  → 47%   (attack tile, ¡Zarpar!)
+ *   52–80px → 52%   (confirm ✓, close X → 59%)
+ *   < 52px  → 60%   (brew pill, status chips)                                */
+
+/* --- §1.2 Surfaces — panels, pages, wells -------------------------------- */
+:root {
+  --ui-panel:      #EAEAE2;   /* cream panel body — warm off-white, never pure white */
+  --ui-panel-2:    #F4F4F0;   /* raised cream: active tab face, callout strips */
+  --ui-well:       #3A3635;   /* dark charcoal content well INSIDE a cream panel */
+  --ui-frame:      #6E645C;   /* warm taupe stone band of the modal border */
+  --ui-frame-w:    5px;
+  --ui-frame-dark: #211E19;   /* outermost 3px near-black stroke of the frame */
+  --ui-page:       #352933;   /* full-screen page body — desaturated aubergine, not black */
+  --ui-letterbox:  #050505;
+  --ui-scrim:      rgba(0,0,0,.48);  /* celebration dim — sits ABOVE the HUD */
+  --ui-tab-off:    #827E70;
+  --ui-navy-a:     #061C2E;   /* chest scene background top */
+  --ui-navy-b:     #0E3557;   /* chest scene background bottom (radial, behind chest) */
+}
+
+/* --- §1.3 Button hues — five families, one recipe ------------------------ */
+:root {
+  /* GREEN = go / confirm / claim.
+   * `-a` was only 13% below the gloss bottom, so the BREAK barely existed even
+   * though the face's overall span was right. Deepened to the ~0.80 the
+   * reference's Attack tile steps by, without moving the body's bottom. */
+  --ui-green-gloss-a:#DCF782; --ui-green-gloss-b:#A5DC4D;
+  --ui-green-a:#7ABE28;       --ui-green-b:#6BAB33;      --ui-green-lip:#46761F;
+  /* GREEN-CONFIRM (build placement ✓, slightly cooler & deeper) */
+  --ui-ok-gloss-a:#E1F852;    --ui-ok-gloss-b:#CFF041;
+  --ui-ok-a:#4ABA14;          --ui-ok-b:#45B316;         --ui-ok-lip:#2E7A0C;
+  /* RED = close / stop */
+  --ui-red-gloss-a:#FF9A98;   --ui-red-gloss-b:#F0706F;
+  --ui-red-a:#D4141A;         --ui-red-b:#B60D10;        --ui-red-lip:#7C0A0C;
+  /* ORANGE = the primary world action (¡Zarpar!, Construir)
+   * Calibrated against the reference's Attack tile, column x=28 (a column that
+   * clears its icon): plate #FEBA4B → #E59532, hard step to #CF701E, body
+   * settling at #C7651A. Our body was already an almost exact match; only the
+   * plate's TOP was low, so that is all that moved. */
+  --ui-orange-gloss-a:#FEBA4B;--ui-orange-gloss-b:#E59532;
+  --ui-orange-a:#CE7016;      --ui-orange-b:#C86A15;     --ui-orange-lip:#9A4E0E;
+  /* GOLD/AMBER = premium surface (Cofres — our featured tile).
+   * `-a` is the gloss BOTTOM and `-b` the body TOP, so the step is a→b. */
+  --ui-gold-a:#F3BB26;        --ui-gold-b:#D08C10;
+  --ui-gold-deep:#A06E15;     --ui-gold-text:#F5E27A;    --ui-gold-lip:#8A5B0F;
+  /* LIGHT UTILITY GREY = settings, log, missions. CREAM-warm, not neutral.
+   * This family's step ran BACKWARDS: gloss-b #E4E2CE is L=224 and base-a
+   * #EFEDDC is L=236, so the lower half was 12 units LIGHTER than the bottom
+   * of the upper half and the tile read as a flat cream square with a seam
+   * across it. The two stops were simply transposed. */
+  --ui-grey-gloss-a:#FFFEF0;  --ui-grey-gloss-b:#F3F1DF;
+  --ui-grey-a:#CBC8AE;        --ui-grey-b:#B4B199;       --ui-grey-lip:#87856F;
+  /* MID-STONE SECONDARY = passive, "quizá luego", inactive tab, DISABLED */
+  --ui-grey2-gloss-a:#D6D6CE; --ui-grey2-gloss-b:#B9B9B2;
+  --ui-grey2-a:#9A9A90;       --ui-grey2-b:#8E8E84;      --ui-grey-lip-2:#6A675E;
+  /* BLUE = information and item tiles (cards, info "i") */
+  --ui-blue-a:#4ECBE6;        --ui-blue-b:#3E9FC0;
+  --ui-blue-rim:#8FE0F5;      --ui-blue-stroke:#1B3F4E;
+  --ui-info-a:#52C0F0;        --ui-info-b:#2E86C4;
+  /* IVORY = the one featured frame. Reserve it. */
+  --ui-ivory:#FFF9E4;
+}
+
+/* --- §1.4 Resource identity --------------------------------------------- */
+:root {
+  --ui-res-gold:#F5D546;  --ui-res-wood:#C57C2A;
+  --ui-res-rum: #CE3FD6;  --ui-res-metal:#7C8DA0;  --ui-res-gem:#B7E33A;
+
+  /* pill internals
+   *
+   * §1.4 warned to verify these against the turquoise sea. Doing so overturns
+   * the obvious fix. Scanned down the reference's empty gold track (x=950): the
+   * interior runs L≈128 at the top to L≈104 at the bottom over grass at L≈128 —
+   * the track is level with its ground, or a touch DARKER, not brighter. Ours
+   * already composites to L≈142 over an L≈83 sea, so it is further above its
+   * ground than Clash's is. Raising it would have made the stack chalkier.
+   *
+   * What actually made the stack sink is HUE, not value: a pure-white wash over
+   * a blue sea stays blue (measured track 201°, sea 202°), whereas Clash's over
+   * grass lands neutral against green. So the wash is WARMED — it now reads as
+   * a separate object rather than as brighter water — and the tube finally gets
+   * the top-lighting the reference shows (a ~20% decline top to bottom). */
+  --ui-track-empty: rgba(255,247,232,.36);  /* translucent WARM white over the live 3D scene */
+  --ui-track-well:  rgba(28,22,16,.46);     /* translucent BLACK — pills with no fill bar */
+  /* Layer 2 for a TUBE: the hard step belongs to the tube, not to the liquid in
+   * it, so this rides over the whole track — empty half included (§0.2). */
+  --ui-track-gloss: linear-gradient(180deg,
+      rgba(255,255,255,.22) 0%,   rgba(255,255,255,.22) 50%,
+      rgba(0,0,0,.12)      50.01%,rgba(0,0,0,.12)      100%);
+  --ui-fill-gloss: linear-gradient(180deg,
+      rgba(255,255,255,.36) 0%,   rgba(255,255,255,.36) 50%,
+      rgba(0,0,0,.16)      50.01%,rgba(0,0,0,.16)      100%);
+
+  /* build/craft timer */
+  --ui-timer-a:#A6E04B;   --ui-timer-b:#7CC423;
+
+  /* badge */
+  --ui-badge-red:#E02A22; --ui-badge-ring:#FFF4DE;
+
+  /* build mode */
+  --ui-grid-ok: rgba(20,220,10,.55);
+  --ui-grid-bad:rgba(220,30,20,.55);
+  --ui-arrow:   #92CA27;
+
+  /* rarity — frame colour ONLY, never the art */
+  --ui-rarity-common:#C8D2DC;  --ui-rarity-rare:#7FD0E8;
+  --ui-rarity-hot:   #D79352;  --ui-rarity-legend:#F0B722;
+}
+
+/* --- §1.5 Radii ---------------------------------------------------------- */
+:root {
+  --ui-r-pill:  999px;  /* resource pills, timer bars, XP bars */
+  --ui-r-btn:   14px;   /* text button   ≈ 0.22 × height */
+  --ui-r-icon:  16px;   /* square icon button ≈ 0.19 × side */
+  --ui-r-card:  18px;   /* shop/offer card ≈ 0.08 × width */
+  --ui-r-panel: 20px;   /* modal. Rounded RECTANGLE, not a squircle. Do not raise. */
+  --ui-r-badge: 8px;    /* ≈ 0.30 × size — a rounded SQUARE, not a circle */
+  --ui-r-tile:  10px;   /* reward tile ≈ 0.11 × width */
+  --ui-r-chip:  7px;    /* status chip */
+}
+
+/* --- §1.6 Type ----------------------------------------------------------- */
+:root {
+  --ui-font-display:'Lilita One','Baloo 2',system-ui,sans-serif;  /* headings, labels */
+  --ui-font-num:    'Fredoka','Baloo 2',system-ui,sans-serif;     /* all numerals, w600 */
+
+  /* The text contour is a CONSTANT WEIGHT IN PIXELS, exactly like --ui-ink-w.
+   *
+   * Declaring it in em was the one place the system scaled a contour with its
+   * element, which §6.9 forbids everywhere else — and at HUD sizes it closed
+   * the letterforms outright. Measured by rasterising "1 000" in the shipped
+   * Fredoka SemiBold and flood-filling for enclosed counters: at 20px the
+   * declared 0.20em (4px, so 2px of visual outline per side) leaves ZERO
+   * enclosed background — the bowls are solid, "1 000" renders "1 ▮▮▮". The
+   * face's counter is only ~5px wide at that size, so two 2px strokes eat it.
+   *
+   * Sweeping the stroke: 4.0px → no bowls · 3.0px → 1px · 2.6px → 1–2px ·
+   * 2.2px → 2px in every bowl. 2.2px declared (1.1px visual) is the widest
+   * outline this face survives below ~26px, and it holds the reference's 2–3px
+   * aperture. Display sizes have the room for more, hence the second step. */
+  --ui-txt-stroke-h:2.4px;   /* LABELS/HEADINGS under ~26px → 1.2px visual */
+  --ui-txt-stroke-n:2.2px;   /* NUMERALS under ~26px       → 1.1px visual */
+  --ui-txt-stroke-x:2.2px;   /* GLYPHS (X, ✓, +) */
+  --ui-txt-stroke-lg:3.4px;  /* 28px and up — measured to keep 3px bowls */
+  --ui-txt-drop:    0 0.07em 0 rgba(0,0,0,.82);  /* hard, zero blur, down only */
+}
+
+/* --- §1.7 Metrics — responsive scale ------------------------------------- */
+:root {                       /* PORTRAIT (default, mobile-first) */
+  --ui-pill-h:32px;  --ui-pill-w:150px; --ui-pill-icon:50px; --ui-pill-gap:8px;
+  --ui-icon-btn:56px; --ui-cta:88px;    --ui-cta-sub:56px;
+  --ui-badge-size:24px; --ui-tap-min:48px;
+  --ui-edge:12px;                /* no HUD element inside 12px of an edge, pre-safe-area */
+  --ui-cluster-x:20px; --ui-cluster-y:20px;
+  --ui-safe-t:env(safe-area-inset-top,0px);
+  --ui-safe-b:env(safe-area-inset-bottom,0px);
+  --ui-safe-l:env(safe-area-inset-left,0px);
+  --ui-safe-r:env(safe-area-inset-right,0px);
+}
+@media (orientation:landscape) {
+  :root {
+    --ui-pill-h:34px; --ui-pill-w:clamp(150px,15vw,220px);
+    --ui-pill-icon:54px; --ui-pill-gap:12px;
+    --ui-cta:96px;  --ui-cta-sub:60px;
+  }
+}
+@media (max-width:359px) {     /* iPhone SE and below */
+  :root { --ui-pill-w:132px; --ui-cta:80px; --ui-cta-sub:52px; --ui-cluster-x:14px; }
+}
+
+/* --- §1.10 Layer stack --------------------------------------------------- */
+:root{
+  --z-world-ui:100;   /* bubbles, timer bars, ¡Lleno! chips, drag arrows — projected */
+  --z-hud:200;        /* pills, clusters, top chips */
+  --z-buildbar:250;   /* build-mode bottom bar (portrait) */
+  --z-panel:400;      /* tier-1 floating panel */
+  --z-page:500;       /* tier-2 full-screen page */
+  --z-celebrate:600;  /* tier-3 scrim — ABOVE the HUD, dims the pills too */
+  --z-celebrate-fg:610;
+  --z-guide:900;      /* contramaestre + orange arrow + tutorial dim */
+  --z-guide-target:901;/* the one element promoted above the tutorial dim */
+  --z-toast:950;
+}

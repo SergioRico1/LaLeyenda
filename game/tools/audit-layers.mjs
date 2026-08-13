@@ -1,0 +1,359 @@
+#!/usr/bin/env node
+// Enforces UI_SPEC §0.2 — the four-layer rule — against the rendered pixels.
+//
+// WHY THIS EXISTS
+//
+// Three rounds of "AAA finish" did not converge, and the verification that
+// followed the third named the reason: the rule is understood but unenforced,
+// so quality is per-component luck and every round regenerates the same defect
+// somewhere new. The proof was a single session in which one builder shipped a
+// textbook §0.2 object and, beside it, a timer capsule with one of the four
+// layers. Both passed tsc. Both passed all 88 tests. Both were marked done.
+//
+// A style rule that only lives in prose is re-litigated every time somebody
+// writes CSS. This turns it into something a build can fail on, the same way
+// the retention test turned "the loop must never break" from a sentence in a
+// design document into a condition with teeth.
+//
+// WHAT IT CHECKS
+//
+// For each registered component it takes a vertical column through the middle
+// of the rendered element and looks for, in order:
+//
+//   1. an ink contour     — dark rows at the top and bottom edges
+//   2. a warm rim         — a bright row just inside the top contour
+//   3. a HARD gloss step  — a single-row luminance fall near mid-height, deep
+//                           enough to read as lit rather than tinted
+//   4. a lip + extrusion  — darkening inside the bottom edge, and a shadow band
+//                           below the object
+//
+//   npm run audit:layers            audit, print the table, fail on regressions
+//   npm run audit:layers -- --all   include components not yet expected to pass
+//   npm run audit:layers -- --only <substring>
+//       run the subset whose names match, e.g. --only "picker row". The
+//       measurement is identical; this exists because a 13-page run in one
+//       chromium outlives what a SwiftShader container will tolerate — the
+//       browser dies mid-run and playwright hangs on the dead transport
+//       instead of erroring, which ate three whole runs of round 11's gate.
+//       Slices keep every browser short-lived. The missing-selector tripwire
+//       below still runs per invocation, proportional to what was asked for.
+import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import net from 'node:net';
+import { fileURLToPath } from 'node:url';
+import { chromium } from 'playwright';
+import sharp from 'sharp';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.join(HERE, '..');
+
+/**
+ * The components §0.2 governs, and the act needed to bring each on screen.
+ *
+ * `pressable: false` marks a read-only readout. LAYOUT_SPEC settles that the
+ * four-layer rule governs anything the player can press, while a readout is a
+ * label and may be translucent — so those are measured and reported but not
+ * failed on. Everything a finger can hit is held to the full rule.
+ */
+const COMPONENTS = [
+  // These selectors are the audit's whole contract with the HUD, and they had
+  // ALL drifted: the markup moved to a navslot/readout/timerbar vocabulary and
+  // this list stayed on tile/nav__slot/timer-bar. Seven of eleven matched
+  // nothing, which the run below turns into a hard failure — an audit that
+  // cannot find its subjects would otherwise report success for components it
+  // never measured, and the four-layer rule would be unenforced while looking
+  // green.
+  { name: 'primary CTA', selector: '.navslot--proud', act: null, pressable: true },
+  { name: 'nav slot', selector: '.navslot:not(.navslot--proud)', act: null, pressable: true },
+  { name: 'resource pill', selector: '.pill', act: null, pressable: false },
+  { name: 'readout cell', selector: '.readout__cell', act: null, pressable: false },
+  { name: 'builder chip', selector: '.builder-chip', act: null, pressable: true },
+  { name: 'badge', selector: '.badge', act: null, pressable: false },
+  { name: 'chest slot', selector: '.slot', act: null, pressable: true },
+  { name: 'timer capsule', selector: '.timerbar', act: null, pressable: true },
+  { name: 'objective row', selector: '.objective', act: null, pressable: true },
+  { name: 'picker row CTA', selector: '.pick-row__go', act: 'pickerOpen', pressable: true },
+  { name: 'sheet CTA', selector: '.sheet.is-open .sheet__cta', act: 'upgrade', pressable: true },
+  { name: 'close button', selector: '.sheet.is-open .sheet__x', act: 'pickerOpen', pressable: true },
+  { name: 'confirm button', selector: '.buildbar__ok', act: 'place', pressable: true },
+];
+
+const lum = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+/**
+ * Reads the four layers out of one vertical column.
+ *
+ * Tolerances are deliberately generous: the point is to catch a component that
+ * is flat, not to police a few luminance units. The gloss test asks for a
+ * BREAK rather than a deep one — see the note on it below, and the measurement
+ * of Clash's own face that corrected it.
+ */
+function measure(column, edge = 0) {
+  const n = column.length;
+  if (n < 12) return { ok: false, why: 'too small to measure' };
+
+  const L = column.map(([r, g, b]) => lum(r, g, b));
+
+  // 1. Ink contour: dark rows at both edges OF THE COMPONENT.
+  //
+  // `edge` is where the component actually starts, in rows. The clip below
+  // deliberately includes padding above and beneath so the extrusion shadow is
+  // in frame, and this test used to search the first five rows of the CLIP —
+  // which are entirely inside that padding. It was therefore measuring the
+  // BACKGROUND BEHIND each component and never its border: a button on the
+  // dark sea passed, an identical button on a cream sheet failed, and neither
+  // verdict had anything to do with the button. Anything "fixed" to satisfy it
+  // was chasing the wrong pixels.
+  const band = 6;
+  const near = (from, to) => L.slice(Math.max(0, from), Math.min(n, to)).some((v) => v < 60);
+  const contour = near(edge - 2, edge + band) && near(n - edge - band, n - edge + 2);
+
+  // The interior is everything between the two contours.
+  //
+  // The scan opens 2 rows above the component to absorb antialiasing, which is
+  // right when what is up there is padding or shadow — and wrong when the
+  // component sits on a BRIGHT PARENT. On the picker row's blue card the old
+  // scan opened on the parent's gloss (L≈190), stopped immediately (≥60), and
+  // the whole read shifted two rows up: the "rim" window filled with parent
+  // face (so a button carrying four rows of L=252 rim was reported rim-less),
+  // the face mean swallowed the contour, and the verdict flipped between
+  // missing-ink and missing-rim with sub-pixel layout. That is the picker-row
+  // CTA that has failed here for months — measured column dump: parent 190,
+  // ink 19×6, rim 252×4, gloss 229→209, step to 165, lip 102, all present.
+  // Same class of error as the contour test that once measured the background
+  // (above), with the same fix: find the ink first, then cross it. The hunt is
+  // bounded to the contour's own search window, so a column with no ink there
+  // measures as it always did — and fails the contour test regardless.
+  let top = Math.max(0, edge - 2);
+  const topInk = Math.min(n, edge + band);
+  while (top < topInk && L[top] >= 60) top++;    // cross any parent face to the ink
+  while (top < n && L[top] < 60) top++;          // cross the ink into the interior
+  let bottom = Math.min(n - 1, n - edge + 1);
+  const bottomInk = Math.max(0, n - edge - band);
+  while (bottom > bottomInk && L[bottom] >= 60) bottom--;  // cross shadow/parent to the ink
+  while (bottom > top && L[bottom] < 60) bottom--;         // cross the ink up to the lip
+  const interior = L.slice(top, bottom + 1);
+  if (interior.length < 8) return { ok: false, why: 'no measurable interior', contour };
+
+  // 2. Warm rim: a bright band in the first interior rows, above the face.
+  //
+  // Sized to the rim we actually draw. Every raised surface carries
+  // `inset 0 2px 0 var(--ui-rim)`, which at the audit's 2x device scale is FOUR
+  // rows, plus one of antialiasing against the 3px ink border above it. Looking
+  // at three rows could miss it entirely and report a rim-less button that has
+  // a rim — the same class of off-by-a-few-pixels error as the contour test
+  // that was reading the background.
+  const rimBand = 5;
+  const face = interior.slice(rimBand, Math.max(rimBand + 1, Math.floor(interior.length * 0.4)));
+  const faceMean = face.reduce((a, b) => a + b, 0) / face.length;
+  const rimPeak = Math.max(...interior.slice(0, rimBand));
+  const rim = rimPeak > faceMean + 12;
+
+  // 3. Hard gloss step — measured as SHARPNESS, not depth.
+  //
+  // This test used to demand that the lower face be at most 0.62 of the upper
+  // one, on a note claiming Clash's buttons sit near 0.47. Measured off
+  // reference/clash/coc_speedup.jpg, the green Finish Now button's face steps
+  // 192 -> 161: a ratio of 0.84, essentially identical to ours. The 0.47 came
+  // from columns crossing the button's TEXT and GEM ART rather than its face —
+  // the same contamination that had sea-metrics counting the HUD as water.
+  //
+  // Acting on it would have repainted every button in the game to depart from
+  // the very reference it cites, so what the rule actually asks for is worth
+  // restating: two planes MEETING, not a deep drop. The signature of that is a
+  // single-row fall far larger than the local gradient. Clash's face runs 1.0
+  // luminance per row and then falls 20.0 in one — twenty times over. A smooth
+  // ramp of the same total depth would show no such spike.
+  //
+  // The bar is 6x, generously below the reference, because the failure this
+  // catches is a face with NO break at all.
+  const deltas = [];
+  for (let i = 0; i < interior.length - 1; i++) deltas.push(interior[i] - interior[i + 1]);
+  const lo = Math.floor(interior.length * 0.25);
+  const hi = Math.ceil(interior.length * 0.75);
+  const window = deltas.slice(lo, hi);
+  const biggest = window.length ? Math.max(...window) : 0;
+  const sorted = deltas.map(Math.abs).sort((a, b) => a - b);
+  const typical = Math.max(0.5, sorted[Math.floor(sorted.length / 2)] ?? 0.5);
+  const stepRatio = biggest / typical;
+  const stepAt = window.length ? lo + window.indexOf(biggest) : -1;
+  const step = stepRatio >= 6;
+
+  // 4. Lip and extrusion: the last interior rows darker than the face, and a
+  //    dark band below the bottom contour.
+  const lipRows = interior.slice(-3);
+  const lipMean = lipRows.reduce((a, b) => a + b, 0) / lipRows.length;
+  const lip = lipMean < faceMean * 0.75;
+  const below = L.slice(bottom + 1);
+  const extrusion = below.length >= 2 && below.slice(0, 3).some((v) => v < faceMean * 0.6);
+
+  const layers = [contour, rim, step, lip || extrusion];
+  return {
+    ok: layers.every(Boolean),
+    contour, rim, step, lip: lip || extrusion,
+    stepRatio: Number(stepRatio.toFixed(1)),
+    stepAt: stepAt < 0 ? null : Number((stepAt / interior.length).toFixed(2)),
+    height: interior.length,
+  };
+}
+
+const freePort = () =>
+  new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.listen(0, () => { const { port } = srv.address(); srv.close(() => resolve(port)); });
+  });
+
+const port = await freePort();
+const server = spawn('npx', ['vite', '--port', String(port), '--strictPort'], {
+  cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'],
+});
+await new Promise((resolve) => {
+  const timer = setTimeout(resolve, 60000);
+  server.stdout.on('data', (d) => {
+    if (String(d).includes('Local:')) { clearTimeout(timer); setTimeout(resolve, 400); }
+  });
+});
+
+const preinstalled = ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome', '/opt/pw-browsers/chromium/chrome']
+  .find((p) => fs.existsSync(p));
+const browser = await chromium.launch({
+  ...(preinstalled ? { executablePath: preinstalled } : {}),
+  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'],
+});
+
+const { ACTS } = await import('./acts.mjs');
+const results = [];
+
+const onlyAt = process.argv.indexOf('--only');
+const only = onlyAt >= 0 ? (process.argv[onlyAt + 1] ?? '') : null;
+const ROSTER = only
+  ? COMPONENTS.filter((c) => c.name.includes(only))
+  : COMPONENTS;
+if (only && ROSTER.length === 0) {
+  console.error(`--only "${only}" matches no component name`);
+  process.exit(1);
+}
+
+const t0 = Date.now();
+const lap = (what) => process.stderr.write(`  [${((Date.now() - t0) / 1000).toFixed(0)}s] ${what}\n`);
+
+for (const component of ROSTER) {
+  lap(`${component.name}: page`);
+  const page = await browser.newPage({ viewport: { width: 430, height: 932 }, deviceScaleFactor: 2 });
+  try {
+    lap(`${component.name}: goto`);
+    await page.goto(`http://localhost:${port}/?scene=island&shot=1&w=430&h=932&t=2.0`, { waitUntil: 'load', timeout: 60000 });
+    lap(`${component.name}: waiting __ready`);
+    await page.waitForFunction(() => window.__ready === true || window.__error, { timeout: 240000 });
+    lap(`${component.name}: ready`);
+    if (component.act && ACTS[component.act]) await ACTS[component.act](page);
+
+    const box = await page.locator(component.selector).first().boundingBox().catch(() => null);
+    if (!box || box.width < 8 || box.height < 8) {
+      results.push({ ...component, missing: true });
+      continue;
+    }
+
+    // A little above and below, so the extrusion shadow is in frame. The
+    // component itself therefore starts `pad * scale` rows into the column, and
+    // measure() is told so — see the note on the ink contour.
+    const pad = 6;
+    const scale = 2;   // the viewport's deviceScaleFactor, below
+
+    // MANY columns, not one.
+    //
+    // A single column through the middle runs straight through whatever the
+    // component is showing — a white close-cross, a label, an icon — and the
+    // face mean it computes is then the artwork's, not the face's. That is how
+    // .sheet__x and .pick-row__go came to be reported as having no warm rim
+    // while .sheet__cta, the same .btn with the same rim, passed: the only
+    // difference was what happened to be drawn down the centre.
+    //
+    // Artwork can HIDE a layer; it cannot invent one. So each layer is credited
+    // if any column shows it, and the sharpest step found anywhere is the step.
+    // The outer 18% is skipped because the corner radius eats the contour there.
+    const inset = box.width * 0.18;
+    const usable = Math.max(1, box.width - inset * 2);
+    const shot = await page.screenshot({
+      clip: {
+        x: Math.max(0, box.x + inset),
+        y: Math.max(0, box.y - pad),
+        width: Math.max(2, usable),
+        height: box.height + pad * 2,
+      },
+    });
+    const { data, info } = await sharp(shot).raw().toBuffer({ resolveWithObject: true });
+
+    const reads = [];
+    const columns = Math.min(15, Math.max(3, Math.floor(info.width / 6)));
+    for (let c = 0; c < columns; c++) {
+      const x = Math.min(info.width - 1, Math.round(((c + 0.5) / columns) * info.width));
+      const column = [];
+      for (let y = 0; y < info.height; y++) {
+        const i = (y * info.width + x) * info.channels;
+        column.push([data[i], data[i + 1], data[i + 2]]);
+      }
+      const read = measure(column, pad * scale);
+      if (read.contour !== undefined) reads.push(read);
+    }
+    if (!reads.length) {
+      results.push({ ...component, ok: false, why: 'no measurable column' });
+      continue;
+    }
+    const best = {
+      contour: reads.some((r) => r.contour),
+      rim: reads.some((r) => r.rim),
+      step: reads.some((r) => r.step),
+      lip: reads.some((r) => r.lip),
+      stepRatio: Math.max(...reads.map((r) => r.stepRatio ?? 0)),
+      height: Math.max(...reads.map((r) => r.height ?? 0)),
+      columns: reads.length,
+    };
+    results.push({ ...component, ...best, ok: best.contour && best.rim && best.step && best.lip });
+  } catch (err) {
+    results.push({ ...component, error: String(err.message || err).slice(0, 80) });
+  } finally {
+    await page.close();
+  }
+}
+
+await browser.close();
+server.kill();
+
+const mark = (v) => (v ? '[32m✓[0m' : '[31m✗[0m');
+console.log('\n  component            ink  rim  step  lip   step ratio');
+console.log('  ' + '-'.repeat(56));
+for (const r of results) {
+  if (r.missing) { console.log(`  ${r.name.padEnd(20)} [2mnot on screen[0m`); continue; }
+  if (r.error) { console.log(`  ${r.name.padEnd(20)} [31m${r.error}[0m`); continue; }
+  console.log(
+    `  ${r.name.padEnd(20)} ${mark(r.contour)}    ${mark(r.rim)}    ${mark(r.step)}     ${mark(r.lip)}` +
+    `     ${r.stepRatio ?? '-'}${r.pressable ? '' : '  (readout)'}`
+  );
+}
+
+// A selector that stops matching must fail loudly. A rename would otherwise
+// switch the audit off for that component and the report would still look
+// green — a test that silently stops testing is worse than no test at all.
+const missing = results.filter((r) => r.missing);
+if (missing.length > results.length / 3) {
+  console.log(
+    `\n  [31m${missing.length} of ${results.length} selectors matched nothing.[0m\n` +
+    '  The HUD markup has moved. Update COMPONENTS in this file — an audit that\n' +
+    '  cannot find its subjects reports success for components it never measured.'
+  );
+  process.exit(1);
+}
+
+const failures = results.filter((r) => r.pressable && !r.missing && !r.error && !r.ok);
+console.log(`\n  ${results.filter((r) => r.ok).length}/${results.filter((r) => !r.missing && !r.error).length} components carry all four layers`);
+if (failures.length) {
+  console.log('\n  Pressable components missing a layer:');
+  for (const f of failures) {
+    const gone = [!f.contour && 'ink contour', !f.rim && 'warm rim', !f.step && `hard gloss step (sharpness ${f.stepRatio}x, needs ≥6x)`, !f.lip && 'lip/extrusion']
+      .filter(Boolean);
+    console.log(`    ${f.name}: missing ${gone.join(', ')}`);
+  }
+  process.exit(1);
+}

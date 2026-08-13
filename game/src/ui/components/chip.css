@@ -1,0 +1,248 @@
+/* ============================================================================
+ * chip.css — §3.4 builder chip, §2.4 status chip, the level badge + XP
+ * capsule, and §3.10 the dashed `¡Lleno!` label.
+ * ========================================================================== */
+
+/* --- shared capsule ------------------------------------------------------
+ * The same tube as .pill, so it gets the same four layers. It shipped with two
+ * of them: an ink contour and a 1px rim over a flat translucent black, with no
+ * step and no extrusion — which is why the builder chip and the status chip
+ * read as labels while the pills beside them read as objects.
+ *
+ * Height is 32px for EVERY member of the family. It was 32 on the builder chip
+ * and 30 on the status chip, a 2px difference with no cause, sitting in a
+ * three-row stack where the eye reads exactly that kind of drift. */
+.cap{
+  position:relative;
+  height:32px;
+  border:var(--ui-ink-w) solid var(--ui-ink);
+  border-radius:var(--ui-r-pill);
+  background:var(--ui-track-well);   /* translucent black — the world reads through */
+  display:flex; align-items:center;
+  flex:0 0 auto;
+  box-shadow:var(--ui-drop-xs);
+}
+/* Layer 2 + layer 4, over the whole capsule — see the note in pill.css.
+ *
+ * A real child, not `::after`: every .cap is also a .tap, and `.tap::after` is
+ * the invisible 48px hit area from §1.7. They are the same pseudo-element, so
+ * an overlay declared there inherits the hit area's `width`/`height`/`transform`
+ * and paints as a 48px disc floating up and to the left of the chip. */
+.cap__gloss{
+  position:absolute; inset:0;
+  border-radius:inherit;
+  background:var(--ui-track-gloss);
+  box-shadow:inset 0 -2px 0 var(--ui-lip);
+  pointer-events:none;
+}
+.cap__rim{
+  position:absolute; left:7px; right:7px; top:0; height:1px;
+  background:var(--ui-rim); border-radius:999px; pointer-events:none;
+  z-index:1;
+}
+/* Contents ride above the gloss overlay. */
+.cap__icon, .cap > .plus, .builder-chip__info{ z-index:1; }
+.cap > .num{ position:relative; z-index:1; }
+.cap__icon{
+  position:absolute; top:50%;
+  transform:translateY(-50%);
+  pointer-events:none;
+}
+.cap__icon img{ width:100%; height:100%; object-fit:contain; }
+
+/* §3.0's press rule is written for "any shape at any size", not only for the
+ * five tiles in the thumb zone. The builder chip and the status chip both carry
+ * real handlers (Constructores, Rangos), so both have to depress into their own
+ * shadow like everything else — otherwise the whole top row absorbs a finger
+ * and shows nothing back. */
+.cap[role="button"]{ transition:transform .06s ease-out, filter .06s ease-out, box-shadow .06s ease-out; }
+/* brightness(.94) — the ONE dim every pressed object in the game uses. This
+ * capsule sat at .92 and the timer capsule at .88: three shades of "gave" for
+ * one gesture is exactly the drift §5 law 2 exists to stop. */
+.cap[role="button"]:active,
+.cap[role="button"].is-pressed{ transform:translateY(3px); filter:brightness(.94); }
+
+/* --- §3.4 builder chip ---------------------------------------------------
+ * Portrait: icon LEFT, overhanging the cap by ~40%, numeral centred-right,
+ * the chip itself is the tap target. Landscape adds the `+` on the right
+ * (opposite end from the icon) and the blue info `i` above. */
+.builder-chip{
+  width:140px;
+  padding-left:32px;
+  pointer-events:auto;
+}
+/* Same ink anchoring as the pills, mirrored: `--ink-x0` is where this prop's
+ * ink STARTS inside its canvas, so pulling the box left by that margin lands
+ * every row of the Zone A column on one hard left edge. Measured before: the
+ * level badge at 12, the carpenter at 22, the rank anchor at 19. */
+.builder-chip .cap__icon{
+  --w:44px;
+  /* `left` is measured from the PADDING edge, so the capsule's own contour has
+   * to be added back or every overhang is 3px shy of where it was specified. */
+  left:calc(-18px - var(--ui-ink-w) - var(--ink-x0,0) * var(--w));
+  width:var(--w); height:var(--w);
+}
+.builder-chip__num{
+  margin-left:auto; margin-right:14px;
+  font-size:20px;
+}
+.builder-chip .plus{ left:auto; right:-12px; display:none; }
+.builder-chip__info{
+  position:absolute; left:-10px; top:-22px;
+  width:30px; height:30px;
+  border:var(--ui-ink-w) solid var(--ui-ink);
+  border-radius:8px;
+  display:none; place-items:center;
+  background:linear-gradient(180deg,
+    var(--ui-info-a) 0%, var(--ui-info-a) 52%,
+    var(--ui-info-b) 52.01%, var(--ui-info-b) 100%);
+  box-shadow:inset 0 2px 0 var(--ui-rim), 0 3px 0 rgba(0,0,0,.32);
+  font-size:17px; line-height:1;
+  pointer-events:auto;
+}
+@media (orientation:landscape){
+  .builder-chip{ width:150px; height:34px; }
+  .builder-chip .plus{ display:grid; }
+  .builder-chip__info{ display:grid; }
+  /* clear the `+` that now overhangs the right cap */
+  .builder-chip__num{ margin-right:34px; }
+}
+
+/* A FREE BUILDER MUST ANNOY (§3.4): the portrait tilts ±8° every 2.5s with a
+ * pulsing gold halo, and the whole chip picks up a gold outer glow. The
+ * ACTIONABLE half of the signal is mirrored onto Construir in the thumb zone. */
+@keyframes ui-builder-nag{
+  0%, 72%, 100% { transform:translateY(-50%) rotate(0deg); }
+  80%           { transform:translateY(-50%) rotate(-8deg); }
+  90%           { transform:translateY(-50%) rotate(8deg); }
+}
+@keyframes ui-builder-halo{
+  0%, 70%, 100% { box-shadow:0 0 0 0 rgba(240,183,34,0); }
+  85%           { box-shadow:0 0 0 4px rgba(240,183,34,.5); }
+}
+/* "Available" is signalled by changing the OBJECT, never by ringing it: a 1px
+ * outline outside the contour is a browser focus ring, and it adds a fifth
+ * layer instead of modulating one of the four. A free builder brightens the
+ * capsule's own gloss plate and keeps its extrusion. */
+.builder-chip.is-free .cap__gloss{
+  background:linear-gradient(180deg,
+    rgba(255,206,92,.34) 0%,   rgba(255,206,92,.34) 50%,
+    rgba(0,0,0,.10)      50.01%,rgba(0,0,0,.10)     100%);
+}
+.builder-chip.is-free .cap__rim{ background:#FFE9B4; }
+.builder-chip.is-free .cap__icon{ animation:ui-builder-nag 2.5s ease-in-out infinite; }
+.builder-chip.is-free::before{
+  content:''; position:absolute; left:-20px; top:50%;
+  width:48px; height:48px; border-radius:50%;
+  transform:translateY(-50%);
+  animation:ui-builder-halo 2.5s ease-in-out infinite;
+  pointer-events:none;
+}
+
+/* --- §2.4 status chip ----------------------------------------------------
+ * One slot, one occupant, resolved by priority: repairs → event countdown →
+ * rank. This replaces Clash's shield pill, which is anti-retention here (§9). */
+.status-chip{
+  padding-left:32px; padding-right:14px;
+  pointer-events:auto;
+}
+.status-chip .cap__icon{
+  --w:40px;
+  left:calc(-18px - var(--ui-ink-w) - var(--ink-x0,0) * var(--w));
+  width:var(--w); height:var(--w);
+}
+.status-chip__num{ font-size:18px; }
+
+/* --- level badge + XP capsule (Zone A, row 1) ---------------------------- */
+.level-row{ display:flex; align-items:center; gap:0; }
+.level-badge{
+  position:relative;
+  width:44px; height:44px;
+  display:grid; place-items:center;
+  border:var(--ui-ink-w) solid var(--ui-ink);
+  border-radius:13px;
+  background:linear-gradient(180deg,
+    #7FE0F6 0%, var(--ui-blue-a) 52%,
+    var(--ui-blue-b) 52.01%, #2B7EA0 92%,
+    var(--ui-blue-stroke) 92.01%, var(--ui-blue-stroke) 100%);
+  box-shadow:inset 0 2px 0 var(--ui-rim),
+             inset 0 -2px 0 var(--ui-rim-low),
+             var(--ui-drop-sm);
+  z-index:1;
+  flex:0 0 auto;
+}
+.level-badge span{ font-size:20px; }
+.xp{
+  position:relative;
+  width:92px; height:20px;
+  margin-left:-10px;
+  border:var(--ui-ink-w) solid var(--ui-ink);
+  border-radius:var(--ui-r-pill);
+  background:var(--ui-track-empty);
+  overflow:hidden;
+  flex:0 0 auto;
+  box-shadow:var(--ui-drop-xs);
+}
+/* Same tube, same layer 2 and layer 4 as .pill and .cap. */
+.xp::after{
+  content:'';
+  position:absolute; inset:0;
+  border-radius:inherit;
+  background:var(--ui-track-gloss);
+  box-shadow:inset 0 -2px 0 var(--ui-lip);
+  pointer-events:none;
+  z-index:1;
+}
+/* XP is the free "you progressed" signal for a session where nothing else
+ * finished (§4.7), so it is the one bar that MUST be seen moving. It used to
+ * teleport — 0 → 9.45px between two consecutive frames — while the resource
+ * pill beside it moved on a 450ms curve. Same curve, same law (§5.3). */
+.xp__fill{
+  position:absolute; left:0; top:0; bottom:0;
+  width:calc(var(--pct) * 100%);
+  border-radius:999px 0 0 999px;
+  background:linear-gradient(180deg,
+    var(--ui-timer-a) 0 55%, var(--ui-timer-b) 55.01% 100%);
+  transition:width .45s cubic-bezier(.2,.9,.3,1);
+}
+/* On a rollover the bar drains to full, empties, and refills from zero — it
+ * must never run backwards through the middle, which reads as a loss. */
+.xp.is-rolling .xp__fill{ transition:none; }
+
+/* The level badge is already on screen, so a level-up PUNCHES it rather than
+ * popping it in from scale 0 (§5: badge in vs. counter change are two
+ * different events and only one of them starts from nothing). */
+@keyframes ui-levelup{
+  0%   { transform:scale(1); }
+  38%  { transform:scale(1.42); }
+  70%  { transform:scale(.96); }
+  100% { transform:scale(1); }
+}
+.level-badge.is-levelling{ animation:ui-levelup 460ms cubic-bezier(.2,1.4,.4,1); }
+.xp__rim{
+  position:absolute; left:4px; right:4px; top:0; height:1px;
+  background:rgba(255,255,255,.45);
+}
+@media (orientation:landscape){ .xp{ width:118px; height:22px; } }
+
+/* --- §3.10 `¡Lleno!` — the informational register -------------------------
+ * In a world where every actionable thing has a SOLID contour, a DASHED edge
+ * reads instantly as "information". Our one departure: it is a button, opening
+ * the storage upgrade sheet in one tap (§10.11). The dashed border stays. */
+.chip{
+  height:30px; padding:0 12px; border-radius:var(--ui-r-chip);
+  border:2px dashed rgba(20,16,12,.85);      /* ≈3px on / 3px off */
+  background:rgba(255,255,255,.22);
+  /* no shadow, no gloss, no animation */
+  display:inline-flex; align-items:center;
+  white-space:nowrap;
+}
+.chip span{ font-size:17px; }
+.chip--action{
+  pointer-events:auto;
+  transition:transform .06s ease-out, background .06s ease-out;
+}
+/* A tint with no travel is not a press (§5 law 2). `¡Lleno!` opens the storage
+ * upgrade sheet, so it depresses like every other route into a panel. */
+.chip--action:active,
+.chip--action.is-pressed{ background:rgba(255,255,255,.34); transform:translateY(3px); }

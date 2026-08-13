@@ -1,0 +1,366 @@
+/* ============================================================================
+ * pertrechos.css — the choice of three, at the bottom of the sea.
+ *
+ * SEA_PLAY.md item 3's surface. This is not a panel in the island's sense: it
+ * interrupts a FIGHT, it has to be read in about a second and a half, and the
+ * player is holding the phone in one hand with a thumb already on the helm. So
+ * three decisions shape every rule below.
+ *
+ * 1 · IT DOES NOT COVER THE SEA. The tray is anchored to the bottom and takes
+ *     218px of a 430x932 screen — 23% of it, measured. The water, the hull bar
+ *     and whatever is closing all stay visible above it, so the choice is made
+ *     in context instead of in a menu — and the dim behind it is a GRADIENT
+ *     that is nearly nothing at the top of the screen, because dimming the
+ *     thing the player needs to look at would defeat the whole arrangement.
+ *
+ * 2 · IT SITS UNDER THE THUMB. The cards' bottoms are at the same height as the
+ *     helm sign they replace for the moment (seaHud.css --helm-bottom: 58px), so
+ *     the hand that was steering does not travel to answer.
+ *
+ * 3 · THE ART IDENTIFIES, THE TEXT CONFIRMS. Each card leads with a 50px drawn
+ *     mark on its own dark well — a returning player answers on the silhouette
+ *     alone — then the name, then one line on a light plate. The line is the
+ *     only text on the card that is NOT outlined: §1.9's contour closes the
+ *     counters of a face below about 13px, and a three-line block of 10.5px
+ *     copy is exactly where that becomes unreadable. Dark ink on cream instead.
+ *
+ * §0.2's four layers are on every raised object here — the tray, each card, the
+ * stack pips: ink contour, a HARD gloss step, a warm top rim, and a dark lip
+ * with a zero-x-offset extrusion under it.
+ *
+ * Layer 2 is the one that needed thinking about, and the first build got it
+ * wrong. A gloss step at 50% of the height is the rule for an object whose FACE
+ * is its height; these two are not. The tray is 40px of header over a well of
+ * cards, and the card is a dark art plate over a name band over a cream plate —
+ * so a step at half of either lands behind an opaque child and the object reads
+ * flat. Photographed and confirmed: the first pass produced a tray and three
+ * cards with no visible break anywhere. Both steps are therefore placed on the
+ * surface a player can actually see, and both are as hard as the rule asks.
+ *
+ * Reference weight is Clash's card (reference/clash/*.jpg); the chrome budget is
+ * Kingshot's, which is why there is exactly one tray, one line of header, and no
+ * ornament anywhere that is not saying which stack a card would put you on.
+ * ========================================================================== */
+
+.pertrechos {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-celebrate);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  /* The sea keeps taking taps everywhere the tray is not — see the scrim,
+     which is the one thing that swallows them. */
+  pointer-events: none;
+
+  --pert-edge: 8px;
+  --pert-gap: 8px;
+  --pert-well: #22303C;
+  --pert-well-2: #16222C;
+}
+
+/* --- the dim ---------------------------------------------------------------
+ * A gradient, not a flat scrim. Almost nothing over the water the player is
+ * reading, deepening to about half under the tray so the cards have a ground
+ * to sit on. It DOES take pointer events: while a choice is up, a tap that is
+ * not on a card must not reach the sea behind it. */
+.pertrechos__scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  background: linear-gradient(180deg,
+    rgba(4, 12, 20, 0) 0%,
+    rgba(4, 12, 20, 0.10) 42%,
+    rgba(4, 12, 20, 0.34) 66%,
+    rgba(4, 12, 20, 0.58) 100%);
+  opacity: 0;
+  animation: ui-scrim-in 0.18s ease-out forwards;
+}
+html.shot:not(.motion) .pertrechos__scrim { opacity: 1; }
+
+/* --- the tray -------------------------------------------------------------
+ * Kingshot's one group: a single dark capsule holding the header and the three
+ * cards, with its own four layers so it reads as an object laid over the sea
+ * rather than as a darker patch of it. */
+.pertrechos__tray {
+  position: relative;
+  pointer-events: auto;
+  margin: 0 var(--pert-edge) calc(var(--ui-safe-b) + 12px);
+  padding: 8px 9px 10px;
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  border-radius: 18px;
+  /* §0.2 layer 2. The step is declared in PIXELS, not at 50%, and that is a
+     measurement rather than a preference: the cards cover the tray from about
+     40px down, so a step at half the tray's height would fall behind them and
+     the tray would read as a flat slab. It sits at the foot of the header
+     instead — a lit head band with a hard step under it, which is the same
+     device store.css uses on its confirm card. */
+  background: linear-gradient(180deg,
+    rgba(58, 76, 92, 0.95) 0px,  rgba(43, 59, 73, 0.95) 39px,
+    rgba(24, 36, 46, 0.96) 39px, rgba(15, 24, 32, 0.96) 100%);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 250, 0.30),
+    inset 0 -2px 0 rgba(255, 255, 240, 0.12),
+    0 5px 0 rgba(0, 0, 0, 0.34),
+    var(--ui-cast-lg);
+  animation: ui-slide-in-bottom 0.22s cubic-bezier(0.2, 1.2, 0.4, 1);
+}
+
+/* --- the header ----------------------------------------------------------- */
+.pertrechos__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 2px 7px;
+}
+
+.pertrechos__title {
+  font-size: 19px;
+  letter-spacing: 0.03em;
+  color: #FFE9A8;
+  -webkit-text-stroke-width: var(--ui-txt-stroke-h);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.85);
+}
+
+/* The line that stops this being a permanent upgrade in the player's head.
+   RETENTION.md keeps the long arc in the hulls and the island; a card that
+   looked permanent and was not would be the meanest thing on the screen. */
+.pertrechos__sub {
+  flex: 1 1 auto;
+  text-align: right;
+  font-size: 12px;
+  line-height: 1.18;
+  white-space: pre-line;
+  color: #CFE2EE;
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.75);
+}
+
+/* --- the row --------------------------------------------------------------- */
+.pertrechos__row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--pert-gap);
+}
+/* Two cards or one — the pool's last offers (sim/pertrechos.ts). They keep the
+   same card width rather than stretching to fill the tray, so the drawn object
+   never changes size and the row simply centres. */
+.pertrechos__row.is-short {
+  grid-template-columns: repeat(auto-fit, minmax(0, 126px));
+  justify-content: center;
+}
+
+/* --- a card ---------------------------------------------------------------
+ * §0.2 in the blue item family (tokens §1.3: "BLUE = information and item
+ * tiles"), which is also what the store's shelf and the build picker's rows
+ * are, so a card that grants a thing looks the same everywhere in the game.
+ * The card IS the button: there is no confirm step, because a confirm step in
+ * the middle of a fight is a second thing to find. */
+.pertrechos__card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-height: 0;
+  padding: 6px 5px 0;
+  border: var(--ui-ink-w) solid var(--ui-ink);
+  border-radius: var(--ui-r-card);
+  overflow: hidden;
+  /* The card's own body colour. §0.2's gloss step is NOT here, and that is the
+     same measurement as the tray's: the art well covers the top 41% of the card
+     and the line plate the bottom 29%, so a step at 50% of the card would be
+     hidden under the well and the face would read flat. The step lives on the
+     name band below — the only part of the blue body a player ever sees. */
+  background: var(--ui-blue-b);
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim),
+    inset 0 -2px 0 var(--ui-rim-low),
+    var(--ui-drop-sm), var(--ui-cast);
+  transition: transform 0.06s ease-out, box-shadow 0.06s ease-out, filter 0.06s ease-out;
+}
+.pertrechos__card:active,
+.pertrechos__card.is-pressed {
+  transform: translateY(3px);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.35),
+    0 1px 0 rgba(0, 0, 0, 0.3);
+  filter: brightness(0.94);
+}
+/* The one taken. It stays up for a beat so the tap has a result on screen
+   before the sea comes back — §5.3's "a silently mutated state is a bug". */
+.pertrechos__card.is-taken {
+  transform: translateY(2px);
+  filter: brightness(1.12) saturate(1.05);
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim),
+    0 0 0 3px #FFE9A8,
+    var(--ui-drop-sm), var(--ui-cast);
+}
+/* And the other two step back rather than vanishing, so the player sees which
+   of the three they answered. */
+.pertrechos__card.is-spent {
+  filter: brightness(0.62) saturate(0.55);
+  transform: translateY(2px);
+}
+
+/* --- the mark's well ------------------------------------------------------
+ * A dark plate the drawn mark stands on, with a soft burst behind it. Same
+ * device as the store's card art: light behind the object, no chrome around
+ * it — the burst has no contour and casts nothing. */
+.pertrechos__art {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 62px;
+  border-radius: 11px;
+  background: linear-gradient(180deg, var(--pert-well) 0%, var(--pert-well-2) 100%);
+  box-shadow:
+    inset 0 2px 0 rgba(0, 0, 0, 0.42),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.pertrechos__burst {
+  position: absolute;
+  left: 50%;
+  top: 52%;
+  width: 84px;
+  height: 84px;
+  translate: -50% -50%;
+  background: radial-gradient(closest-side,
+    rgba(255, 236, 176, 0.42) 0%,
+    rgba(255, 224, 140, 0.16) 54%,
+    rgba(255, 224, 140, 0) 76%);
+  pointer-events: none;
+}
+
+.pertrechos__mark {
+  position: relative;
+  width: 50px;
+  height: 50px;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.42));
+}
+/* §0.2 layer 1 on a drawn silhouette: constant weight at any rendered size. */
+.pertrechos__ink {
+  stroke: var(--ui-ink);
+  stroke-width: 3px;
+  paint-order: stroke;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+/* --- the stack pips -------------------------------------------------------
+ * WHICH STACK, said without a word. Only drawn when a pertrecho can be taken
+ * more than once: one pip per level it can reach, lit up to the level this tap
+ * would put you on. So a card with no pips is a one-off and the absence is the
+ * statement; "●●○" is "your second of three"; and a full row is "this is the
+ * last one of these you will ever be offered".
+ *
+ * Pips rather than a roman numeral because the whole card has about a second
+ * and a half, and a count of lit dots is read without being parsed. */
+.pertrechos__pips {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 3px;
+  padding: 3px 5px;
+  border: var(--ui-ink-w-sm) solid var(--ui-ink);
+  border-radius: 999px;
+  background: linear-gradient(180deg,
+    rgba(30, 44, 56, 0.96) 0%,  rgba(30, 44, 56, 0.96) 50%,
+    rgba(14, 24, 32, 0.96) 50.01%, rgba(14, 24, 32, 0.96) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 250, 0.34),
+    0 2px 0 rgba(0, 0, 0, 0.3);
+}
+.pertrechos__pip {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(214, 232, 244, 0.42);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.55);
+}
+.pertrechos__pip.is-on {
+  background: linear-gradient(180deg, #FFE083 0%, var(--ui-gold-a) 60%, var(--ui-gold-b) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 250, 0.7), 0 0 4px rgba(243, 187, 38, 0.55);
+}
+
+/* --- the name -------------------------------------------------------------
+ * §3.20: the title's colour follows the card's hue — lime with a dark green
+ * outline on a blue card, which is what the picker's rows and the store's
+ * shelf already do. Two lines maximum; the longest name in the pool is
+ * "Brigada de artilleros" and it wraps to exactly two at this size. */
+.pertrechos__name {
+  /* Takes the slack, so the cream plates line up across all three cards
+     whatever length of name each one carries. */
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  margin: 5px -5px 0;
+  padding: 3px 4px 5px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.06;
+  color: #A6F02B;
+  -webkit-text-stroke: 1.9px #20430C;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+  hyphens: auto;
+  /* §0.2 layer 2, on the card's visible face: a lit plate, a HARD step, and a
+     deeper body under it. Nothing gradual — the break is the whole point. */
+  background: linear-gradient(180deg,
+    #7EDCF2 0%,              #55C4E2 50%,
+    var(--ui-blue-b) 50.01%, #348FAF 100%);
+}
+
+/* --- the line -------------------------------------------------------------
+ * The readable half. A cream plate across the card's foot with its own top
+ * shadow line, dark ink on it, NO outline — see the file header. It squares
+ * its own bottom corners against the card's, which is why the card clips. */
+.pertrechos__line {
+  flex: 0 0 auto;
+  margin: 0 -5px;
+  padding: 6px 7px 8px;
+  min-height: 48px;
+  text-align: center;
+  font-family: var(--ui-font-display);
+  font-size: 11px;
+  line-height: 1.16;
+  color: #33302A;
+  background: linear-gradient(180deg, var(--ui-panel-2) 0%, var(--ui-panel) 100%);
+  box-shadow:
+    inset 0 2px 0 rgba(0, 0, 0, 0.30),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.5);
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+/* --- small screens --------------------------------------------------------
+ * 320x568 is the floor the suite holds (R15-U5). Everything steps down
+ * together rather than the text alone, so the card keeps its proportions. */
+@media (max-width: 359px) {
+  .pertrechos { --pert-gap: 6px; --pert-edge: 6px; }
+  .pertrechos__art { height: 54px; }
+  .pertrechos__mark { width: 44px; height: 44px; }
+  .pertrechos__name { font-size: 12px; min-height: 30px; }
+  .pertrechos__line { font-size: 10px; min-height: 44px; }
+  .pertrechos__title { font-size: 17px; }
+  .pertrechos__sub { font-size: 11px; }
+}
+
+/* --- landscape ------------------------------------------------------------
+ * The tray hugs the middle instead of spanning the width: at 932x430 a
+ * full-width row of cards would put the outer two under nobody's thumb. */
+@media (orientation: landscape) {
+  .pertrechos__tray {
+    width: min(560px, calc(100% - 2 * var(--pert-edge)));
+    margin-left: auto;
+    margin-right: auto;
+    margin-bottom: calc(var(--ui-safe-b) + 8px);
+  }
+  .pertrechos__art { height: 56px; }
+  .pertrechos__line { min-height: 40px; }
+}

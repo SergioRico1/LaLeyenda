@@ -1,0 +1,331 @@
+/* ============================================================================
+ * title.css — the main menu, over the living sea.
+ *
+ * The world is the backdrop, so there is no panel plate: UI_SPEC §6 names a
+ * full-bleed card over a 3D scene as the fastest way to make a game look like a
+ * web page. Three objects only — the carved wordmark, the primary CTA, and a
+ * quiet secondary — plus two labels that are read and never pressed.
+ *
+ * Every colour is a token from tokens.css except the wordmark's own metal
+ * ramps, which are declared HERE, scoped to `.title`, because a logo is the one
+ * surface in the game with its own material and putting its stops in the global
+ * sheet would invite something else to use them.
+ * ========================================================================== */
+
+.title {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding:
+    calc(var(--ui-safe-t) + 26px) 20px
+    calc(var(--ui-safe-b) + 22px);
+  pointer-events: none;
+  text-align: center;
+
+  /* --- the wordmark's two metals -----------------------------------------
+   * Five stops each, in the same order §1.3 gives every button family:
+   * gloss-top, gloss-bottom, base-top, base-bottom, lip.
+   *
+   * Both are DEEPER than the button families they descend from, and that is
+   * measured rather than felt: the button ramps were fitted to read on a 56px
+   * tile, and the same stops across an 86px letterform put the pale gloss over
+   * more than half the drawn ink — the first pass photographed as cream on a
+   * pale sky in both lines, with the gold indistinguishable from the silver. */
+  --mark-gold: linear-gradient(180deg,
+      #FFE07E 0%,   #FBC63C 46%,
+      #E29B0F 46.01%, #B96F06 84%,
+      #6E4409 84.01%, #6E4409 100%);
+  --mark-cream: linear-gradient(180deg,
+      #FFFDF0 0%,   #EDE8CD 46%,
+      #C3BC9C 46.01%, #A2996F 84%,
+      #6B644E 84.01%, #6B644E 100%);
+}
+
+.title > * { pointer-events: auto; }
+
+/* --- the crest ----------------------------------------------------------- */
+
+.title__crest {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  /* The crest must never take a tap: the sea behind it is the only thing up
+   * here and nothing on this half of the screen is interactive. */
+  pointer-events: none;
+}
+
+.title__mark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  font-weight: 400;
+}
+
+/* --- §0.2's four layers, applied to lettering ---------------------------- */
+
+.title__line {
+  position: relative;
+  display: block;
+  font-family: var(--ui-font-display);
+  line-height: 0.94;
+  white-space: nowrap;
+}
+
+.title__glyphs {
+  display: block;
+  font: inherit;
+  line-height: inherit;
+  white-space: nowrap;
+}
+
+/* Layer 1 — the contour. A constant-weight ink outline is a rule for OBJECTS
+ * (§6.9); a logo is drawn art and its outline is proportional, which is what
+ * every carved game logo in both reference sets does. Declared width is double
+ * the visual one (§1.9), so .16em reads as .08em of ink. */
+.title__glyphs--ink {
+  position: relative;
+  z-index: 2;
+  color: var(--ui-ink);
+  -webkit-text-stroke: 0.16em var(--ui-ink);
+  paint-order: stroke fill;
+}
+
+/* Layer 4 — the extrusion. ONE hard copy pushed straight down at zero
+ * x-offset, in a deeper ink than the contour so the side of the letter reads as
+ * being in its own shadow, plus the single soft ground shadow under it. */
+.title__glyphs--drop {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  color: #0C0906;
+  -webkit-text-stroke: 0.16em #0C0906;
+  paint-order: stroke fill;
+  transform: translateY(0.085em);
+  text-shadow: 0 0.05em 0.035em rgba(0, 0, 0, 0.45);
+}
+
+/* Layer 3 — the warm rim, as its OWN copy nudged up.
+ *
+ * It cannot be a text-shadow on the face: `background-clip:text` paints in the
+ * background phase and a text-shadow paints in the content phase, so the shadow
+ * lands on top of the fill it was meant to sit behind. Measured, the wordmark's
+ * "gold" was #FDF2D3 across every stroke — the rim colour composited over the
+ * gold at 92% — with the real metal visible only in the last two rows.
+ *
+ * As a layer under the face, all that shows of it is the sliver the offset
+ * exposes, which is exactly what a rim is. */
+.title__glyphs--rim {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  color: rgba(255, 250, 228, 0.96);
+  transform: translateY(-0.03em);
+}
+
+/* Layer 2 — the face.
+ *
+ * The gradient is the §3.0 button recipe with its hard stop: gloss over base, a
+ * discrete jump, then the lip as the last band. Clipped to the glyphs, it sits
+ * INSIDE the ink silhouette, leaving the contour showing all round.
+ *
+ * The stops are struck against the LINE BOX rather than the drawn ink, so they
+ * are percentages of the box that put the step across the middle of a cap and
+ * the lip on the baseline — not the 46/84 the button uses on a box that is all
+ * face. */
+.title__glyphs--face {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background-image: var(--mark-cream);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.title__line--top {
+  font-size: clamp(26px, 9.4vw, 42px);
+  letter-spacing: 0.10em;
+  /* The tracking pushes the last letter off-centre by half a step. */
+  text-indent: 0.10em;
+}
+
+.title__line--bottom {
+  font-size: clamp(58px, 21vw, 92px);
+  letter-spacing: 0.045em;
+  text-indent: 0.045em;
+}
+
+.title__line--bottom .title__glyphs--face { background-image: var(--mark-gold); }
+
+/* --- the emblem rule ------------------------------------------------------
+ * Two gold bars and a diamond, each an object with all four layers: ink
+ * contour, a hard gloss step at half height, a warm rim on the top inside edge
+ * and a hard extrusion at zero x-offset. It is the logo's base, not a divider. */
+.title__rule {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: min(78%, 300px);
+  margin: 12px auto 0;
+}
+
+.title__rule-bar {
+  flex: 1 1 auto;
+  height: 9px;
+  border: 2px solid var(--ui-ink);
+  border-radius: 3px;
+  background: linear-gradient(180deg,
+      #FFDD78 0%, #FFDD78 46%,
+      #D9930E 46.01%, #D9930E 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 250, 228, 0.75), 0 2px 0 rgba(0, 0, 0, 0.42);
+}
+
+.title__rule-gem {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  rotate: 45deg;
+  border: 2px solid var(--ui-ink);
+  border-radius: 2px;
+  background: linear-gradient(180deg,
+      #FFE7A0 0%, #FFE7A0 50%,
+      #E2A214 50.01%, #E2A214 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 250, 228, 0.8), 0 2px 0 rgba(0, 0, 0, 0.42);
+}
+
+.title__tag {
+  margin: 6px 0 0;
+  font-size: 16px;
+  letter-spacing: 0.01em;
+  color: var(--ui-ivory);
+  /* Wide enough for the sentence to break at its own full stop rather than
+     mid-clause, which is what "Una isla por / reclamar." was doing. */
+  max-width: 30ch;
+  text-wrap: balance;
+  opacity: 0.94;
+}
+
+/* --- the thumb zone ------------------------------------------------------ */
+
+.title__foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: min(320px, 88%);
+}
+
+/* --- what is waiting (LAYOUT_SPEC item 2: read-only groups, framed things
+ * are pressed) ------------------------------------------------------------ */
+.title__waiting {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  margin: 0 0 2px;
+  padding: 0 16px;
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-track-well);
+  border: 2px solid rgba(23, 19, 14, 0.5);
+  /* One light rim on the top inside edge — the world shows through the rest,
+   * which is the whole point of a readout. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), var(--ui-drop-xs);
+  pointer-events: none;
+}
+.title__waiting[hidden] { display: none !important; }
+
+.title__waiting-text {
+  color: #FFF6DF;
+  white-space: nowrap;
+}
+
+/* --- the primary CTA -----------------------------------------------------
+ * The heaviest object on the screen: tallest, warmest, top of the elevation
+ * ladder, and the only thing here with an inset gloss plate. §1.1 puts the
+ * gloss step at 47% for anything over 80px. */
+.title__play {
+  --brk: 47%;
+  position: relative;
+  width: 100%;
+  min-height: 96px;
+  padding: 12px 22px;
+  border-radius: 20px;
+  overflow: hidden;              /* the inset plate is clipped by the radius */
+  box-shadow:
+    inset 0 2px 0 var(--ui-rim),
+    inset 0 -2px 0 rgba(254, 205, 162, 0.55),
+    var(--ui-drop-lg), var(--ui-cast-lg);
+}
+
+/* §3.14's device, borrowed from the close X: the gloss is visibly an inset
+ * PLATE that stops short of the left and right contour, so a sliver of the deep
+ * base frames it. A face-wide ramp is a painted button; a plate is a moulded
+ * one, and this is the only object on the screen that has to be moulded. */
+.title__play::before {
+  content: '';
+  position: absolute;
+  inset: 3px 6px auto 6px;
+  height: 44%;
+  border-radius: 13px 13px 5px 5px;
+  background: linear-gradient(180deg, #FFC768 0%, var(--ui-orange-gloss-b) 100%);
+  pointer-events: none;
+}
+.title__play > * { position: relative; }
+.title__play:active,
+.title__play.is-pressed {
+  transform: translateY(4px);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.35),
+    0 2px 0 rgba(0, 0, 0, 0.30), 0 3px 2px rgba(0, 0, 0, 0.32);
+}
+
+.title__play-label {
+  font-size: clamp(26px, 8vw, 32px);
+  -webkit-text-stroke-width: var(--ui-txt-stroke-lg);
+  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.82);
+}
+
+.title__settings {
+  min-height: 58px;
+  width: 62%;
+}
+
+/* --- version ------------------------------------------------------------- */
+
+.title__version {
+  position: absolute;
+  right: calc(var(--ui-safe-r) + 14px);
+  bottom: calc(var(--ui-safe-b) + 8px);
+  margin: 0;
+  font-family: var(--ui-font-num);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: rgba(255, 249, 228, 0.62);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+/* --- landscape -----------------------------------------------------------
+ * Both orientations are first-class (§2.3). Landscape has height to spare in
+ * the wrong direction, so the crest and the thumb zone sit side by side rather
+ * than stacked. */
+@media (orientation: landscape) {
+  .title {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-around;
+    padding: 20px calc(var(--ui-safe-r) + 28px) 20px calc(var(--ui-safe-l) + 28px);
+  }
+  .title__line--top { font-size: clamp(24px, 3.4vw, 38px); }
+  .title__line--bottom { font-size: clamp(54px, 8vw, 92px); }
+  .title__foot { width: min(340px, 38%); }
+}
